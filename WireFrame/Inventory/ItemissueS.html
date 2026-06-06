@@ -1,0 +1,243 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>Item Issue Form</title>
+
+<style>
+body {
+  margin: 0;
+  font-family: Arial, sans-serif;
+  background: #f1f5f9;
+}
+header {
+  background: #0f172a;
+  color: white;
+  padding: 14px 25px;
+  font-size: 20px;
+}
+.container {
+  max-width: 1200px;
+  margin: 20px auto;
+  background: white;
+  padding: 25px;
+  border-radius: 6px;
+  box-shadow: 0 2px 6px rgba(0,0,0,0.08);
+}
+h2 {
+  margin: 10px 0;
+  color: #1e293b;
+}
+.form-row {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 15px;
+  margin-bottom: 15px;
+}
+label {
+  font-size: 13px;
+  color: #334155;
+}
+input, select {
+  padding: 8px 10px;
+  border: 1px solid #cbd5e1;
+  border-radius: 4px;
+  font-size: 14px;
+  width: 100%;
+}
+.barcode {
+  border: 2px solid #0ea5e9;
+  background: #f0f9ff;
+}
+.btn {
+  padding: 8px 14px;
+  border: none;
+  border-radius: 4px;
+  cursor: pointer;
+  font-size: 14px;
+}
+.btn-search {
+  background: #2563eb;
+  color: #fff;
+}
+.btn-add {
+  background: #16a34a;
+  color: white;
+}
+.btn-delete {
+  background: #dc2626;
+  color: white;
+}
+table {
+  width: 100%;
+  border-collapse: collapse;
+  margin-top: 10px;
+}
+th, td {
+  padding: 8px;
+  border-bottom: 1px solid #e5e7eb;
+  font-size: 13px;
+  text-align: center;
+}
+th {
+  background: #f8fafc;
+}
+.search-box {
+  background: #f8fafc;
+  padding: 15px;
+  border-radius: 5px;
+}
+.right {
+  text-align: right;
+}
+</style>
+</head>
+
+<body>
+
+<header>Item Issue – Store to Production</header>
+
+<div class="container">
+
+<h2>Issue Header Details</h2>
+<div class="form-row">
+  <div><label>Issue Slip No</label><input type="text" placeholder="Auto"></div>
+  <div><label>Issue Date</label><input type="date"></div>
+  <div>
+    <label>Issued To</label>
+    <select>
+      <option>Select</option>
+      <option>Production</option>
+      <option>Maintenance</option>
+    </select>
+  </div>
+  <div><label>Work Order No</label><input type="text"></div>
+</div>
+
+<hr>
+
+<h2>Search Item from Item Master</h2>
+
+<div class="search-box">
+  <div class="form-row">
+    <div>
+      <label>Search Item</label>
+      <input type="text" placeholder="Item Code / Name">
+    </div>
+    <div style="align-self:end">
+      <button class="btn btn-search" onclick="showResults()">Search</button>
+    </div>
+  </div>
+
+  <table id="searchTable" style="display:none;">
+    <thead>
+      <tr>
+        <th>Item Code</th>
+        <th>Item Name</th>
+        <th>Unit</th>
+        <th>Stock</th>
+        <th>Select</th>
+      </tr>
+    </thead>
+    <tbody>
+      <tr>
+        <td>RM-001</td>
+        <td>Steel Rod 12mm</td>
+        <td>Kg</td>
+        <td>1200</td>
+        <td><button class="btn btn-add" onclick="selectItem('RM-001','Steel Rod 12mm','Kg',1200)">Select</button></td>
+      </tr>
+      <tr>
+        <td>RM-002</td>
+        <td>Aluminium Sheet</td>
+        <td>Kg</td>
+        <td>850</td>
+        <td><button class="btn btn-add" onclick="selectItem('RM-002','Aluminium Sheet','Kg',850)">Select</button></td>
+      </tr>
+    </tbody>
+  </table>
+</div>
+
+<h2>Item Issue Entry</h2>
+
+<div class="form-row">
+  <div><label>Item Code</label><input id="itemCode" class="barcode"></div>
+  <div><label>Item Name</label><input id="itemName"></div>
+  <div><label>Available Stock</label><input id="stock" readonly></div>
+  <div><label>Issue Qty</label><input id="qty" type="number"></div>
+</div>
+
+<div class="form-row">
+  <div><label>Unit</label><input id="unit"></div>
+  <div style="align-self:end">
+    <button class="btn btn-add" onclick="addItem()">Add Item</button>
+  </div>
+</div>
+
+<h2>Issued Items Grid</h2>
+
+<table id="issueGrid">
+  <thead>
+    <tr>
+      <th>#</th>
+      <th>Item Code</th>
+      <th>Item Name</th>
+      <th>Unit</th>
+      <th>Qty</th>
+      <th>Action</th>
+    </tr>
+  </thead>
+  <tbody>
+  </tbody>
+</table>
+
+<div class="right" style="margin-top:15px;">
+  <button class="btn btn-add">Issue Items</button>
+</div>
+
+</div>
+
+<script>
+let rowCount = 0;
+
+function showResults() {
+  document.getElementById("searchTable").style.display = "table";
+}
+
+function selectItem(code, name, unit, stock) {
+  document.getElementById("itemCode").value = code;
+  document.getElementById("itemName").value = name;
+  document.getElementById("unit").value = unit;
+  document.getElementById("stock").value = stock;
+}
+
+function addItem() {
+  const code = itemCode.value;
+  const name = itemName.value;
+  const unitVal = unit.value;
+  const qty = qtyInput = document.getElementById("qty").value;
+
+  if (!code || !qty || qty <= 0) {
+    alert("Select item and enter quantity");
+    return;
+  }
+
+  rowCount++;
+  const table = document.getElementById("issueGrid").getElementsByTagName('tbody')[0];
+  const row = table.insertRow();
+
+  row.innerHTML = `
+    <td>${rowCount}</td>
+    <td>${code}</td>
+    <td>${name}</td>
+    <td>${unitVal}</td>
+    <td>${qty}</td>
+    <td><button class="btn btn-delete" onclick="this.closest('tr').remove()">Delete</button></td>
+  `;
+
+  document.getElementById("qty").value = "";
+}
+</script>
+
+</body>
+</html>

@@ -1,0 +1,159 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>Supplier Management</title>
+  <style>
+    body {
+      font-family: Arial, sans-serif;
+      background: #f4f6f8;
+      margin: 0;
+      padding: 20px;
+    }
+
+    .container {
+      max-width: 900px;
+      margin: auto;
+      background: white;
+      padding: 20px;
+      border-radius: 6px;
+      box-shadow: 0 0 10px rgba(0,0,0,0.15);
+    }
+
+    h2 {
+      margin-bottom: 10px;
+    }
+
+    .form-grid {
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      gap: 10px;
+    }
+
+    input, select, button {
+      padding: 8px;
+      font-size: 14px;
+    }
+
+    button {
+      background: #0078d4;
+      color: white;
+      border: none;
+      cursor: pointer;
+    }
+
+    button:hover {
+      background: #005a9e;
+    }
+
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      margin-top: 20px;
+    }
+
+    th, td {
+      border: 1px solid #ddd;
+      padding: 8px;
+      text-align: left;
+      font-size: 13px;
+    }
+
+    th {
+      background: #0078d4;
+      color: white;
+    }
+
+    .active {
+      color: green;
+      font-weight: bold;
+    }
+
+    .inactive {
+      color: red;
+      font-weight: bold;
+    }
+  </style>
+</head>
+<body>
+
+<div class="container">
+  <h2>Supplier Management</h2>
+
+  <!-- SUPPLIER FORM -->
+  <h3>Add Supplier</h3>
+  <div class="form-grid">
+    <input type="text" id="supplierName" placeholder="Supplier Name">
+    <input type="text" id="contactPerson" placeholder="Contact Person">
+    <input type="text" id="phone" placeholder="Phone Number">
+    <input type="email" id="email" placeholder="Email">
+    <input type="text" id="address" placeholder="Address">
+    <select id="status">
+      <option value="Active">Active</option>
+      <option value="Inactive">Inactive</option>
+    </select>
+  </div>
+  <br>
+  <button onclick="addSupplier()">Add Supplier</button>
+
+  <!-- SUPPLIER TABLE -->
+  <h3>Supplier List</h3>
+  <table>
+    <thead>
+      <tr>
+        <th>Name</th>
+        <th>Contact</th>
+        <th>Phone</th>
+        <th>Email</th>
+        <th>Status</th>
+      </tr>
+    </thead>
+    <tbody id="supplierTable"></tbody>
+  </table>
+</div>
+
+<script>
+  let suppliers = [];
+
+  function addSupplier() {
+    const supplier = {
+      name: supplierName.value,
+      contact: contactPerson.value,
+      phone: phone.value,
+      email: email.value,
+      status: status.value
+    };
+
+    suppliers.push(supplier);
+    renderSuppliers();
+    clearForm();
+  }
+
+  function renderSuppliers() {
+    supplierTable.innerHTML = "";
+    suppliers.forEach(s => {
+      supplierTable.innerHTML += `
+        <tr>
+          <td>${s.name}</td>
+          <td>${s.contact}</td>
+          <td>${s.phone}</td>
+          <td>${s.email}</td>
+          <td class="${s.status === 'Active' ? 'active' : 'inactive'}">
+            ${s.status}
+          </td>
+        </tr>
+      `;
+    });
+  }
+
+  function clearForm() {
+    supplierName.value = "";
+    contactPerson.value = "";
+    phone.value = "";
+    email.value = "";
+    address.value = "";
+  }
+</script>
+
+</body>
+</html>
