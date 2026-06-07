@@ -1,0 +1,245 @@
+{% extends 'base.html' %}
+
+{% block content %}
+<div class="space-y-8 max-w-4xl mx-auto">
+    
+    <!-- Title Section -->
+    <div class="text-center sm:text-left">
+        <h1 class="text-3xl font-extrabold text-slate-900 tracking-tight font-heading">Document Ingestion Engine</h1>
+        <p class="text-sm text-slate-500 mt-1.5 font-medium">Upload scanned imagery or native PDFs to parse textual characters, normalize metadata structures, and archive audit trails.</p>
+    </div>
+
+    <!-- Main Ingestion Panel -->
+    <div class="bg-white rounded-2xl border border-slate-200 shadow-xl overflow-hidden glass-card custom-glow relative">
+        
+        <!-- Processing Overlay Loader (Dynamic JS controlled) -->
+        <div id="loader-overlay" class="hidden absolute inset-0 bg-white/95 backdrop-blur-sm z-30 flex flex-col items-center justify-center text-center p-8 transition-all duration-300">
+            <div class="relative flex items-center justify-center mb-6">
+                <!-- Circular spinner -->
+                <div class="w-20 h-20 border-4 border-indigo-100 border-t-indigo-600 rounded-full animate-spin"></div>
+                <!-- Core icon inside -->
+                <div class="absolute text-indigo-600">
+                    <i class="fa-solid fa-microchip-ai text-2xl animate-pulse"></i>
+                </div>
+            </div>
+            <h3 class="text-xl font-bold text-slate-900 font-heading">Executing Ingestion Workflow...</h3>
+            <p class="text-xs text-indigo-600 font-bold tracking-widest uppercase mt-4" id="loader-status">Initializing OCR binary reader...</p>
+            <p class="text-[11px] text-slate-400 mt-1 font-semibold">Please stand by. This takes a few moments.</p>
+        </div>
+
+        <div class="p-6 sm:p-10">
+            
+            {% with messages = get_flashed_messages(with_categories=true) %}
+                {% if messages %}
+                    {% for category, message in messages %}
+                        <div class="mb-6 p-4 rounded-xl text-sm font-semibold border flex items-center gap-3 animate-bounce {% if category == 'success' %} bg-emerald-50 text-emerald-700 border-emerald-200 {% else %} bg-rose-50 text-rose-700 border-rose-200 {% endif %}">
+                            {% if category == 'success' %}
+                                <i class="fa-solid fa-circle-check text-emerald-500 text-lg"></i>
+                            {% else %}
+                                <i class="fa-solid fa-circle-exclamation text-rose-500 text-lg"></i>
+                            {% endif %}
+                            <span>{{ message }}</span>
+                        </div>
+                    {% endfor %}
+                {% endif %}
+            {% endwith %}
+
+            <form action="/" method="POST" enctype="multipart/form-data" class="space-y-6" onsubmit="showLoader()">
+                
+                <div class="relative group">
+                    <label for="invoice_file" class="flex flex-col items-center justify-center w-full h-64 border-2 border-dashed border-slate-300 rounded-2xl bg-slate-50/50 cursor-pointer hover:bg-slate-100/50 hover:border-indigo-500 transition-all duration-300 group-hover:scale-[1.002] custom-glow">
+                        <div class="flex flex-col items-center justify-center pt-5 pb-6 text-center px-6">
+                            <div class="mb-4 bg-white p-5 rounded-2xl shadow-md border border-slate-100 text-indigo-500 group-hover:text-indigo-600 group-hover:scale-110 group-hover:rotate-3 transition-all duration-300">
+                                <i class="fa-solid fa-arrow-up-from-bracket text-3xl"></i>
+                            </div>
+                            <p class="mb-1.5 text-base font-semibold text-slate-800 font-heading">
+                                Click to select document <span class="text-slate-400 font-normal">or drag & drop</span>
+                            </p>
+                            <p class="text-xs text-slate-400 font-semibold tracking-wide">
+                                Supports: PDF, PNG, JPG, JPEG (Max 10MB)
+                            </p>
+                        </div>
+                        <input type="file" id="invoice_file" name="invoice_file" required class="hidden" onchange="updateFileName(this)">
+                    </label>
+                </div>
+
+                <!-- Selected File Display Status Bar -->
+                <div id="file-name-container" class="hidden flex items-center gap-3.5 bg-indigo-50/50 border border-indigo-100 rounded-xl p-4 text-sm text-slate-700 animate-fade-in shadow-sm">
+                    <div class="bg-white p-2 rounded-lg border border-indigo-100 shadow-sm">
+                        <i class="fa-solid fa-file-invoice text-indigo-500 text-xl" id="file-icon"></i>
+                    </div>
+                    <div class="flex-1 truncate">
+                        <span id="file-name-display" class="font-bold text-slate-900 block truncate">No file chosen</span>
+                        <span id="file-size-display" class="text-[11px] text-slate-400 font-bold block mt-0.5">Calculating...</span>
+                    </div>
+                    <button type="button" onclick="clearFile()" class="bg-white p-2 rounded-lg text-slate-400 hover:text-rose-600 hover:bg-rose-50 border border-slate-200/60 shadow-sm transition-colors active:scale-95">
+                        <i class="fa-solid fa-trash-can"></i>
+                    </button>
+                </div>
+
+                <div class="flex justify-end pt-4 border-t border-slate-100">
+                    <button type="submit" class="w-full sm:w-auto inline-flex items-center justify-center gap-2.5 bg-gradient-to-r from-indigo-600 to-indigo-700 hover:from-indigo-700 hover:to-indigo-800 text-white font-bold text-sm px-6 py-3.5 rounded-xl shadow-lg shadow-indigo-600/10 cursor-pointer transition-all active:scale-[0.98] duration-200">
+                        <i class="fa-solid fa-gears"></i> Begin Processing Ingestion
+                    </button>
+                </div>
+
+            </form>
+
+            <!-- Dynamic Extraction Grid -->
+            {% if data %}
+            <div class="mt-12 pt-8 border-t border-slate-200 space-y-6">
+                <h4 class="text-lg font-bold text-slate-900 flex items-center gap-2 font-heading">
+                    <i class="fa-solid fa-clipboard-list text-indigo-500"></i> Structuring Extraction Outputs
+                </h4>
+                
+                <!-- Cards grid for entities -->
+                <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                    
+                    <!-- Vendor name -->
+                    <div class="bg-slate-50/50 p-4 rounded-xl border border-slate-200/80 flex items-center gap-4 relative group">
+                        <div class="bg-indigo-50 p-3 rounded-lg border border-indigo-100 text-indigo-600">
+                            <i class="fa-solid fa-shop text-lg"></i>
+                        </div>
+                        <div class="flex-1 min-w-0">
+                            <span class="text-[10px] text-slate-400 font-extrabold uppercase tracking-widest block">Vendor Entity</span>
+                            <span class="font-bold text-slate-900 block truncate mt-0.5" id="vendor-txt">{{ data.vendor_name }}</span>
+                        </div>
+                        <button onclick="copyToClipboard('vendor-txt')" class="absolute top-3 right-3 text-slate-400 hover:text-indigo-600 opacity-0 group-hover:opacity-100 transition-opacity" title="Copy to clipboard">
+                            <i class="fa-regular fa-copy"></i>
+                        </button>
+                    </div>
+
+                    <!-- Invoice ID -->
+                    <div class="bg-slate-50/50 p-4 rounded-xl border border-slate-200/80 flex items-center gap-4 relative group">
+                        <div class="bg-indigo-50 p-3 rounded-lg border border-indigo-100 text-indigo-600">
+                            <i class="fa-solid fa-hashtag text-lg"></i>
+                        </div>
+                        <div class="flex-1 min-w-0">
+                            <span class="text-[10px] text-slate-400 font-extrabold uppercase tracking-widest block">Invoice Number</span>
+                            <span class="font-mono font-bold text-indigo-600 block truncate mt-0.5" id="invoice-txt">{{ data.invoice_number }}</span>
+                        </div>
+                        <button onclick="copyToClipboard('invoice-txt')" class="absolute top-3 right-3 text-slate-400 hover:text-indigo-600 opacity-0 group-hover:opacity-100 transition-opacity" title="Copy to clipboard">
+                            <i class="fa-regular fa-copy"></i>
+                        </button>
+                    </div>
+
+                    <!-- Document Date -->
+                    <div class="bg-slate-50/50 p-4 rounded-xl border border-slate-200/80 flex items-center gap-4 relative group">
+                        <div class="bg-indigo-50 p-3 rounded-lg border border-indigo-100 text-indigo-600">
+                            <i class="fa-regular fa-calendar-days text-lg"></i>
+                        </div>
+                        <div class="flex-1 min-w-0">
+                            <span class="text-[10px] text-slate-400 font-extrabold uppercase tracking-widest block">Invoice Date (ISO)</span>
+                            <span class="font-bold text-slate-900 block mt-0.5" id="date-txt">{{ data.invoice_date }}</span>
+                        </div>
+                        <button onclick="copyToClipboard('date-txt')" class="absolute top-3 right-3 text-slate-400 hover:text-indigo-600 opacity-0 group-hover:opacity-100 transition-opacity" title="Copy to clipboard">
+                            <i class="fa-regular fa-copy"></i>
+                        </button>
+                    </div>
+
+                    <!-- Tax / VAT Amount -->
+                    <div class="bg-amber-50/20 p-4 rounded-xl border border-amber-200/50 flex items-center gap-4 relative group">
+                        <div class="bg-amber-50 p-3 rounded-lg border border-amber-100 text-amber-600">
+                            <i class="fa-solid fa-percent text-lg"></i>
+                        </div>
+                        <div class="flex-1 min-w-0">
+                            <span class="text-[10px] text-amber-500 font-extrabold uppercase tracking-widest block">Tax / VAT Details</span>
+                            <span class="font-bold text-amber-600 block mt-0.5" id="tax-txt">$ {{ "%.2f"|format(data.tax_amount|float) }}</span>
+                        </div>
+                        <button onclick="copyToClipboard('tax-txt')" class="absolute top-3 right-3 text-slate-400 hover:text-amber-600 opacity-0 group-hover:opacity-100 transition-opacity" title="Copy to clipboard">
+                            <i class="fa-regular fa-copy"></i>
+                        </button>
+                    </div>
+
+                </div>
+
+                <!-- Large Total amount display banner -->
+                <div class="bg-gradient-to-r from-emerald-500/10 to-emerald-600/5 border border-emerald-500/30 rounded-xl p-5 flex items-center justify-between shadow-sm">
+                    <div class="flex items-center gap-3">
+                        <div class="bg-emerald-500 text-white p-3 rounded-lg flex items-center justify-center shadow-md shadow-emerald-500/20">
+                            <i class="fa-solid fa-wallet text-xl"></i>
+                        </div>
+                        <div>
+                            <span class="text-[10px] text-emerald-600 font-extrabold uppercase tracking-widest block">Total Net Value</span>
+                            <span class="text-xs text-slate-400 font-medium block">Archived successfully inSQLite state</span>
+                        </div>
+                    </div>
+                    <div class="text-right">
+                        <span class="text-2xl font-black text-emerald-600 font-heading block">$ {{ "%.2f"|format(data.total_amount|float) }}</span>
+                    </div>
+                </div>
+
+
+            </div>
+            {% endif %}
+
+        </div>
+    </div>
+</div>
+
+<script>
+// Show processing loader with status loops
+function showLoader() {
+    const loader = document.getElementById('loader-overlay');
+    const statusText = document.getElementById('loader-status');
+    loader.classList.remove('hidden');
+    
+    const statuses = [
+        "Running Tesseract OCR & extracting characters...",
+        "Analyzing text with custom legal suffixes...",
+        "Applying false positive regex exclusions...",
+        "Normalizing document dates to YYYY-MM-DD...",
+        "Structuring database payloads...",
+        "Committing records permanently to SQLite database..."
+    ];
+    
+    let i = 0;
+    setInterval(() => {
+        if(i < statuses.length) {
+            statusText.textContent = statuses[i];
+            i++;
+        }
+    }, 1500);
+}
+
+function updateFileName(input) {
+    const container = document.getElementById('file-name-container');
+    const display = document.getElementById('file-name-display');
+    const sizeDisplay = document.getElementById('file-size-display');
+    const icon = document.getElementById('file-icon');
+    
+    if (input.files && input.files[0]) {
+        const file = input.files[0];
+        display.textContent = file.name;
+        
+        // Calculate size MB cleanly
+        const sizeMb = (file.size / (1024 * 1024)).toFixed(2);
+        sizeDisplay.textContent = `${sizeMb} MB`;
+        
+        container.classList.remove('hidden');
+        
+        if(file.type === "application/pdf") {
+            icon.className = "fa-solid fa-file-pdf text-rose-500 text-2xl";
+        } else {
+            icon.className = "fa-solid fa-file-image text-emerald-500 text-2xl";
+        }
+    }
+}
+
+function clearFile() {
+    const input = document.getElementById('invoice_file');
+    const container = document.getElementById('file-name-container');
+    input.value = '';
+    container.classList.add('hidden');
+}
+
+function copyToClipboard(elementId) {
+    const text = document.getElementById(elementId).innerText;
+    // Strip dollar formatting for numerical values if needed
+    const cleanText = text.replace('$ ', '');
+    navigator.clipboard.writeText(cleanText).then(() => {
+        alert("Copied to clipboard: " + cleanText);
+    });
+}
+</script>
+{% endblock %}

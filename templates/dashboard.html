@@ -1,0 +1,170 @@
+{% extends 'base.html' %}
+
+{% block content %}
+<div class="space-y-8">
+    
+    <!-- Title and Action Bar -->
+    <div class="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
+        <div>
+            <h1 class="text-3xl font-extrabold text-slate-900 tracking-tight font-heading">Audit Control History</h1>
+            <p class="text-sm text-slate-500 mt-1 font-medium">Verify structured invoice metadata records in absolute synchronization with SQLite local persistent state.</p>
+        </div>
+        <a href="/" class="inline-flex items-center gap-2 bg-indigo-600 hover:bg-indigo-700 text-white font-bold text-sm px-5 py-3 rounded-xl shadow-lg shadow-indigo-600/10 transition-all duration-200 active:scale-95">
+            <i class="fa-solid fa-plus text-xs"></i> Ingest New Invoice
+        </a>
+    </div>
+
+
+
+    <!-- Advanced Matrix Filters Drawers Card -->
+    <div class="bg-white p-6 rounded-2xl border border-slate-200 shadow-xl glass-card custom-glow">
+        <form method="GET" action="/dashboard" class="space-y-5">
+            <h4 class="text-xs font-black text-slate-400 uppercase tracking-widest border-b border-slate-100 pb-2 flex items-center gap-1.5 select-none">
+                <i class="fa-solid fa-filter text-indigo-500"></i> Query Matrix Filters Drawer
+            </h4>
+            
+            <div class="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-5">
+                
+                <!-- Vendor -->
+                <div>
+                    <label for="vendor_name" class="block text-xs font-extrabold text-slate-600 uppercase tracking-wider mb-2">Vendor Name</label>
+                    <div class="relative">
+                        <span class="absolute inset-y-0 left-0 pl-3.5 flex items-center text-slate-400"><i class="fa-solid fa-shop"></i></span>
+                        <input type="text" id="vendor_name" name="vendor_name" value="{{ filters.vendor_name | default('') }}" placeholder="Search vendor name..." class="w-full text-sm py-2.5 pl-10 pr-3 border border-slate-200 rounded-xl shadow-inner focus:outline-none focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500 placeholder-slate-400 bg-slate-50/50">
+                    </div>
+                </div>
+
+                <!-- Invoice ID -->
+                <div>
+                    <label for="invoice_number" class="block text-xs font-extrabold text-slate-600 uppercase tracking-wider mb-2">Invoice Number</label>
+                    <div class="relative">
+                        <span class="absolute inset-y-0 left-0 pl-3.5 flex items-center text-slate-400"><i class="fa-solid fa-hashtag"></i></span>
+                        <input type="text" id="invoice_number" name="invoice_number" value="{{ filters.invoice_number | default('') }}" placeholder="Search invoice ID..." class="w-full text-sm py-2.5 pl-10 pr-3 border border-slate-200 rounded-xl shadow-inner focus:outline-none focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500 placeholder-slate-400 bg-slate-50/50">
+                    </div>
+                </div>
+
+                <!-- Start Date -->
+                <div>
+                    <label for="start_date" class="block text-xs font-extrabold text-slate-600 uppercase tracking-wider mb-2">Document Start Date</label>
+                    <div class="relative">
+                        <span class="absolute inset-y-0 left-0 pl-3.5 flex items-center text-slate-400"><i class="fa-regular fa-calendar-plus"></i></span>
+                        <input type="date" id="start_date" name="start_date" value="{{ filters.start_date | default('') }}" class="w-full text-sm py-2.5 pl-10 pr-3 border border-slate-200 rounded-xl shadow-inner focus:outline-none focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500 text-slate-600 bg-slate-50/50">
+                    </div>
+                </div>
+
+                <!-- End Date -->
+                <div>
+                    <label for="end_date" class="block text-xs font-extrabold text-slate-600 uppercase tracking-wider mb-2">Document End Date</label>
+                    <div class="relative">
+                        <span class="absolute inset-y-0 left-0 pl-3.5 flex items-center text-slate-400"><i class="fa-regular fa-calendar-minus"></i></span>
+                        <input type="date" id="end_date" name="end_date" value="{{ filters.end_date | default('') }}" class="w-full text-sm py-2.5 pl-10 pr-3 border border-slate-200 rounded-xl shadow-inner focus:outline-none focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500 text-slate-600 bg-slate-50/50">
+                    </div>
+                </div>
+
+                <!-- Min Amount -->
+                <div>
+                    <label for="min_amount" class="block text-xs font-extrabold text-slate-600 uppercase tracking-wider mb-2">Minimum Amount ($)</label>
+                    <div class="relative">
+                        <span class="absolute inset-y-0 left-0 pl-3.5 flex items-center text-slate-400"><i class="fa-solid fa-dollar-sign"></i></span>
+                        <input type="number" step="0.01" min="0" id="min_amount" name="min_amount" value="{{ filters.min_amount | default('') }}" placeholder="Min value limit..." class="w-full text-sm py-2.5 pl-10 pr-3 border border-slate-200 rounded-xl shadow-inner focus:outline-none focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500 placeholder-slate-400 bg-slate-50/50">
+                    </div>
+                </div>
+
+                <!-- Max Amount -->
+                <div>
+                    <label for="max_amount" class="block text-xs font-extrabold text-slate-600 uppercase tracking-wider mb-2">Maximum Amount ($)</label>
+                    <div class="relative">
+                        <span class="absolute inset-y-0 left-0 pl-3.5 flex items-center text-slate-400"><i class="fa-solid fa-dollar-sign"></i></span>
+                        <input type="number" step="0.01" min="0" id="max_amount" name="max_amount" value="{{ filters.max_amount | default('') }}" placeholder="Max value limit..." class="w-full text-sm py-2.5 pl-10 pr-3 border border-slate-200 rounded-xl shadow-inner focus:outline-none focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500 placeholder-slate-400 bg-slate-50/50">
+                    </div>
+                </div>
+
+            </div>
+
+            <!-- Submit and Reset Buttons -->
+            <div class="flex flex-col sm:flex-row justify-end items-center gap-3 pt-3 border-t border-slate-100/80">
+                <a href="/dashboard" class="w-full sm:w-auto inline-flex items-center justify-center gap-2 border border-slate-200 bg-white hover:bg-slate-50 text-slate-600 font-bold text-sm px-5 py-3 rounded-xl shadow-sm transition-colors active:scale-95">
+                    <i class="fa-solid fa-rotate-left"></i> Reset Matrix
+                </a>
+                
+                <button type="submit" class="w-full sm:w-auto inline-flex items-center justify-center gap-2 bg-slate-900 hover:bg-black text-white font-bold text-sm px-6 py-3 rounded-xl shadow-md transition-all active:scale-95">
+                    <i class="fa-solid fa-sliders"></i> Apply Matrix
+                </button>
+                
+                <div class="hidden sm:block w-px h-8 bg-slate-200 mx-2"></div>
+                
+                <!-- CSV Export maintains filters -->
+                <a href="/export?vendor_name={{ filters.vendor_name | default('') }}&invoice_number={{ filters.invoice_number | default('') }}&start_date={{ filters.start_date | default('') }}&end_date={{ filters.end_date | default('') }}&min_amount={{ filters.min_amount | default('') }}&max_amount={{ filters.max_amount | default('') }}" class="w-full sm:w-auto inline-flex items-center justify-center gap-2 bg-gradient-to-r from-emerald-600 to-emerald-700 hover:from-emerald-700 hover:to-emerald-800 text-white font-bold text-sm px-6 py-3 rounded-xl shadow-lg shadow-emerald-600/10 transition-all duration-200 active:scale-95">
+                    <i class="fa-solid fa-file-csv"></i> Export Data Spreadsheet
+                </a>
+            </div>
+
+        </form>
+    </div>
+
+    <!-- Audited Database Table Results -->
+    <div class="bg-white rounded-2xl border border-slate-200 shadow-xl overflow-hidden glass-card custom-glow">
+        <div class="overflow-x-auto">
+            <table class="min-w-full divide-y divide-slate-200/85">
+                <thead class="bg-slate-50/80 text-[10px] font-black text-slate-400 uppercase tracking-widest select-none">
+                    <tr>
+                        <th scope="col" class="px-6 py-5 text-left">Record ID</th>
+                        <th scope="col" class="px-6 py-5 text-left">Vendor Entity</th>
+                        <th scope="col" class="px-6 py-5 text-left">Invoice #</th>
+                        <th scope="col" class="px-6 py-5 text-left">Doc Date</th>
+                        <th scope="col" class="px-6 py-5 text-left">Tax / VAT</th>
+                        <th scope="col" class="px-6 py-5 text-left">Total Value</th>
+                        <th scope="col" class="px-6 py-5 text-left">Source File Name</th>
+                    </tr>
+                </thead>
+                <tbody class="bg-white/50 divide-y divide-slate-100 text-sm text-slate-700 font-medium">
+                    {% if invoices %}
+                        {% for row in invoices %}
+                        <tr class="hover:bg-indigo-50/20 transition-colors duration-150">
+                            <!-- ID Badge -->
+                            <td class="px-6 py-4.5">
+                                <span class="font-mono text-slate-400 font-bold bg-slate-100 px-2.5 py-1 rounded-md text-xs border border-slate-200/60">#{{ row.id }}</span>
+                            </td>
+                            <!-- Vendor -->
+                            <td class="px-6 py-4.5 font-bold text-slate-900 font-heading">
+                                {{ row.vendor_name }}
+                            </td>
+                            <!-- Invoice No -->
+                            <td class="px-6 py-4.5">
+                                <span class="font-mono font-bold text-indigo-600 bg-indigo-50/50 border border-indigo-100/60 px-3 py-1 rounded-lg text-xs">{{ row.invoice_number }}</span>
+                            </td>
+                            <!-- Date -->
+                            <td class="px-6 py-4.5 text-slate-500 font-mono text-xs">
+                                {{ row.invoice_date }}
+                            </td>
+                            <!-- Tax -->
+                            <td class="px-6 py-4.5 font-bold text-amber-600 font-mono text-xs">
+                                $ {{ "%.2f"|format(row.tax_amount) }}
+                            </td>
+                            <!-- Total -->
+                            <td class="px-6 py-4.5">
+                                <span class="font-black text-emerald-600 font-heading text-base">$ {{ "%.2f"|format(row.total_amount) }}</span>
+                            </td>
+                            <!-- File -->
+                            <td class="px-6 py-4.5 text-xs text-slate-400 truncate max-w-[160px] font-semibold" title="{{ row.file_name }}">
+                                {{ row.file_name }}
+                            </td>
+                        </tr>
+                        {% endfor %}
+                    {% else %}
+                        <tr>
+                            <td colspan="7" class="px-6 py-16 text-center text-slate-400 font-semibold bg-slate-50/40">
+                                <div class="bg-white border border-slate-200/60 p-4 rounded-2xl w-16 h-16 flex items-center justify-center mx-auto mb-4 shadow-sm text-slate-300">
+                                    <i class="fa-solid fa-database text-3xl"></i>
+                                </div>
+                                <span class="block text-slate-500 font-bold font-heading text-lg">No Audited Invoices Found</span>
+                                <span class="block text-xs text-slate-400 font-medium mt-1">Try modifying search criteria filters or upload a document to log entries.</span>
+                            </td>
+                        </tr>
+                    {% endif %}
+                </tbody>
+            </table>
+        </div>
+    </div>
+</div>
+{% endblock %}
