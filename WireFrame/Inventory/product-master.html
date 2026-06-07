@@ -1,0 +1,203 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>Product Master Entry</title>
+  <style>
+    body {
+      margin: 0;
+      font-family: Arial, sans-serif;
+      background: #f1f5f9;
+    }
+    header {
+      background: #0f172a;
+      color: white;
+      padding: 14px 25px;
+      font-size: 20px;
+    }
+    .container {
+      max-width: 1100px;
+      margin: 20px auto;
+      background: white;
+      padding: 25px;
+      border-radius: 6px;
+      box-shadow: 0 2px 6px rgba(0,0,0,0.08);
+    }
+    h2 {
+      margin-top: 0;
+      color: #1e293b;
+    }
+    .form-grid {
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      gap: 20px;
+    }
+    .form-group {
+      display: flex;
+      flex-direction: column;
+    }
+    label {
+      font-size: 14px;
+      margin-bottom: 5px;
+      color: #334155;
+    }
+    input, select, textarea {
+      padding: 8px 10px;
+      font-size: 14px;
+      border: 1px solid #cbd5f5;
+      border-radius: 4px;
+    }
+    textarea {
+      resize: none;
+    }
+    .full-width {
+      grid-column: span 3;
+    }
+    .ai-hint {
+      font-size: 12px;
+      color: #0ea5e9;
+      margin-top: 4px;
+    }
+    .actions {
+      margin-top: 25px;
+      text-align: right;
+    }
+    button {
+      padding: 10px 16px;
+      border: none;
+      border-radius: 4px;
+      font-size: 14px;
+      cursor: pointer;
+    }
+    .btn-save {
+      background: #16a34a;
+      color: white;
+    }
+    .btn-reset {
+      background: #e5e7eb;
+      margin-right: 10px;
+    }
+  </style>
+</head>
+<body>
+
+<header>
+  Inventory System – Product Master
+</header>
+
+<div class="container">
+  <h2>Product / Item Master Entry</h2>
+
+  <form>
+    <div class="form-grid">
+
+      <!-- Item Code -->
+      <div class="form-group">
+        <label>Item Code</label>
+        <input type="text" placeholder="Auto / Manual">
+        <div class="ai-hint">AI can suggest standardized item code</div>
+      </div>
+
+      <!-- Item Name -->
+      <div class="form-group">
+        <label>Item Name</label>
+        <input type="text" placeholder="e.g. Steel Rod 12mm">
+        <div class="ai-hint">AI suggests name based on history</div>
+      </div>
+
+      <!-- Category -->
+      <div class="form-group">
+        <label>Item Category</label>
+        <select>
+          <option>Select</option>
+          <option>Raw Material</option>
+          <option>WIP</option>
+          <option>Finished Goods</option>
+          <option>Spare Parts</option>
+        </select>
+      </div>
+
+      <!-- Subcategory (NEW) -->
+      <div class="form-group">
+        <label>Item Subcategory</label>
+        <select>
+          <option>Select</option>
+          <option>Metal</option>
+          <option>Chemical</option>
+          <option>Electrical</option>
+          <option>Mechanical</option>
+        </select>
+        <div class="ai-hint">Filtered based on selected category</div>
+      </div>
+
+      <!-- Unit -->
+      <div class="form-group">
+        <label>Unit of Measurement</label>
+        <select>
+          <option>Select</option>
+          <option>Kg</option>
+          <option>Nos</option>
+          <option>Meters</option>
+          <option>Liters</option>
+        </select>
+      </div>
+
+      <!-- Min Stock -->
+      <div class="form-group">
+        <label>Minimum Stock Level</label>
+        <input type="number" placeholder="e.g. 200">
+      </div>
+
+      <!-- Max Stock -->
+      <div class="form-group">
+        <label>Maximum Stock Level</label>
+        <input type="number" placeholder="e.g. 1000">
+      </div>
+
+      <!-- Reorder Level -->
+      <div class="form-group">
+        <label>Reorder Level</label>
+        <input type="number">
+        <div class="ai-hint">AI can auto‑calculate reorder level</div>
+      </div>
+
+      <!-- HSN -->
+      <div class="form-group">
+        <label>HSN / SAC Code</label>
+        <input type="text">
+      </div>
+
+      <!-- Location -->
+      <div class="form-group">
+        <label>Storage Location</label>
+        <input type="text" placeholder="Main Store / Rack A">
+      </div>
+
+      <!-- Description -->
+      <div class="form-group full-width">
+        <label>Description</label>
+        <textarea rows="3"></textarea>
+      </div>
+
+      <!-- Status -->
+      <div class="form-group">
+        <label>Status</label>
+        <select>
+          <option>Active</option>
+          <option>Inactive</option>
+        </select>
+      </div>
+
+    </div>
+
+    <!-- Buttons -->
+    <div class="actions">
+      <button type="reset" class="btn-reset">Reset</button>
+      <button type="submit" class="btn-save">Save Item</button>
+    </div>
+
+  </form>
+</div>
+
+</body>
+</html>

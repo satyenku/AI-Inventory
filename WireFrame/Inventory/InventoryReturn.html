@@ -1,0 +1,203 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>Return Inventory</title>
+
+<style>
+body {
+    font-family: Arial, sans-serif;
+    background: #f1f5f9;
+    margin: 0;
+}
+
+header {
+    background: #0f172a;
+    color: white;
+    padding: 15px 25px;
+    font-size: 20px;
+}
+
+.container {
+    max-width: 1100px;
+    margin: 20px auto;
+    background: white;
+    padding: 25px;
+    border-radius: 6px;
+    box-shadow: 0 2px 6px rgba(0,0,0,0.08);
+}
+
+h2 {
+    color: #1e293b;
+    margin-top: 0;
+}
+
+.form-row {
+    display: grid;
+    grid-template-columns: repeat(4, 1fr);
+    gap: 15px;
+    margin-bottom: 15px;
+}
+
+label {
+    font-size: 13px;
+    color: #334155;
+}
+
+input, select, textarea {
+    width: 100%;
+    padding: 8px 10px;
+    border: 1px solid #cbd5e1;
+    border-radius: 4px;
+    font-size: 14px;
+}
+
+textarea {
+    resize: none;
+}
+
+.barcode {
+    border: 2px solid #0ea5e9;
+    background: #f0f9ff;
+}
+
+.btn {
+    padding: 10px 16px;
+    border: none;
+    border-radius: 4px;
+    cursor: pointer;
+    font-size: 14px;
+}
+
+.btn-scan {
+    background: #2563eb;
+    color: white;
+}
+
+.btn-save {
+    background: #16a34a;
+    color: white;
+}
+
+.right {
+    text-align: right;
+}
+</style>
+
+<!-- Barcode Library -->
+<script src="https://cdnjs.cloudflare.com/ajax/libs/quagga/0.12.1/quagga.min.js"></script>
+
+</head>
+<body>
+
+<header>
+    Return Inventory (Barcode Enabled)
+</header>
+
+<div class="container">
+    
+    <h2>Return Details</h2>
+
+    <div class="form-row">
+        <div>
+            <label>Return ID</label>
+            <input type="text">
+        </div>
+        <div>
+            <label>Return Date</label>
+            <input type="date">
+        </div>
+        <div>
+            <label>Returned By</label>
+            <input type="text">
+        </div>
+        <div>
+            <label>Department / Customer</label>
+            <input type="text">
+        </div>
+    </div>
+
+    <hr>
+
+    <h2>Item Return Entry</h2>
+
+    <!-- Item Row -->
+    <div class="form-row">
+        <div>
+            <label>Barcode</label>
+            <input type="text" id="barcode" class="barcode" placeholder="Scan barcode">
+        </div>
+        <div>
+            <label>Item Name</label>
+            <input type="text">
+        </div>
+        <div>
+            <label>Quantity</label>
+            <input type="number">
+        </div>
+        <div>
+            <label>Condition</label>
+            <select>
+                <option>Good</option>
+                <option>Damaged</option>
+                <option>Defective</option>
+            </select>
+        </div>
+    </div>
+
+    <div class="form-row">
+        <div>
+            <label>Item Code / SKU</label>
+            <input type="text">
+        </div>
+        <div>
+            <label>Reason</label>
+            <input type="text">
+        </div>
+        <div>
+            <label>Approved By</label>
+            <input type="text">
+        </div>
+        <div>
+            <label>Scan</label><br>
+            <button class="btn btn-scan" onclick="startScanner()">Scan Barcode</button>
+        </div>
+    </div>
+
+    <div id="scanner" style="margin-top:10px; height:200px; border:1px solid #ccc;"></div>
+
+    <div class="right">
+        <button class="btn btn-save">Submit Return</button>
+    </div>
+
+</div>
+
+<script>
+function startScanner() {
+    Quagga.init({
+        inputStream: {
+            type: "LiveStream",
+            target: document.querySelector('#scanner'),
+            constraints: { facingMode: "environment" }
+        },
+        decoder: {
+            readers: ["code_128_reader", "ean_reader", "upc_reader"]
+        }
+    }, function(err) {
+        if (err) {
+            console.log(err);
+            return;
+        }
+        Quagga.start();
+    });
+
+    Quagga.onDetected(function(data) {
+        document.getElementById('barcode').value = data.codeResult.code;
+        Quagga.stop();
+        alert("Barcode Scanned: " + data.codeResult.code);
+    });
+}
+</script>
+
+</body>
+</html>

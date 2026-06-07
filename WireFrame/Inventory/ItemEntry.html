@@ -1,0 +1,215 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>Invoice Item Entry</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            background: #f1f5f9;
+            margin: 0;
+        }
+
+        header {
+            background: #0f172a;
+            color: white;
+            padding: 15px 25px;
+            font-size: 20px;
+        }
+
+        .container {
+            max-width: 1200px;
+            margin: 20px auto;
+            background: white;
+            padding: 25px;
+            border-radius: 6px;
+            box-shadow: 0 2px 6px rgba(0,0,0,0.08);
+        }
+
+        h2 {
+            margin-top: 0;
+            color: #1e293b;
+        }
+
+        .form-row {
+            display: grid;
+            grid-template-columns: repeat(4, 1fr);
+            gap: 15px;
+            margin-bottom: 15px;
+        }
+
+        label {
+            font-size: 13px;
+            color: #334155;
+        }
+
+        input, select {
+            padding: 8px 10px;
+            border: 1px solid #cbd5e1;
+            border-radius: 4px;
+            font-size: 14px;
+            width: 100%;
+        }
+
+        .barcode {
+            border: 2px solid #0ea5e9;
+            background: #f0f9ff;
+        }
+
+        table {
+            width: 100%;
+            border-collapse: collapse;
+            margin-top: 15px;
+        }
+
+        th, td {
+            border-bottom: 1px solid #e5e7eb;
+            padding: 10px;
+            text-align: left;
+            font-size: 14px;
+        }
+
+        th {
+            background: #f8fafc;
+        }
+
+        .btn {
+            padding: 10px 16px;
+            border: none;
+            border-radius: 4px;
+            cursor: pointer;
+            font-size: 14px;
+        }
+
+        .btn-add {
+            background: #2563eb;
+            color: white;
+        }
+
+        .btn-save {
+            background: #16a34a;
+            color: white;
+            margin-top: 15px;
+        }
+
+        .right {
+            text-align: right;
+        }
+    </style>
+</head>
+
+<body>
+
+<header>
+    Invoice Item Entry (Barcode Enabled)
+</header>
+
+<div class="container">
+
+    <h2>Invoice Details</h2>
+
+    <!-- Invoice Header -->
+    <div class="form-row">
+        <div>
+            <label>Invoice No</label>
+            <input type="text">
+        </div>
+        <div>
+            <label>Invoice Date</label>
+            <input type="date">
+        </div>
+        <div>
+            <label>Supplier</label>
+            <select>
+                <option>Select Supplier</option>
+                <option>ABC Metals</option>
+                <option>XYZ Bearings</option>
+            </select>
+        </div>
+        <div>
+            <label>GRN No</label>
+            <input type="text" placeholder="Auto">
+        </div>
+    </div>
+
+    <hr>
+
+    <h2>Item Entry (Scan or Type Barcode)</h2>
+
+    <!-- Item Entry Row -->
+    <div class="form-row">
+        <div>
+            <label>Barcode</label>
+            <input type="text" class="barcode" placeholder="Scan barcode here" autofocus>
+        </div>
+        <div>
+            <label>Item Name</label>
+            <input type="text" placeholder="Auto from barcode">
+        </div>
+        <div>
+            <label>Quantity</label>
+            <input type="number" value="1">
+        </div>
+        <div>
+            <label>Unit</label>
+            <input type="text" placeholder="Nos / Kg">
+        </div>
+    </div>
+
+    <div class="form-row">
+        <div>
+            <label>Batch / Lot No</label>
+            <input type="text">
+        </div>
+        <div>
+            <label>Expiry Date (if any)</label>
+            <input type="date">
+        </div>
+        <div>
+            <label>Unit Price</label>
+            <input type="number" step="0.01">
+        </div>
+        <div>
+            <label>Tax %</label>
+            <input type="number" value="18">
+        </div>
+    </div>
+
+    <div class="right">
+        <button class="btn btn-add">Add Item</button>
+    </div>
+
+    <!-- Item Table -->
+    <table>
+        <thead>
+            <tr>
+                <th>Barcode</th>
+                <th>Item</th>
+                <th>Qty</th>
+                <th>Unit</th>
+                <th>Price</th>
+                <th>Tax</th>
+                <th>Total</th>
+            </tr>
+        </thead>
+        <tbody>
+            <tr>
+                <td>890123456</td>
+                <td>Bearing 6204</td>
+                <td>10</td>
+                <td>Nos</td>
+                <td>250</td>
+                <td>18%</td>
+                <td>2950</td>
+            </tr>
+        </tbody>
+    </table>
+
+    <div class="right">
+        <button class="btn btn-save">Save Invoice</button>
+    </div>
+
+</div>
+
+</body>
+</html>

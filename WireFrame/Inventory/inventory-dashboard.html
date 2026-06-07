@@ -1,0 +1,241 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>Inventory Dashboard</title>
+
+<style>
+body {
+  margin: 0;
+  font-family: Arial, sans-serif;
+  background: #f1f5f9;
+  display: flex;
+}
+
+/* Sidebar */
+.sidebar {
+  width: 240px;
+  background: #0f172a;
+  color: #fff;
+  height: 100vh;
+  padding-top: 20px;
+}
+.sidebar h2 {
+  text-align: center;
+  margin-bottom: 20px;
+  font-size: 20px;
+}
+.sidebar a {
+  display: block;
+  padding: 12px 20px;
+  color: #cbd5e1;
+  text-decoration: none;
+  font-size: 15px;
+}
+.sidebar a:hover {
+  background: #1e293b;
+  color: #fff;
+}
+
+/* Main */
+.main {
+  flex: 1;
+  padding: 25px;
+}
+
+.header {
+  background: #ffffff;
+  padding: 15px;
+  border-radius: 6px;
+  box-shadow: 0 2px 6px rgba(0,0,0,0.08);
+  margin-bottom: 25px;
+}
+.header h1 {
+  margin: 0;
+  color: #1e293b;
+}
+
+/* Cards */
+.cards {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 20px;
+  margin-bottom: 25px;
+}
+.card {
+  background: #ffffff;
+  padding: 20px;
+  border-radius: 6px;
+  box-shadow: 0 2px 6px rgba(0,0,0,0.08);
+}
+.card h3 {
+  margin: 0;
+  font-size: 15px;
+  color: #475569;
+}
+.card p {
+  font-size: 28px;
+  margin: 10px 0 0;
+  color: #0f172a;
+}
+
+/* Table */
+.table-box {
+  background: #ffffff;
+  padding: 20px;
+  border-radius: 6px;
+  box-shadow: 0 2px 6px rgba(0,0,0,0.08);
+}
+table {
+  width: 100%;
+  border-collapse: collapse;
+}
+th, td {
+  padding: 10px;
+  border-bottom: 1px solid #e5e7eb;
+  font-size: 14px;
+  text-align: left;
+}
+th {
+  background: #f8fafc;
+}
+.qty {
+  text-align: right;
+}
+
+/* Responsive */
+@media (max-width: 1000px) {
+  .cards {
+    grid-template-columns: repeat(2, 1fr);
+  }
+}
+</style>
+</head>
+
+<body>
+
+<!-- Sidebar -->
+<div class="sidebar">
+  <h2>Inventory</h2>
+  <a href="inventory-dashboard.html">📊 Dashboard</a>
+  <a href="product-master.html">📦 Product Master</a>
+  <a href="ItemissueS.html">🧾 Item Issue</a>
+  <a href="ItemEntry.html">🧾 Item Entry</a>
+  <a href="ItemInventoryStatus.html">📈 Inventory Status</a>
+  <a href="InventoryStatusReport.html">📈 Inventory Status Report</a>
+  <a href="InventoryReturn.html">📈 Return Inventory</a>
+</div>
+
+<!-- Main -->
+<div class="main">
+
+  <div class="header">
+    <h1>Inventory Dashboard</h1>
+    <p style="color:#475569;font-size:14px;">Today’s activity overview</p>
+  </div>
+
+  <!-- Summary Cards -->
+  <div class="cards">
+    
+    <div class="card">
+      <h3>Low Stock Items</h3>
+      <p style="color:#dc2626;">12</p>
+    </div>
+    <div class="card">
+      <h3>Today Issues</h3>
+      <p>27</p>
+    </div>
+  </div>
+
+  <!-- Item-wise Quantity -->
+  <div class="table-box">
+    <h3 style="margin-top:0;color:#1e293b;">Item‑wise Stock Quantity</h3>
+
+    <table>
+      <thead>
+        <tr>
+          <th>Item Code</th>
+          <th>Item Name</th>
+          <th>Category</th>
+          <th>Unit</th>
+          <th>Available Qty</th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr>
+          <td>RM‑001</td>
+          <td>Steel Rod 12mm</td>
+          <td>Raw Material</td>
+          <td>Kg</td>
+          <td>1,200</td>
+        </tr>
+        <tr>
+          <td>RM‑002</td>
+          <td>Aluminium Sheet</td>
+          <td>Raw Material</td>
+          <td>Kg</td>
+          <td class="low">80</td>
+        </tr>
+        <tr>
+          <td>FG‑015</td>
+          <td>Machine Bolt</td>
+          <td>Finished Goods</td>
+          <td>Nos</td>
+          <td>3,450</td>
+        </tr>
+      </tbody>
+    </table>
+  </div>
+
+  <!-- Today's Issue Grid -->
+  <div class="table-box">
+    <h3 style="margin-top:0;color:#1e293b;">Today’s Issued Items</h3>
+
+    <table>
+      <thead>
+        <tr>
+          <th>Time</th>
+          <th>Issue Slip No</th>
+          <th>Item Code</th>
+          <th>Item Name</th>
+          <th>Department</th>
+          <th>Unit</th>
+          <th class="qty">Issued Qty</th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr>
+          <td>09:45</td>
+          <td>IS‑1025</td>
+          <td>RM‑001</td>
+          <td>Steel Rod 12mm</td>
+          <td>Production</td>
+          <td>Kg</td>
+          <td class="qty">250</td>
+        </tr>
+        <tr>
+          <td>11:10</td>
+          <td>IS‑1026</td>
+          <td>RM‑002</td>
+          <td>Aluminium Sheet</td>
+          <td>Maintenance</td>
+          <td>Kg</td>
+          <td class="qty">50</td>
+        </tr>
+        <tr>
+          <td>14:30</td>
+          <td>IS‑1027</td>
+          <td>FG‑015</td>
+          <td>Machine Bolt</td>
+          <td>Assembly</td>
+          <td>Nos</td>
+          <td class="qty">600</td>
+        </tr>
+      </tbody>
+    </table>
+  </div>
+
+</div>
+
+</body>
+</html>

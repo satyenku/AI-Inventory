@@ -1,0 +1,41 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <title>Login</title>
+  
+</head>
+<body> 
+
+  <h2>Login</h2>
+
+  <form onsubmit="login(event)">
+    <label>Username:</label><br>
+    <input type="text" id="username"><br><br>
+
+    <label>Password:</label><br>
+    <input type="password" id="password"><br><br>
+
+    <button type="submit">Login</button>
+  </form>
+
+  <p id="message" style="color:red;"></p>
+
+  <script>
+    function login(event) {
+      event.preventDefault(); // prevent form from submitting
+
+      var username = document.getElementById("username").value;
+      var password = document.getElementById("password").value;
+
+      if (username === "admin" && password === "admin123") {
+        // Redirect to dashboard
+        window.location.href = "inventory-dashboard.html";
+      } else {
+        // Show error message
+        document.getElementById("message").innerText = "Invalid user";
+      }
+    }
+  </script>
+
+</body>
+</html>

@@ -1,0 +1,218 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>Item Inventory Status</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            background: #f1f5f9;
+            margin: 0;
+        }
+
+        header {
+            background: #0f172a;
+            color: white;
+            padding: 15px 25px;
+            font-size: 20px;
+        }
+
+        .container {
+            max-width: 1200px;
+            margin: 20px auto;
+            background: white;
+            padding: 25px;
+            border-radius: 6px;
+            box-shadow: 0 2px 6px rgba(0,0,0,0.08);
+        }
+
+        h2 {
+            margin-top: 0;
+            color: #1e293b;
+        }
+
+        .form-row {
+            display: grid;
+            grid-template-columns: repeat(4, 1fr);
+            gap: 15px;
+            margin-bottom: 20px;
+        }
+
+        label {
+            font-size: 13px;
+            color: #334155;
+        }
+
+        input, select {
+            padding: 8px 10px;
+            border: 1px solid #cbd5e1;
+            border-radius: 4px;
+            font-size: 14px;
+            width: 100%;
+        }
+
+        .barcode {
+            border: 2px solid #0ea5e9;
+            background: #f0f9ff;
+        }
+
+        .summary {
+            display: grid;
+            grid-template-columns: repeat(4, 1fr);
+            gap: 15px;
+            margin-bottom: 25px;
+        }
+
+        .card {
+            background: #f8fafc;
+            padding: 15px;
+            border-radius: 6px;
+            text-align: center;
+        }
+
+        .card h3 {
+            margin: 0;
+            font-size: 14px;
+            color: #475569;
+        }
+
+        .card p {
+            margin: 8px 0 0;
+            font-size: 20px;
+            font-weight: bold;
+        }
+
+        table {
+            width: 100%;
+            border-collapse: collapse;
+            margin-top: 15px;
+        }
+
+        th, td {
+            padding: 10px;
+            border-bottom: 1px solid #e5e7eb;
+            font-size: 14px;
+            text-align: left;
+        }
+
+        th {
+            background: #f8fafc;
+        }
+
+        .badge {
+            padding: 4px 8px;
+            border-radius: 4px;
+            font-size: 12px;
+            color: white;
+        }
+
+        .low { background: #dc2626; }
+        .ok { background: #16a34a; }
+        .over { background: #f59e0b; }
+
+    </style>
+</head>
+
+<body>
+
+<header>
+    Item Inventory Status
+</header>
+
+<div class="container">
+
+    <h2>Search Item</h2>
+
+    <!-- Item Search -->
+    <div class="form-row">
+        <div>
+            <label>Barcode / Item Code</label>
+            <input type="text" class="barcode" placeholder="Scan barcode or enter item code" autofocus>
+        </div>
+        <div>
+            <label>Item Name</label>
+            <input type="text" placeholder="Auto from item master">
+        </div>
+        <div>
+            <label>Category</label>
+            <input type="text" readonly>
+        </div>
+        <div>
+            <label>Unit</label>
+            <input type="text" readonly>
+        </div>
+    </div>
+
+    <!-- Summary Cards -->
+    <div class="summary">
+        <div class="card">
+            <h3>Total Stock</h3>
+            <p>1,250</p>
+        </div>
+        <div class="card">
+            <h3>Minimum Level</h3>
+            <p>300</p>
+        </div>
+        <div class="card">
+            <h3>Maximum Level</h3>
+            <p>2,000</p>
+        </div>
+        <div class="card">
+            <h3>Status</h3>
+            <p><span class="badge ok">OK</span></p>
+        </div>
+    </div>
+
+    <!-- Location / Batch Wise Stock -->
+    <h2>Stock by Location / Batch</h2>
+
+    <table>
+        <thead>
+            <tr>
+                <th>Location</th>
+                <th>Batch / Lot</th>
+                <th>Available Qty</th>
+                <th>Reserved Qty</th>
+                <th>Last Movement</th>
+            </tr>
+        </thead>
+        <tbody>
+            <tr>
+                <td>Main Store</td>
+                <td>SR‑APR‑01</td>
+                <td>850</td>
+                <td>120</td>
+                <td>Issue – 07‑May‑2026</td>
+            </tr>
+            <tr>
+                <td>Sub Store</td>
+                <td>SR‑MAR‑22</td>
+                <td>400</td>
+                <td>0</td>
+                <td>GRN – 05‑May‑2026</td>
+            </tr>
+        </tbody>
+    </table>
+
+    <!-- Additional Info -->
+    <h2 style="margin-top:25px;">Additional Information</h2>
+
+    <table>
+        <tr>
+            <th>Average Daily Consumption</th>
+            <td>90 Units</td>
+        </tr>
+        <tr>
+            <th>Pending Purchase Orders</th>
+            <td>PO‑1023 (500 units)</td>
+        </tr>
+        <tr>
+            <th>AI Reorder Suggestion</th>
+            <td>Reorder 600 units within next 5 days</td>
+        </tr>
+    </table>
+
+</div>
+
+</body>
+</html>
