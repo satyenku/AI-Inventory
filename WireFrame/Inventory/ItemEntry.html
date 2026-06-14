@@ -1,4 +1,5 @@
 <!DOCTYPE html>
+<script src="https://cdn.jsdelivr.net/npm/jsbarcode"></script>
 <html lang="en">
 <head>
     <meta charset="UTF-8">
@@ -98,6 +99,42 @@
     </style>
 </head>
 
+<script>
+document.getElementById('invoiceFile')?.addEventListener('change', function() {
+    const fileName = this.files[0]?.name || '';
+    document.getElementById('fileName').textContent = fileName;
+});
+function generateBarcode(button) {
+    const row = button.closest("tr");
+    const barcodeValue = row.querySelector(".barcode-value").textContent;
+
+    // Get next row (barcode row)
+    let barcodeRow = row.nextElementSibling;
+
+    if (!barcodeRow || !barcodeRow.classList.contains("barcode-row")) {
+        barcodeRow = document.createElement("tr");
+        barcodeRow.className = "barcode-row";
+        barcodeRow.innerHTML = `
+            <td colspan="8">
+                <svg class="barcode"></svg>
+            </td>
+        `;
+        row.parentNode.insertBefore(barcodeRow, row.nextSibling);
+    }
+
+    barcodeRow.style.display = "table-row";
+
+    const svg = barcodeRow.querySelector("svg");
+
+    JsBarcode(svg, barcodeValue, {
+        format: "CODE128",
+        width: 2,
+        height: 40,
+        displayValue: true
+    });
+}
+</script>
+
 <body>
 
 <header>
@@ -107,6 +144,15 @@
 <div class="container">
 
     <h2>Invoice Details</h2>
+
+<div>
+    <label><b>Upload Invoice (PDF)</b></label>
+    <input type="file" id="invoiceFile" accept="application/pdf" hidden>
+    <button class="btn btn-add" onclick="document.getElementById('invoiceFile').click()">
+        Upload PDF
+    </button>
+    <span id="fileName" style="margin-left:10px;font-size:13px;color:#475569;"></span>
+</div>
 
     <!-- Invoice Header -->
     <div class="form-row">
@@ -134,56 +180,15 @@
 
     <hr>
 
-    <h2>Item Entry (Scan or Type Barcode)</h2>
-
-    <!-- Item Entry Row -->
-    <div class="form-row">
-        <div>
-            <label>Barcode</label>
-            <input type="text" class="barcode" placeholder="Scan barcode here" autofocus>
-        </div>
-        <div>
-            <label>Item Name</label>
-            <input type="text" placeholder="Auto from barcode">
-        </div>
-        <div>
-            <label>Quantity</label>
-            <input type="number" value="1">
-        </div>
-        <div>
-            <label>Unit</label>
-            <input type="text" placeholder="Nos / Kg">
-        </div>
-    </div>
-
-    <div class="form-row">
-        <div>
-            <label>Batch / Lot No</label>
-            <input type="text">
-        </div>
-        <div>
-            <label>Expiry Date (if any)</label>
-            <input type="date">
-        </div>
-        <div>
-            <label>Unit Price</label>
-            <input type="number" step="0.01">
-        </div>
-        <div>
-            <label>Tax %</label>
-            <input type="number" value="18">
-        </div>
-    </div>
-
-    <div class="right">
-        <button class="btn btn-add">Add Item</button>
-    </div>
-
+   
+    
     <!-- Item Table -->
     <table>
         <thead>
             <tr>
+			
                 <th>Barcode</th>
+				<th>Action</th>
                 <th>Item</th>
                 <th>Qty</th>
                 <th>Unit</th>
@@ -193,15 +198,44 @@
             </tr>
         </thead>
         <tbody>
-            <tr>
-                <td>890123456</td>
-                <td>Bearing 6204</td>
-                <td>10</td>
-                <td>Nos</td>
-                <td>250</td>
-                <td>18%</td>
-                <td>2950</td>
-            </tr>
+            
+<tr>
+    <td>
+        <span class="barcode-value">890123456</span>
+    </td>
+	 <td>
+        <button class="btn btn-add" onclick="generateBarcode(this)">
+            Generate Barcode
+        </button>
+    </td>
+    <td>Bearing 6204</td>
+    <td>10</td>
+    <td>Nos</td>
+    <td>250</td>
+    <td>18%</td>
+    <td>2950</td>
+	<td> <button class="btn btn-add">Add Item</button></td>
+   
+</tr>
+<tr>
+    <td>
+        <span class="barcode-value">890123456</span>
+    </td>
+	 <td>
+        <button class="btn btn-add" onclick="generateBarcode(this)">
+            Generate Barcode
+        </button>
+    </td>
+    <td>Bearing 6204</td>
+    <td>10</td>
+    <td>Nos</td>
+    <td>250</td>
+    <td>18%</td>
+    <td>2950</td>
+	<td> <button class="btn btn-add">Add Item</button></td>
+   
+</tr>
+
         </tbody>
     </table>
 
