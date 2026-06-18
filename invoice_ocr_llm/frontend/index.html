@@ -1,0 +1,567 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>InvoiceScan — OCR + Local LLM</title>
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=IBM+Plex+Sans:wght@300;400;500;600&display=swap');
+
+  :root {
+    --bg: #0d0d0f;
+    --surface: #141416;
+    --surface2: #1c1c1f;
+    --surface3: #242428;
+    --border: #2a2a2e;
+    --border2: #3a3a3f;
+    --accent: #e8ff47;
+    --accent2: #b8cc2a;
+    --text: #f0f0f0;
+    --text2: #a0a0a8;
+    --text3: #606068;
+    --success: #47ffb8;
+    --error: #ff4747;
+    --warning: #ffb847;
+    --info: #7eb8ff;
+    --mono: 'IBM Plex Mono', monospace;
+    --sans: 'IBM Plex Sans', sans-serif;
+  }
+
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+
+  body {
+    background: var(--bg);
+    color: var(--text);
+    font-family: var(--sans);
+    min-height: 100vh;
+    display: flex;
+    flex-direction: column;
+  }
+
+  header {
+    border-bottom: 1px solid var(--border);
+    padding: 0 32px;
+    height: 56px;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    position: sticky;
+    top: 0;
+    background: var(--bg);
+    z-index: 100;
+  }
+
+  .logo { display: flex; align-items: center; gap: 10px; font-family: var(--mono); font-size: 15px; font-weight: 600; letter-spacing: -0.3px; }
+  .logo-mark { width: 28px; height: 28px; background: var(--accent); border-radius: 6px; display: flex; align-items: center; justify-content: center; font-size: 14px; color: #000; }
+  .logo-sub { font-family: var(--mono); font-size: 10px; color: var(--text3); margin-left: 4px; padding: 2px 8px; border: 1px solid var(--border2); border-radius: 10px; }
+
+  .status-pill { font-family: var(--mono); font-size: 11px; padding: 4px 10px; border-radius: 20px; border: 1px solid var(--border2); color: var(--text3); display: flex; align-items: center; gap: 6px; }
+  .status-dot { width: 6px; height: 6px; border-radius: 50%; background: var(--text3); }
+  .status-pill.connected .status-dot { background: var(--success); animation: pulse 2s infinite; }
+  .status-pill.connected { color: var(--success); border-color: var(--success); opacity: 0.85; }
+  .status-pill.error .status-dot { background: var(--error); }
+  .status-pill.error { color: var(--error); border-color: var(--error); opacity: 0.85; }
+
+  @keyframes pulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.3; } }
+
+  .main { display: grid; grid-template-columns: 380px 1fr; flex: 1; min-height: 0; }
+
+  .left-panel { border-right: 1px solid var(--border); display: flex; flex-direction: column; overflow: hidden; }
+
+  .panel-header { padding: 20px 24px 16px; border-bottom: 1px solid var(--border); font-family: var(--mono); font-size: 11px; letter-spacing: 1px; color: var(--text3); text-transform: uppercase; }
+
+  .upload-area { margin: 20px; border: 1.5px dashed var(--border2); border-radius: 12px; padding: 32px 20px; text-align: center; cursor: pointer; transition: all 0.2s; position: relative; background: var(--surface); }
+  .upload-area:hover, .upload-area.dragover { border-color: var(--accent); background: rgba(232, 255, 71, 0.04); }
+  .upload-area input[type="file"] { position: absolute; inset: 0; opacity: 0; cursor: pointer; width: 100%; height: 100%; }
+  .upload-icon { width: 40px; height: 40px; background: var(--surface3); border-radius: 10px; display: flex; align-items: center; justify-content: center; margin: 0 auto 12px; font-size: 18px; }
+  .upload-area h3 { font-size: 14px; font-weight: 500; margin-bottom: 4px; color: var(--text); }
+  .upload-area p { font-size: 12px; color: var(--text3); }
+  .upload-area .file-types { margin-top: 12px; display: flex; gap: 6px; justify-content: center; }
+  .tag { font-family: var(--mono); font-size: 10px; padding: 3px 8px; border-radius: 4px; background: var(--surface3); color: var(--text3); border: 1px solid var(--border); }
+
+  .processing-bar { margin: 0 20px 16px; display: none; }
+  .processing-bar.active { display: block; }
+  .processing-label { font-family: var(--mono); font-size: 11px; color: var(--accent); margin-bottom: 8px; display: flex; justify-content: space-between; }
+  .processing-step { font-family: var(--mono); font-size: 10px; color: var(--text3); margin-bottom: 8px; }
+  .bar-track { height: 2px; background: var(--surface3); border-radius: 2px; overflow: hidden; }
+  .bar-fill { height: 100%; background: var(--accent); width: 40%; border-radius: 2px; animation: slide 1.4s ease-in-out infinite; }
+  @keyframes slide { 0% { transform: translateX(-100%); } 100% { transform: translateX(350%); } }
+
+  .invoice-list { flex: 1; overflow-y: auto; padding: 8px 0; }
+  .invoice-list::-webkit-scrollbar { width: 4px; }
+  .invoice-list::-webkit-scrollbar-track { background: transparent; }
+  .invoice-list::-webkit-scrollbar-thumb { background: var(--border2); border-radius: 4px; }
+
+  .invoice-item { padding: 12px 24px; cursor: pointer; transition: background 0.15s; border-left: 2px solid transparent; position: relative; }
+  .invoice-item:hover { background: var(--surface); }
+  .invoice-item.active { background: var(--surface2); border-left-color: var(--accent); }
+  .invoice-item.failed { opacity: 0.6; }
+
+  .item-top { display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 4px; }
+  .item-vendor { font-size: 13px; font-weight: 500; color: var(--text); flex: 1; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; margin-right: 8px; }
+  .item-amount { font-family: var(--mono); font-size: 12px; color: var(--accent); white-space: nowrap; }
+  .item-meta { font-size: 11px; color: var(--text3); font-family: var(--mono); display: flex; gap: 8px; align-items: center; }
+
+  .status-badge { font-family: var(--mono); font-size: 9px; padding: 2px 6px; border-radius: 3px; text-transform: uppercase; letter-spacing: 0.5px; }
+  .status-badge.success { background: rgba(71, 255, 184, 0.1); color: var(--success); }
+  .status-badge.failed { background: rgba(255, 71, 71, 0.1); color: var(--error); }
+  .status-badge.method { background: rgba(126, 184, 255, 0.1); color: var(--info); }
+
+  .empty-state { padding: 40px 24px; text-align: center; color: var(--text3); font-size: 13px; }
+  .empty-state .empty-icon { font-size: 32px; margin-bottom: 12px; opacity: 0.4; }
+
+  .right-panel { display: flex; flex-direction: column; overflow: hidden; }
+
+  .detail-header { padding: 20px 32px 16px; border-bottom: 1px solid var(--border); display: flex; align-items: center; justify-content: space-between; }
+  .detail-title { font-size: 18px; font-weight: 500; }
+  .detail-subtitle { font-size: 12px; color: var(--text3); margin-top: 2px; font-family: var(--mono); display: flex; align-items: center; gap: 8px; }
+
+  .btn { font-family: var(--mono); font-size: 11px; padding: 7px 14px; border-radius: 6px; border: 1px solid var(--border2); cursor: pointer; transition: all 0.15s; background: transparent; color: var(--text2); }
+  .btn:hover { background: var(--surface2); color: var(--text); }
+  .btn-accent { background: var(--accent); color: #000; border-color: var(--accent); font-weight: 600; }
+  .btn-accent:hover { background: var(--accent2); border-color: var(--accent2); color: #000; }
+  .btn-danger:hover { border-color: var(--error); color: var(--error); }
+
+  .detail-body { flex: 1; overflow-y: auto; padding: 28px 32px; }
+  .detail-body::-webkit-scrollbar { width: 4px; }
+  .detail-body::-webkit-scrollbar-thumb { background: var(--border2); border-radius: 4px; }
+
+  .section-label { font-family: var(--mono); font-size: 10px; letter-spacing: 1.5px; color: var(--text3); text-transform: uppercase; margin-bottom: 12px; }
+
+  .fields-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 12px; margin-bottom: 28px; }
+  .field-card { background: var(--surface); border: 1px solid var(--border); border-radius: 8px; padding: 12px 14px; }
+  .field-label { font-family: var(--mono); font-size: 10px; color: var(--text3); letter-spacing: 0.8px; margin-bottom: 6px; }
+  .field-value { font-size: 14px; font-weight: 500; color: var(--text); word-break: break-word; }
+  .field-value.mono { font-family: var(--mono); font-size: 13px; }
+  .field-value.large { font-size: 20px; color: var(--accent); font-family: var(--mono); }
+  .field-value.null { color: var(--text3); font-style: italic; font-size: 12px; }
+
+  .table-wrapper { background: var(--surface); border: 1px solid var(--border); border-radius: 8px; overflow: hidden; margin-bottom: 28px; }
+  table { width: 100%; border-collapse: collapse; font-size: 13px; }
+  thead th { background: var(--surface2); padding: 10px 14px; text-align: left; font-family: var(--mono); font-size: 10px; letter-spacing: 0.8px; color: var(--text3); text-transform: uppercase; border-bottom: 1px solid var(--border); }
+  tbody td { padding: 10px 14px; border-bottom: 1px solid var(--border); color: var(--text); vertical-align: top; }
+  tbody tr:last-child td { border-bottom: none; }
+  tbody tr:hover td { background: var(--surface2); }
+  .td-mono { font-family: var(--mono); font-size: 12px; }
+  .td-right { text-align: right; }
+
+  .json-block, .text-block { background: var(--surface); border: 1px solid var(--border); border-radius: 8px; padding: 16px; font-family: var(--mono); font-size: 12px; line-height: 1.6; color: var(--text2); overflow-x: auto; white-space: pre-wrap; margin-bottom: 28px; max-height: 400px; overflow-y: auto; }
+  .json-key { color: #7eb8ff; }
+  .json-string { color: #a8e6a3; }
+  .json-number { color: var(--accent); }
+  .json-null { color: var(--text3); }
+
+  .no-selection { flex: 1; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 16px; color: var(--text3); }
+  .no-selection-icon { font-size: 48px; opacity: 0.2; }
+  .no-selection h3 { font-size: 16px; font-weight: 400; }
+  .no-selection p { font-size: 13px; }
+
+  .toast { position: fixed; bottom: 24px; right: 24px; background: var(--surface2); border: 1px solid var(--border2); border-radius: 8px; padding: 12px 16px; font-family: var(--mono); font-size: 12px; color: var(--text); z-index: 1000; transform: translateY(80px); opacity: 0; transition: all 0.3s ease; max-width: 320px; }
+  .toast.show { transform: translateY(0); opacity: 1; }
+  .toast.success { border-left: 3px solid var(--success); }
+  .toast.error { border-left: 3px solid var(--error); }
+
+  .action-bar { display: flex; gap: 8px; }
+
+  .tabs { display: flex; gap: 0; border-bottom: 1px solid var(--border); margin-bottom: 24px; }
+  .tab { padding: 8px 16px; font-family: var(--mono); font-size: 11px; cursor: pointer; color: var(--text3); border-bottom: 2px solid transparent; margin-bottom: -1px; transition: all 0.15s; }
+  .tab:hover { color: var(--text2); }
+  .tab.active { color: var(--accent); border-bottom-color: var(--accent); }
+
+  .banner { margin: 16px 20px; padding: 10px 14px; border-radius: 8px; font-family: var(--mono); font-size: 11px; line-height: 1.5; }
+  .banner.warn { background: rgba(255, 184, 71, 0.08); border: 1px solid rgba(255, 184, 71, 0.3); color: var(--warning); }
+  .banner.error { background: rgba(255, 71, 71, 0.08); border: 1px solid rgba(255, 71, 71, 0.3); color: var(--error); }
+</style>
+</head>
+<body>
+
+<header>
+  <div class="logo">
+    <div class="logo-mark">⬡</div>
+    InvoiceScan
+    <span class="logo-sub">OCR + Local LLM</span>
+  </div>
+  <div class="status-pill" id="statusPill">
+    <div class="status-dot"></div>
+    <span id="statusText">connecting...</span>
+  </div>
+</header>
+
+<div class="main">
+
+  <div class="left-panel">
+    <div class="panel-header">Invoices</div>
+
+    <div id="ollamaBanner"></div>
+
+    <div class="upload-area" id="dropZone">
+      <input type="file" id="fileInput" accept=".jpg,.jpeg,.png,.pdf" multiple>
+      <div class="upload-icon">📄</div>
+      <h3>Drop invoice here</h3>
+      <p>or click to browse</p>
+      <div class="file-types">
+        <span class="tag">JPG</span>
+        <span class="tag">PNG</span>
+        <span class="tag">PDF</span>
+      </div>
+    </div>
+
+    <div class="processing-bar" id="processingBar">
+      <div class="processing-label">
+        <span id="processingLabel">Processing...</span>
+        <span id="processingCount"></span>
+      </div>
+      <div class="processing-step" id="processingStep">Running OCR...</div>
+      <div class="bar-track"><div class="bar-fill" id="barFill"></div></div>
+    </div>
+
+    <div class="invoice-list" id="invoiceList">
+      <div class="empty-state">
+        <div class="empty-icon">📭</div>
+        <p>No invoices yet.<br>Upload one above.</p>
+      </div>
+    </div>
+  </div>
+
+  <div class="right-panel" id="rightPanel">
+    <div class="no-selection" id="noSelection">
+      <div class="no-selection-icon">🧾</div>
+      <h3>No invoice selected</h3>
+      <p>Upload or select an invoice to view extracted data</p>
+    </div>
+    <div id="detailView" style="display:none; flex-direction:column; flex:1; overflow:hidden;">
+      <div class="detail-header">
+        <div>
+          <div class="detail-title" id="detailVendor">—</div>
+          <div class="detail-subtitle">
+            <span id="detailFilename">—</span>
+            <span class="status-badge method" id="detailMethod"></span>
+          </div>
+        </div>
+        <div class="action-bar">
+          <button class="btn" onclick="copyJSON()">Copy JSON</button>
+          <button class="btn" onclick="downloadJSON()">↓ Download</button>
+          <button class="btn btn-danger" onclick="deleteInvoice()">Delete</button>
+        </div>
+      </div>
+      <div class="detail-body">
+        <div class="tabs">
+          <div class="tab active" onclick="switchTab('fields', this)">Fields</div>
+          <div class="tab" onclick="switchTab('json', this)">Raw JSON</div>
+          <div class="tab" onclick="switchTab('debug', this)">OCR / LLM Debug</div>
+        </div>
+
+        <div id="tabFields">
+          <div class="section-label">Core Fields</div>
+          <div class="fields-grid" id="fieldsGrid"></div>
+
+          <div id="lineItemsSection">
+            <div class="section-label">Line Items</div>
+            <div class="table-wrapper">
+              <table>
+                <thead>
+                  <tr><th>Description</th><th>Qty</th><th>Unit Price</th><th class="td-right">Amount</th></tr>
+                </thead>
+                <tbody id="lineItemsBody"></tbody>
+              </table>
+            </div>
+          </div>
+        </div>
+
+        <div id="tabJson" style="display:none">
+          <div class="section-label">Extracted JSON</div>
+          <div class="json-block" id="jsonBlock"></div>
+        </div>
+
+        <div id="tabDebug" style="display:none">
+          <div class="section-label">Raw OCR Text (input to LLM)</div>
+          <div class="text-block" id="ocrTextBlock">Loading...</div>
+
+          <div class="section-label">Raw LLM Response</div>
+          <div class="text-block" id="llmRawBlock">Loading...</div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<div class="toast" id="toast"></div>
+
+<script>
+  const API = 'http://localhost:8000';
+  let invoices = [];
+  let selectedId = null;
+  let debugCache = {};
+
+  // ── API calls ──────────────────────────────────────────────────────────────
+
+  async function checkHealth() {
+    try {
+      const r = await fetch(`${API}/`);
+      const data = await r.json();
+      const pill = document.getElementById('statusPill');
+      const text = document.getElementById('statusText');
+      const banner = document.getElementById('ollamaBanner');
+
+      if (data.ollama.ollama_connected) {
+        pill.className = 'status-pill connected';
+        text.textContent = `${data.ollama.model} ready`;
+        banner.innerHTML = '';
+      } else {
+        pill.className = 'status-pill error';
+        text.textContent = 'ollama not ready';
+        banner.innerHTML = `<div class="banner warn">⚠ ${data.ollama.message}</div>`;
+      }
+    } catch {
+      const pill = document.getElementById('statusPill');
+      pill.className = 'status-pill error';
+      document.getElementById('statusText').textContent = 'api offline';
+      document.getElementById('ollamaBanner').innerHTML =
+        `<div class="banner error">⚠ Cannot reach backend API at ${API}. Is uvicorn running?</div>`;
+    }
+  }
+
+  async function fetchInvoices() {
+    try {
+      const r = await fetch(`${API}/invoices?limit=100`);
+      invoices = await r.json();
+      renderList();
+    } catch (e) {
+      console.error('Failed to fetch invoices', e);
+    }
+  }
+
+  async function uploadFile(file) {
+    const form = new FormData();
+    form.append('file', file);
+    const r = await fetch(`${API}/invoices/upload`, { method: 'POST', body: form });
+    if (!r.ok) {
+      const err = await r.json();
+      throw new Error(err.detail || 'Upload failed');
+    }
+    return await r.json();
+  }
+
+  async function fetchDebug(id) {
+    if (debugCache[id]) return debugCache[id];
+    const r = await fetch(`${API}/invoices/${id}/debug`);
+    const data = await r.json();
+    debugCache[id] = data;
+    return data;
+  }
+
+  async function deleteInvoiceById(id) {
+    await fetch(`${API}/invoices/${id}`, { method: 'DELETE' });
+  }
+
+  // ── Upload handling ────────────────────────────────────────────────────────
+
+  async function handleFiles(files) {
+    if (!files.length) return;
+    showProcessing(true);
+    let succeeded = 0;
+
+    for (let i = 0; i < files.length; i++) {
+      document.getElementById('processingLabel').textContent = files[i].name;
+      document.getElementById('processingCount').textContent = `${i+1}/${files.length}`;
+      document.getElementById('processingStep').textContent = 'Running OCR, then local LLM extraction (10-60s)...';
+      try {
+        const result = await uploadFile(files[i]);
+        if (result.status === 'success') succeeded += 1;
+        invoices = [result, ...invoices];
+        renderList();
+        selectInvoice(result.id);
+      } catch (e) {
+        showToast(e.message, 'error');
+      }
+    }
+
+    showProcessing(false);
+    if (succeeded) showToast(`Processed ${succeeded} invoice(s) successfully`, 'success');
+    document.getElementById('fileInput').value = '';
+  }
+
+  document.getElementById('fileInput').addEventListener('change', e => {
+    handleFiles(Array.from(e.target.files));
+  });
+
+  const dropZone = document.getElementById('dropZone');
+  dropZone.addEventListener('dragover', e => { e.preventDefault(); dropZone.classList.add('dragover'); });
+  dropZone.addEventListener('dragleave', () => dropZone.classList.remove('dragover'));
+  dropZone.addEventListener('drop', e => {
+    e.preventDefault();
+    dropZone.classList.remove('dragover');
+    handleFiles(Array.from(e.dataTransfer.files));
+  });
+
+  // ── Rendering ──────────────────────────────────────────────────────────────
+
+  function renderList() {
+    const list = document.getElementById('invoiceList');
+    if (!invoices.length) {
+      list.innerHTML = `<div class="empty-state"><div class="empty-icon">📭</div><p>No invoices yet.<br>Upload one above.</p></div>`;
+      return;
+    }
+    list.innerHTML = invoices.map(inv => `
+      <div class="invoice-item ${inv.status === 'failed' ? 'failed' : ''} ${inv.id === selectedId ? 'active' : ''}"
+           onclick="selectInvoice('${inv.id}')">
+        <div class="item-top">
+          <div class="item-vendor">${inv.vendor_name || 'Unknown Vendor'}</div>
+          <div class="item-amount">${inv.currency || ''} ${inv.total_amount != null ? Number(inv.total_amount).toLocaleString('en-IN', {minimumFractionDigits:2}) : '—'}</div>
+        </div>
+        <div class="item-meta">
+          <span>${inv.invoice_number || inv.filename}</span>
+          <span class="status-badge ${inv.status}">${inv.status}</span>
+          ${inv.ocr_method ? `<span class="status-badge method">${inv.ocr_method}</span>` : ''}
+        </div>
+      </div>
+    `).join('');
+  }
+
+  function selectInvoice(id) {
+    selectedId = id;
+    const inv = invoices.find(i => i.id === id);
+    if (!inv) return;
+    renderList();
+    renderDetail(inv);
+  }
+
+  function renderDetail(inv) {
+    document.getElementById('noSelection').style.display = 'none';
+    const dv = document.getElementById('detailView');
+    dv.style.display = 'flex';
+
+    document.getElementById('detailVendor').textContent = inv.vendor_name || 'Unknown Vendor';
+    document.getElementById('detailFilename').textContent = inv.filename;
+    const methodBadge = document.getElementById('detailMethod');
+    methodBadge.textContent = inv.ocr_method || '';
+    methodBadge.style.display = inv.ocr_method ? 'inline-block' : 'none';
+
+    const fields = [
+      { label: 'VENDOR', value: inv.vendor_name, cls: '' },
+      { label: 'BUYER', value: inv.buyer_name, cls: '' },
+      { label: 'INVOICE #', value: inv.invoice_number, cls: 'mono' },
+      { label: 'INVOICE DATE', value: inv.invoice_date, cls: 'mono' },
+      { label: 'DUE DATE', value: inv.due_date, cls: 'mono' },
+      { label: 'CURRENCY', value: inv.currency, cls: 'mono' },
+      { label: 'SUBTOTAL', value: inv.subtotal != null ? Number(inv.subtotal).toLocaleString('en-IN', {minimumFractionDigits:2}) : null, cls: 'mono' },
+      { label: 'TAX AMOUNT', value: inv.tax_amount != null ? Number(inv.tax_amount).toLocaleString('en-IN', {minimumFractionDigits:2}) : null, cls: 'mono' },
+      { label: 'TOTAL AMOUNT', value: inv.total_amount != null ? `${inv.currency || ''} ${Number(inv.total_amount).toLocaleString('en-IN', {minimumFractionDigits:2})}` : null, cls: 'large' },
+    ];
+
+    document.getElementById('fieldsGrid').innerHTML = fields.map(f => `
+      <div class="field-card">
+        <div class="field-label">${f.label}</div>
+        <div class="field-value ${f.cls} ${f.value ? '' : 'null'}">${f.value || 'not found'}</div>
+      </div>
+    `).join('');
+
+    const tbody = document.getElementById('lineItemsBody');
+    if (inv.line_items && inv.line_items.length) {
+      document.getElementById('lineItemsSection').style.display = 'block';
+      tbody.innerHTML = inv.line_items.map(item => `
+        <tr>
+          <td>${item.description || '—'}</td>
+          <td class="td-mono">${item.quantity ?? '—'}</td>
+          <td class="td-mono">${item.unit_price != null ? Number(item.unit_price).toLocaleString('en-IN', {minimumFractionDigits:2}) : '—'}</td>
+          <td class="td-mono td-right">${item.amount != null ? Number(item.amount).toLocaleString('en-IN', {minimumFractionDigits:2}) : '—'}</td>
+        </tr>
+      `).join('');
+    } else {
+      document.getElementById('lineItemsSection').style.display = 'none';
+    }
+
+    const clean = { ...inv };
+    document.getElementById('jsonBlock').innerHTML = syntaxHighlight(JSON.stringify(clean, null, 2));
+
+    // Reset debug tab until fetched
+    document.getElementById('ocrTextBlock').textContent = 'Loading...';
+    document.getElementById('llmRawBlock').textContent = 'Loading...';
+  }
+
+  // ── Tab switching ──────────────────────────────────────────────────────────
+
+  async function switchTab(tab, el) {
+    document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
+    el.classList.add('active');
+    document.getElementById('tabFields').style.display = tab === 'fields' ? 'block' : 'none';
+    document.getElementById('tabJson').style.display = tab === 'json' ? 'block' : 'none';
+    document.getElementById('tabDebug').style.display = tab === 'debug' ? 'block' : 'none';
+
+    if (tab === 'debug' && selectedId) {
+      try {
+        const debug = await fetchDebug(selectedId);
+        document.getElementById('ocrTextBlock').textContent = debug.ocr_text || '(empty)';
+        document.getElementById('llmRawBlock').textContent = debug.llm_raw || '(empty)';
+      } catch (e) {
+        document.getElementById('ocrTextBlock').textContent = 'Failed to load debug info.';
+        document.getElementById('llmRawBlock').textContent = '';
+      }
+    }
+  }
+
+  // ── Actions ────────────────────────────────────────────────────────────────
+
+  function copyJSON() {
+    const inv = invoices.find(i => i.id === selectedId);
+    if (!inv) return;
+    navigator.clipboard.writeText(JSON.stringify(inv, null, 2));
+    showToast('JSON copied to clipboard', 'success');
+  }
+
+  function downloadJSON() {
+    const inv = invoices.find(i => i.id === selectedId);
+    if (!inv) return;
+    const blob = new Blob([JSON.stringify(inv, null, 2)], { type: 'application/json' });
+    const a = document.createElement('a');
+    a.href = URL.createObjectURL(blob);
+    a.download = `${inv.invoice_number || inv.id}.json`;
+    a.click();
+  }
+
+  async function deleteInvoice() {
+    if (!selectedId) return;
+    if (!confirm('Delete this invoice record?')) return;
+    await deleteInvoiceById(selectedId);
+    invoices = invoices.filter(i => i.id !== selectedId);
+    delete debugCache[selectedId];
+    selectedId = null;
+    document.getElementById('noSelection').style.display = 'flex';
+    document.getElementById('detailView').style.display = 'none';
+    renderList();
+    showToast('Invoice deleted', 'success');
+  }
+
+  // ── Helpers ────────────────────────────────────────────────────────────────
+
+  function showProcessing(active) {
+    const bar = document.getElementById('processingBar');
+    bar.className = active ? 'processing-bar active' : 'processing-bar';
+  }
+
+  function showToast(msg, type = 'success') {
+    const t = document.getElementById('toast');
+    t.textContent = msg;
+    t.className = `toast ${type} show`;
+    setTimeout(() => t.classList.remove('show'), 4000);
+  }
+
+  function syntaxHighlight(json) {
+    return json
+      .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
+      .replace(/("(\\u[a-zA-Z0-9]{4}|\\[^u]|[^\\"])*"(\s*:)?|\b(true|false|null)\b|-?\d+(?:\.\d*)?(?:[eE][+\-]?\d+)?)/g, match => {
+        let cls = 'json-number';
+        if (/^"/.test(match)) cls = /:$/.test(match) ? 'json-key' : 'json-string';
+        else if (/null/.test(match)) cls = 'json-null';
+        return `<span class="${cls}">${match}</span>`;
+      });
+  }
+
+  // ── Init ───────────────────────────────────────────────────────────────────
+
+  checkHealth();
+  fetchInvoices();
+  setInterval(checkHealth, 10000);
+</script>
+</body>
+</html>
