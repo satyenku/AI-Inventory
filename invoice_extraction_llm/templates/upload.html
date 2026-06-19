@@ -1,0 +1,57 @@
+{% extends "layout.html" %}
+{% block content %}
+<div class="py-5">
+    <div class="row justify-content-center">
+        <div class="col-md-5 col-lg-4">
+
+            <!-- Upload Card -->
+            <div class="card shadow-sm" style="overflow: hidden;">
+                <!-- Card Header -->
+                <div class="text-center py-4 px-4" style="background: linear-gradient(135deg, rgba(99,102,241,0.06), rgba(59,130,246,0.04)); border-bottom: 1px solid #e2e8f0;">
+                    <div class="mx-auto mb-3" style="width: 52px; height: 52px; background: linear-gradient(135deg, #3b82f6, #6366f1); border-radius: 14px; display: flex; align-items: center; justify-content: center; font-size: 1.4rem; box-shadow: 0 4px 16px rgba(99,102,241,0.25);">
+                        📤
+                    </div>
+                    <h5 class="mb-0 fw-bold" style="letter-spacing: -0.3px; color: #1e293b;">
+                        Invoice Processing
+                    </h5>
+                </div>
+
+                <!-- Card Body -->
+                <div class="p-4">
+                    <form action="/" method="POST" enctype="multipart/form-data">
+                        <div class="mb-4">
+                            <label for="invoice_file" class="form-label fw-semibold" style="font-size: 0.8rem; letter-spacing: 0.3px; color: #475569;">
+                                SELECT FILE
+                            </label>
+                            <input class="form-control form-control-lg" type="file" id="invoice_file"
+                                name="invoice_file" accept=".pdf,.png,.jpg,.jpeg" required
+                                style="font-size: 0.88rem; padding: 0.75rem 1rem;">
+                            <div class="mt-2" style="font-size: 0.72rem; color: #94a3b8;">
+                                Supported: PDF, PNG, JPG — max 10MB
+                            </div>
+                        </div>
+
+                        <div class="d-grid">
+                            <button type="submit" class="btn btn-primary btn-lg fw-semibold"
+                                style="padding: 0.75rem; font-size: 0.95rem; letter-spacing: 0.2px;">
+                                Process Invoice
+                                <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" fill="currentColor" class="ms-1" viewBox="0 0 16 16" style="vertical-align: -2px;">
+                                    <path fill-rule="evenodd" d="M1 8a.5.5 0 0 1 .5-.5h11.793l-3.147-3.146a.5.5 0 0 1 .708-.708l4 4a.5.5 0 0 1 0 .708l-4 4a.5.5 0 0 1-.708-.708L13.293 8.5H1.5A.5.5 0 0 1 1 8z"/>
+                                </svg>
+                            </button>
+                        </div>
+                    </form>
+                </div>
+            </div>
+
+            <!-- Archive Link -->
+            <div class="text-center mt-4">
+                <a href="/search" class="text-decoration-none fw-medium" style="font-size: 0.82rem; color: #475569;">
+                    📋 View Existing Archive Records
+                </a>
+            </div>
+
+        </div>
+    </div>
+</div>
+{% endblock %}

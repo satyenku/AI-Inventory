@@ -1,0 +1,137 @@
+{% extends "layout.html" %}
+{% block content %}
+
+<!-- Search & Filter Card -->
+<div class="card shadow-sm p-4 mb-4">
+    <div class="d-flex align-items-center mb-3">
+        <div style="width: 5px; height: 22px; background: linear-gradient(180deg, #3b82f6, #6366f1); border-radius: 3px;" class="me-3"></div>
+        <h5 class="mb-0 fw-bold" style="letter-spacing: -0.3px; color: #1e293b;">Search & Filter</h5>
+    </div>
+    <form method="GET" action="/search" class="row g-3">
+        <div class="col-md-4">
+            <input type="text" name="invoice_number" class="form-control" placeholder="Invoice number..."
+                value="{{ request.args.get('invoice_number', '') }}">
+        </div>
+        <div class="col-md-4">
+            <input type="text" name="vendor_name" class="form-control" placeholder="Vendor name..."
+                value="{{ request.args.get('vendor_name', '') }}">
+        </div>
+        <div class="col-md-2">
+            <button type="submit" class="btn btn-secondary w-100 py-2">Filter</button>
+        </div>
+        <div class="col-md-2">
+            <a href="/export?{{ request.query_string.decode('utf-8') }}" class="btn btn-success w-100 py-2">
+                Export CSV
+            </a>
+        </div>
+    </form>
+</div>
+
+<!-- Results Table -->
+<div class="card shadow-sm" style="overflow: hidden;">
+    <div class="table-responsive">
+        <table class="table table-hover align-middle mb-0">
+            <thead class="table-header-premium">
+                <tr>
+                    <th class="ps-4 py-3">ID</th>
+                    <th class="py-3">Invoice #</th>
+                    <th class="py-3">Date</th>
+                    <th class="py-3">Vendor</th>
+                    <th class="py-3">Tax Details</th>
+                    <th class="py-3">Amount</th>
+                    <th class="pe-4 py-3 text-end">Action</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for inv in invoices %}
+                <tr>
+                    <td class="ps-4 fw-medium" style="font-size: 0.82rem; color: #94a3b8;">#{{ inv.id }}</td>
+                    <td><span class="badge-invoice">{{ inv.invoice_number }}</span></td>
+                    <td style="font-size: 0.88rem; color: #475569;">{{ inv.invoice_date }}</td>
+                    <td class="fw-semibold" style="font-size: 0.9rem; color: #1e293b;">{{ inv.vendor_name }}</td>
+
+                    <td style="font-size: 0.85rem;">
+                        {% set cleaned_tax = inv.tax_display.replace('|','').replace('Item / Description','').replace('Qty','').replace('Unit Price','').replace('Amount','').strip() %}
+                        {% if "experiencing high global traffic" in cleaned_tax or "API Overloaded" in cleaned_tax or "ERROR-TEMP" in inv.invoice_number %}
+                        <span class="text-danger fw-semibold" style="font-size: 0.8rem;">⚠️ API Overloaded</span>
+                        {% elif "Unit Price" in cleaned_tax or "Description" in cleaned_tax or cleaned_tax == "" %}
+                        <span style="color: #94a3b8; font-size: 0.8rem;">No explicit tax listed.</span>
+                        {% else %}
+                        <span class="fw-semibold" style="color: #1e293b;">{{ cleaned_tax }}</span>
+                        {% endif %}
+                    </td>
+
+                    <td><span class="amount-display">${{ "%.2f"|format(inv.total_amount) }}</span></td>
+                    <td class="pe-4 text-end">
+                        <button class="btn btn-sm btn-primary px-3 py-1 fw-semibold" type="button"
+                            data-bs-toggle="collapse" data-bs-target="#details-{{ inv.id }}" style="font-size: 0.78rem; border-radius: 8px;">
+                            View Items ▾
+                        </button>
+                    </td>
+                </tr>
+
+                <!-- Expanded Item Details -->
+                <tr class="collapse expand-row" id="details-{{ inv.id }}">
+                    <td colspan="8" style="position: relative;">
+                        <div class="expand-indicator"></div>
+                        <div class="item-breakdown-card p-3 ms-3">
+                            <div class="d-flex justify-content-between align-items-center mb-3 pb-2" style="border-bottom: 1px solid #e2e8f0;">
+                                <span class="fw-bold" style="font-size: 0.82rem; color: #475569;">📌 Extracted Item Breakdown</span>
+                                <span class="font-monospace" style="font-size: 0.7rem; color: #94a3b8;">ID: #{{ inv.id }}</span>
+                            </div>
+
+                            <table class="table item-table mb-0 align-middle">
+                                <thead>
+                                    <tr>
+                                        <th>Item / Description</th>
+                                        <th style="width: 12%; text-align: center;">Qty</th>
+                                        <th style="width: 18%;">Unit Price</th>
+                                        <th style="width: 18%;">Amount</th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    {% if inv.is_modern_format %}
+                                        {% if inv.line_items %}
+                                            {% for item in inv.line_items %}
+                                            <tr>
+                                                <td class="fw-medium" style="color: #1e293b;">{{ item.description }}</td>
+                                                <td class="fw-bold text-center" style="color: #3b82f6;">{{ item.qty }}</td>
+                                                <td style="color: #475569;">${{ item.unit_price|replace('$','') }}</td>
+                                                <td class="fw-bold" style="color: #059669;">${{ item.amount|replace('$','') }}</td>
+                                            </tr>
+                                            {% endfor %}
+                                        {% else %}
+                                        <tr>
+                                            <td colspan="4" class="text-center py-3">
+                                                <div class="text-danger fw-bold mb-1" style="font-size: 0.85rem;">⚠️ Request Interrupted</div>
+                                                <div style="font-size: 0.78rem; color: #94a3b8;">No item data captured due to API availability issues.</div>
+                                            </td>
+                                        </tr>
+                                        {% endif %}
+                                    {% else %}
+                                    <tr>
+                                        <td colspan="4" class="text-center py-3">
+                                            <div class="fw-bold mb-1" style="color: #f59e0b; font-size: 0.85rem;">⚠️ Legacy Archive Mode</div>
+                                            <div style="font-size: 0.78rem; color: #94a3b8;">Re-upload invoice to generate item breakdown.</div>
+                                        </td>
+                                    </tr>
+                                    {% endif %}
+                                </tbody>
+                            </table>
+                        </div>
+                    </td>
+                </tr>
+                {% else %}
+                <tr>
+                    <td colspan="7" class="text-center py-5">
+                        <div style="font-size: 2rem; margin-bottom: 0.75rem;">📭</div>
+                        <h6 class="fw-semibold" style="color: #475569;">No invoice records found</h6>
+                        <p class="mb-0" style="font-size: 0.82rem; color: #94a3b8;">Upload an invoice to get started.</p>
+                    </td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+</div>
+{% endblock %}
