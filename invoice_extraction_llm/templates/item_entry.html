@@ -1,0 +1,362 @@
+<!DOCTYPE html>
+<script src="https://cdn.jsdelivr.net/npm/jsbarcode"></script>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>Invoice Item Entry</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            background: #f1f5f9;
+            margin: 0;
+        }
+
+        header {
+            background: #0f172a;
+            color: white;
+            padding: 15px 25px;
+            font-size: 20px;
+        }
+
+        .container {
+            max-width: 1200px;
+            margin: 20px auto;
+            background: white;
+            padding: 25px;
+            border-radius: 6px;
+            box-shadow: 0 2px 6px rgba(0,0,0,0.08);
+        }
+
+        h2 {
+            margin-top: 0;
+            color: #1e293b;
+        }
+
+        .form-row {
+            display: grid;
+            grid-template-columns: repeat(4, 1fr);
+            gap: 15px;
+            margin-bottom: 15px;
+        }
+
+        label {
+            font-size: 13px;
+            color: #334155;
+        }
+
+        input, select {
+            padding: 8px 10px;
+            border: 1px solid #cbd5e1;
+            border-radius: 4px;
+            font-size: 14px;
+            width: 100%;
+        }
+
+        .barcode {
+            border: 2px solid #0ea5e9;
+            background: #f0f9ff;
+        }
+
+        table {
+            width: 100%;
+            border-collapse: collapse;
+            margin-top: 15px;
+        }
+
+        th, td {
+            border-bottom: 1px solid #e5e7eb;
+            padding: 10px;
+            text-align: left;
+            font-size: 14px;
+        }
+
+        th {
+            background: #f8fafc;
+        }
+
+        .btn {
+            padding: 10px 16px;
+            border: none;
+            border-radius: 4px;
+            cursor: pointer;
+            font-size: 14px;
+        }
+
+        .btn-add {
+            background: #2563eb;
+            color: white;
+        }
+
+        .btn-save {
+            background: #16a34a;
+            color: white;
+            margin-top: 15px;
+        }
+
+        .right {
+            text-align: right;
+        }
+    </style>
+</head>
+
+<body>
+
+<header>
+    Invoice Item Entry (Barcode Enabled)
+</header>
+
+<div class="container">
+
+    <h2>Invoice Details</h2>
+
+<div>
+    <label><b>Upload Invoice (PDF/Image)</b></label>
+    <input type="file" id="invoiceFile" accept="application/pdf,image/*" hidden>
+    <button class="btn btn-add" id="uploadBtnTarget" onclick="document.getElementById('invoiceFile').click()">
+        Upload PDF
+    </button>
+    <span id="fileName" style="margin-left:10px;font-size:13px;color:#475569;"></span>
+</div>
+
+    <!-- Invoice Header -->
+    <div class="form-row">
+        <div>
+            <label>Invoice No</label>
+            <input type="text" id="invoiceNo">
+        </div>
+        <div>
+            <label>Invoice Date</label>
+            <input type="date" id="invoiceDate">
+        </div>
+        <div>
+            <label>Supplier</label>
+            <select id="supplierSelect">
+                <!-- AI dropdown items inserted dynamically into here -->
+                <option value="">Select Supplier</option>
+                <option value="ABC Metals">ABC Metals</option>
+                <option value="XYZ Bearings">XYZ Bearings</option>
+            </select>
+        </div>
+        <div>
+            <label>GRN No</label>
+            <input type="text" id="grnNo" placeholder="Auto">
+        </div>
+    </div>
+
+    <hr>
+
+    <!-- Item Table -->
+    <table>
+        <thead>
+            <tr>
+                <th>Barcode</th>
+				<th>Action</th>
+                <th>Item</th>
+                <th>Qty</th>
+                <th>Unit</th>
+                <th>Price</th>
+                <th>Tax</th>
+                <th>Total</th>
+            </tr>
+        </thead>
+        <tbody id="itemTableBody">
+            <!-- Table rows handled smoothly by JS so we can auto-inject the Gemini results-->
+        </tbody>
+    </table>
+
+    <div class="right">
+        <button class="btn btn-save" id="saveInvoiceBtn">Save Invoice</button>
+    </div>
+
+</div>
+
+<script>
+// Keep original barcode function from the client exactly as it was requested
+function generateBarcode(button) {
+    const row = button.closest("tr");
+    const barcodeValue = row.querySelector(".barcode-value").textContent;
+
+    // Get next row (barcode row)
+    let barcodeRow = row.nextElementSibling;
+
+    if (!barcodeRow || !barcodeRow.classList.contains("barcode-row")) {
+        barcodeRow = document.createElement("tr");
+        barcodeRow.className = "barcode-row";
+        barcodeRow.innerHTML = `
+            <td colspan="8">
+                <svg class="barcode"></svg>
+            </td>
+        `;
+        row.parentNode.insertBefore(barcodeRow, row.nextSibling);
+    }
+
+    barcodeRow.style.display = "table-row";
+
+    const svg = barcodeRow.querySelector("svg");
+
+    JsBarcode(svg, barcodeValue, {
+        format: "CODE128",
+        width: 2,
+        height: 40,
+        displayValue: true
+    });
+}
+
+// Intercept file upload and route it into the new powerful API
+document.getElementById('invoiceFile')?.addEventListener('change', async function() {
+    const file = this.files[0];
+    if(!file) return;
+
+    // Update UX
+    const fileNameSpan = document.getElementById('fileName');
+    fileNameSpan.textContent = 'Extracting AI Data... Please wait.';
+    fileNameSpan.style.color = '#2563eb';
+    fileNameSpan.style.fontWeight = 'bold';
+
+    const formData = new FormData();
+    formData.append('file', file);
+
+    try {
+        const res = await fetch('/api/extract', {
+            method: 'POST',
+            body: formData
+        });
+
+        if(!res.ok) {
+            throw new Error(`Server returned ${res.status}`);
+        }
+
+        const data = await res.json();
+
+        // 1. Fill Invoice Header Fields
+        document.getElementById('invoiceNo').value = data.invoice_number || '';
+        document.getElementById('invoiceDate').value = data.invoice_date || '';
+
+        // 2. Handle Supplier logic (add dynamic name as selected)
+        const supplierSelect = document.getElementById('supplierSelect');
+        if (data.vendor_name) {
+            const opt = document.createElement('option');
+            opt.value = data.vendor_name;
+            opt.textContent = data.vendor_name;
+            opt.selected = true;
+            supplierSelect.appendChild(opt);
+            supplierSelect.value = data.vendor_name;
+        }
+
+        // 3. Clear existing dummy values and auto-fill lines identically to the old structure
+        const tbody = document.getElementById('itemTableBody');
+        tbody.innerHTML = '';
+        
+        let taxValue = data.tax_amount_clean || '0%';
+
+        data.line_items.forEach((item, i) => {
+            const tr = document.createElement('tr');
+            tr.innerHTML = `
+                <td>
+                    <span class="barcode-value">${data.invoice_number}-${i+1}</span>
+                </td>
+                <td>
+                    <button class="btn btn-add" onclick="generateBarcode(this)">
+                        Generate Barcode
+                    </button>
+                </td>
+                <td class="itm-desc">${item.description}</td>
+                <td class="itm-qty">${item.qty}</td>
+                <td>Nos</td>
+                <td class="itm-price">${item.unit_price}</td>
+                <td>${taxValue}</td>
+                <td class="itm-amount">${item.amount}</td>
+                <td> <button class="btn btn-add" onclick="saveIndividualItem(this)">Add Item</button></td>
+            `;
+            tbody.appendChild(tr);
+        });
+
+        fileNameSpan.textContent = file.name + ' (Extracted!)';
+        fileNameSpan.style.color = '#16a34a';
+
+    } catch(err) {
+        fileNameSpan.textContent = err.message + ' (Failed to Extract)';
+        fileNameSpan.style.color = '#dc2626';
+    }
+});
+
+// Finalize to database smoothly matching original layout intent!
+document.getElementById('saveInvoiceBtn').addEventListener('click', async (e) => {
+    e.preventDefault();
+    const btn = document.getElementById('saveInvoiceBtn');
+    
+    // Construct database expected flat JSON matches `InvoiceExtractionSchema` for app.py processing
+    const invoice_number = document.getElementById('invoiceNo').value;
+    const invoice_date = document.getElementById('invoiceDate').value;
+    const vendor_name = document.getElementById('supplierSelect').value;
+
+    const items = [];
+    let absolute_total = 0;
+    
+    // ONLY collect data from rows the user purposefully clicked "Add Item" on
+    document.querySelectorAll('#itemTableBody tr.selected-item').forEach(row => {
+        const desc = row.querySelector('.itm-desc')?.textContent || '';
+        const qty = row.querySelector('.itm-qty')?.textContent || '0';
+        const price = row.querySelector('.itm-price')?.textContent || '0';
+        const amount = row.querySelector('.itm-amount')?.textContent || '0';
+        const unit = row.cells[4]?.textContent || 'Nos';
+        
+        // rudimentary extraction of money total
+        const nbr = parseFloat(amount.replace(/[^0-9.-]+/g,""));
+        if (!isNaN(nbr)) absolute_total += nbr;
+
+        items.push({description: desc, qty, unit: unit, unit_price: price, amount});
+    });
+
+    if (items.length === 0) {
+        alert("Please select at least one item by clicking 'Add Item' before saving the invoice!");
+        return;
+    }
+
+    const payload = {
+        invoice_number: invoice_number || 'N/A',
+        invoice_date: invoice_date || '1970-01-01',
+        vendor_name: vendor_name || 'N/A',
+        tax_amount_clean: "Auto",
+        line_items: items,
+        total_amount: absolute_total
+    };
+
+    btn.textContent = 'Saving...';
+    try {
+        const res = await fetch('/api/save', {
+            method: 'POST',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify(payload)
+        });
+        if(res.ok) {
+            btn.style.background = '#065f46';
+            btn.textContent = 'Saved Systematically!';
+            setTimeout(() => { window.location.href = '/'; }, 1500); 
+        } else {
+            throw new Error();
+        }
+    } catch {
+        btn.textContent = 'Failed';
+        btn.style.background = '#dc2626';
+    }
+});
+
+// Logic to let "Add Item" buttons select the specific row for saving
+function saveIndividualItem(button) {
+    const row = button.closest('tr');
+    
+    // Toggle state logic
+    if (row.classList.contains('selected-item')) {
+        row.classList.remove('selected-item');
+        button.textContent = 'Add Item';
+        button.style.background = '#2563eb'; // Blue
+    } else {
+        row.classList.add('selected-item');
+        button.textContent = 'Selected ✅';
+        button.style.background = '#059669'; // Success green
+    }
+}
+</script>
+</body>
+</html>
