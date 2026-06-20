@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<script src="https://cdn.jsdelivr.net/npm/jsbarcode"></script>
+<script src="https://cdn.jsdelivr.net/npm/jsbarcode@3.11.6/dist/JsBarcode.all.min.js"></script>
 <html lang="en">
 <head>
     <meta charset="UTF-8">
@@ -173,33 +173,45 @@
 <script>
 // Keep original barcode function from the client exactly as it was requested
 function generateBarcode(button) {
-    const row = button.closest("tr");
-    const barcodeValue = row.querySelector(".barcode-value").textContent;
 
-    // Get next row (barcode row)
+    const row = button.closest("tr");
+
+    const barcodeValue =
+        row.querySelector(".barcode-value").textContent.trim();
+
     let barcodeRow = row.nextElementSibling;
 
-    if (!barcodeRow || !barcodeRow.classList.contains("barcode-row")) {
+    if (
+        !barcodeRow ||
+        !barcodeRow.classList.contains("barcode-row")
+    ) {
+
         barcodeRow = document.createElement("tr");
+
         barcodeRow.className = "barcode-row";
+
         barcodeRow.innerHTML = `
-            <td colspan="8">
+            <td colspan="9" style="padding:15px;">
                 <svg class="barcode"></svg>
             </td>
         `;
-        row.parentNode.insertBefore(barcodeRow, row.nextSibling);
+
+        row.parentNode.insertBefore(
+            barcodeRow,
+            row.nextSibling
+        );
     }
 
-    barcodeRow.style.display = "table-row";
-
-    const svg = barcodeRow.querySelector("svg");
+    const svg = barcodeRow.querySelector(".barcode");
 
     JsBarcode(svg, barcodeValue, {
         format: "CODE128",
         width: 2,
-        height: 40,
+        height: 60,
         displayValue: true
     });
+
+    barcodeRow.style.display = "table-row";
 }
 
 // Intercept file upload and route it into the new powerful API
