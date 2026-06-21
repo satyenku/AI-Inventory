@@ -93,6 +93,15 @@
             margin-top: 15px;
         }
 
+        .btn-qc {
+    background: #059669; /* Green */
+    color: white;
+}
+
+.btn-qc:hover {
+    background: #047857;
+}
+
         .right {
             text-align: right;
         }
@@ -157,6 +166,8 @@
                 <th>Price</th>
                 <th>Tax</th>
                 <th>Total</th>
+                <th>Add Item</th>
+                <th>QC</th>
             </tr>
         </thead>
         <tbody id="itemTableBody">
@@ -279,6 +290,7 @@ document.getElementById('invoiceFile')?.addEventListener('change', async functio
                 <td>${taxValue}</td>
                 <td class="itm-amount">${item.amount}</td>
                 <td> <button class="btn btn-add" onclick="saveIndividualItem(this)">Add Item</button></td>
+                <td> <button class="btn btn-qc" onclick="performQC(this)">QC</button></td>
             `;
             tbody.appendChild(tr);
         });
@@ -368,6 +380,25 @@ function saveIndividualItem(button) {
         button.textContent = 'Selected ✅';
         button.style.background = '#059669'; // Success green
     }
+}
+
+function performQC(button) {
+    const row = button.closest('tr');
+
+    // Optional: get row details
+    const item = row.querySelector('.itm-desc').textContent;
+    const qty = row.querySelector('.itm-qty').textContent;
+
+    console.log("QC clicked for:", item);
+    console.log("Quantity:", qty);
+
+    alert(`QC clicked for ${item}`);
+
+    // Future enhancements:
+    // Open modal
+    // Navigate to QC page
+    // Show checklist
+    // Upload images
 }
 </script>
 </body>
