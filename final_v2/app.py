@@ -29,7 +29,7 @@ def parse_decimal(value, fallback=0.0):
     except ValueError:
         return fallback
 from config import Config
-from db_helpers import get_db_connection, log_stock_movement
+from db_helpers import get_db_connection, log_stock_movement, insert_product_property
 
 # Patch PIL font engine (if needed for older Pillow environments)
 from PIL import ImageFont
@@ -151,11 +151,35 @@ def product_master():
         description = request.form.get('description')
         
         try:
-            conn.execute("""
+            cur = conn.execute("""
                 INSERT INTO products 
                 (item_code, barcode, item_name, category, subcategory, unit, min_stock_level, max_stock_level, reorder_level, hsn_sac_code, storage_location, description)
                 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """, (item_code, item_code, item_name, category, subcategory, unit, min_stock, max_stock, reorder_level, hsn, location, description))
+            product_id = cur.lastrowid
+
+            # Persist any inspection properties supplied in the form
+            prop_names = request.form.getlist('property_name[]')
+            prop_mins = request.form.getlist('property_min[]')
+            prop_maxs = request.form.getlist('property_max[]')
+            prop_methods = request.form.getlist('property_method[]')
+
+            cursor = conn.cursor()
+            for idx, name in enumerate(prop_names):
+                name = (name or '').strip()
+                if not name:
+                    continue
+                try:
+                    min_val = float(prop_mins[idx]) if idx < len(prop_mins) and prop_mins[idx] not in (None, '') else None
+                except Exception:
+                    min_val = None
+                try:
+                    max_val = float(prop_maxs[idx]) if idx < len(prop_maxs) and prop_maxs[idx] not in (None, '') else None
+                except Exception:
+                    max_val = None
+                method = prop_methods[idx] if idx < len(prop_methods) else None
+                insert_product_property(cursor, product_id, name, min_val, max_val, method)
+
             conn.commit()
             ensure_barcode_asset_exists(item_code)
             flash("Product registered successfully!", "success")

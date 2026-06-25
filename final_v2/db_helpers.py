@@ -38,3 +38,25 @@ def log_stock_movement(cursor, product_id, movement_type, reference_table, refer
         INSERT INTO stock_ledger (product_id, movement_type, reference_table, reference_id, quantity_change, balance_after)
         VALUES (?, ?, ?, ?, ?, ?)
     """, (product_id, movement_type, reference_table, reference_id, quantity_change, new_balance))
+
+
+def get_product_properties(product_id):
+    """Return a list of property rows for a product."""
+    conn = get_db_connection()
+    try:
+        cur = conn.execute(
+            "SELECT id, property_name, min_value, max_value, method FROM product_properties WHERE product_id = ? ORDER BY id ASC",
+            (product_id,)
+        )
+        rows = cur.fetchall()
+        return rows
+    finally:
+        conn.close()
+
+
+def insert_product_property(cursor, product_id, name, min_value=None, max_value=None, method=None):
+    """Insert a single inspection property using provided cursor."""
+    cursor.execute(
+        "INSERT INTO product_properties (product_id, property_name, min_value, max_value, method) VALUES (?, ?, ?, ?, ?)",
+        (product_id, name, min_value, max_value, method)
+    )

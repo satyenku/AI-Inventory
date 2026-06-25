@@ -183,6 +183,21 @@ CREATE INDEX IF NOT EXISTS idx_invoices_number   ON invoices(invoice_number);
 CREATE INDEX IF NOT EXISTS idx_products_code     ON products(item_code);
 CREATE INDEX IF NOT EXISTS idx_products_barcode  ON products(barcode);
 CREATE INDEX IF NOT EXISTS idx_ledger_product    ON stock_ledger(product_id);
+
+-- ============================================================
+-- PRODUCT INSPECTION PROPERTIES
+-- ============================================================
+CREATE TABLE IF NOT EXISTS product_properties (
+    id              INTEGER PRIMARY KEY AUTOINCREMENT,
+    product_id      INTEGER NOT NULL REFERENCES products(id) ON DELETE CASCADE,
+    property_name   TEXT NOT NULL,
+    min_value       REAL,
+    max_value       REAL,
+    method          TEXT,
+    created_at      TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE INDEX IF NOT EXISTS idx_properties_product ON product_properties(product_id);
 """
 
 def init_db():

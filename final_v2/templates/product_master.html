@@ -207,6 +207,63 @@
               <label>Product Specifications/Description</label>
               <textarea rows="2" name="description"></textarea>
             </div>
+            <div class="form-group full-width">
+              <label>Inspection Properties (optional)</label>
+              <div id="properties-root">
+                <table
+                  id="properties-table"
+                  style="width: 100%; border-collapse: collapse"
+                >
+                  <thead>
+                    <tr>
+                      <th style="text-align: left; padding: 6px">Property</th>
+                      <th style="text-align: left; padding: 6px">Min</th>
+                      <th style="text-align: left; padding: 6px">Max</th>
+                      <th style="text-align: left; padding: 6px">Method</th>
+                      <th style="padding: 6px"></th>
+                    </tr>
+                  </thead>
+                  <tbody id="properties-body">
+                    <tr>
+                      <td>
+                        <input
+                          type="text"
+                          name="property_name[]"
+                          placeholder="e.g. OD"
+                        />
+                      </td>
+                      <td>
+                        <input type="number" step="any" name="property_min[]" />
+                      </td>
+                      <td>
+                        <input type="number" step="any" name="property_max[]" />
+                      </td>
+                      <td>
+                        <input
+                          type="text"
+                          name="property_method[]"
+                          placeholder="e.g. Vernier"
+                        />
+                      </td>
+                      <td>
+                        <button
+                          type="button"
+                          class="btn-remove"
+                          onclick="removePropertyRow(this)"
+                        >
+                          Remove
+                        </button>
+                      </td>
+                    </tr>
+                  </tbody>
+                </table>
+                <div style="margin-top: 8px; text-align: right">
+                  <button type="button" onclick="addPropertyRow()">
+                    + Add Property
+                  </button>
+                </div>
+              </div>
+            </div>
           </div>
           <div class="actions">
             <button type="reset" class="btn-reset">Clear</button>
@@ -237,7 +294,14 @@
               <td>{{ product.unit }}</td>
               <td>
                 {% if product.barcode %}
-                <span style="font-size: 12px; font-family: monospace; color: #334155">{{ product.barcode }}</span>
+                <span
+                  style="
+                    font-size: 12px;
+                    font-family: monospace;
+                    color: #334155;
+                  "
+                  >{{ product.barcode }}</span
+                >
                 {% else %}
                 <span style="color: #94a3b8">No barcode</span>
                 {% endif %}
@@ -250,5 +314,24 @@
         </table>
       </div>
     </div>
+    <script>
+      function addPropertyRow() {
+        const tbody = document.getElementById("properties-body");
+        const tr = document.createElement("tr");
+        tr.innerHTML = `
+          <td><input type="text" name="property_name[]" placeholder="e.g. OD"/></td>
+          <td><input type="number" step="any" name="property_min[]"/></td>
+          <td><input type="number" step="any" name="property_max[]"/></td>
+          <td><input type="text" name="property_method[]" placeholder="e.g. Vernier"/></td>
+          <td><button type="button" class="btn-remove" onclick="removePropertyRow(this)">Remove</button></td>
+        `;
+        tbody.appendChild(tr);
+      }
+
+      function removePropertyRow(btn) {
+        const tr = btn.closest("tr");
+        if (tr) tr.remove();
+      }
+    </script>
   </body>
 </html>
