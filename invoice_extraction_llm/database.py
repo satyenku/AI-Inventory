@@ -16,6 +16,7 @@ def init_db():
                 file_path TEXT,
                 extracted_at TEXT
             )
+
         ''')
         conn.commit()
 
