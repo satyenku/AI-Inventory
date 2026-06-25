@@ -1,0 +1,254 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <title>Product Master Entry</title>
+    <style>
+      body {
+        margin: 0;
+        font-family: Arial, sans-serif;
+        background: #f1f5f9;
+        display: flex;
+      }
+      .sidebar {
+        width: 240px;
+        background: #0f172a;
+        color: #fff;
+        min-height: 100vh;
+        padding-top: 20px;
+      }
+      .sidebar h2 {
+        text-align: center;
+        margin-bottom: 20px;
+        font-size: 20px;
+      }
+      .sidebar a {
+        display: block;
+        padding: 12px 20px;
+        color: #cbd5e1;
+        text-decoration: none;
+        font-size: 15px;
+      }
+      .sidebar a:hover {
+        background: #1e293b;
+        color: #fff;
+      }
+      .main {
+        flex: 1;
+        padding: 25px;
+      }
+      .container {
+        background: white;
+        padding: 25px;
+        border-radius: 6px;
+        box-shadow: 0 2px 6px rgba(0, 0, 0, 0.08);
+        margin-bottom: 25px;
+      }
+      h2 {
+        margin-top: 0;
+        color: #1e293b;
+      }
+      .form-grid {
+        display: grid;
+        grid-template-columns: repeat(3, 1fr);
+        gap: 20px;
+      }
+      .form-group {
+        display: flex;
+        flex-direction: column;
+      }
+      label {
+        font-size: 14px;
+        margin-bottom: 5px;
+        color: #334155;
+      }
+      input,
+      select,
+      textarea {
+        padding: 8px 10px;
+        font-size: 14px;
+        border: 1px solid #cbd5e1;
+        border-radius: 4px;
+      }
+      .full-width {
+        grid-column: span 3;
+      }
+      .actions {
+        margin-top: 25px;
+        text-align: right;
+      }
+      button {
+        padding: 10px 16px;
+        border: none;
+        border-radius: 4px;
+        font-size: 14px;
+        cursor: pointer;
+      }
+      .btn-save {
+        background: #16a34a;
+        color: white;
+      }
+      .btn-reset {
+        background: #e5e7eb;
+        margin-right: 10px;
+      }
+      table {
+        width: 100%;
+        border-collapse: collapse;
+        margin-top: 20px;
+      }
+      th,
+      td {
+        padding: 12px;
+        border-bottom: 1px solid #e5e7eb;
+        text-align: left;
+        font-size: 13px;
+      }
+      th {
+        background: #f8fafc;
+      }
+    </style>
+  </head>
+  <body>
+    <div class="sidebar">
+      <h2>Inventory</h2>
+      <a href="{{ url_for('dashboard') }}">📊 Dashboard</a>
+      <a href="{{ url_for('product_master') }}">📦 Product Master</a>
+      <a href="{{ url_for('item_issue') }}">🧾 Item Issue</a>
+      <a href="{{ url_for('item_entry') }}">🧾 Item Entry</a>
+      <a href="{{ url_for('inventory_status') }}">📈 Inventory Status</a>
+      <a href="{{ url_for('inventory_return') }}">📈 Return Inventory</a>
+      <a href="{{ url_for('supplier_management') }}">👥 Suppliers</a>
+      <a href="{{ url_for('user_management') }}">👤 Users</a>
+      <a href="{{ url_for('logout') }}" style="color: #ef4444">🚪 Sign Out</a>
+    </div>
+    <div class="main">
+      <div class="container">
+        <h2>Add New Catalog Product</h2>
+        {% with messages = get_flashed_messages(with_categories=true) %} {% if
+        messages %} {% for category, message in messages %}
+        <p
+          style="color: {% if category=='error' %}#dc2626{% else %}#16a34a{% endif %}; font-weight: bold; font-size: 14px;"
+        >
+          {{ message }}
+        </p>
+        {% endfor %} {% endif %} {% endwith %}
+        <form action="{{ url_for('product_master') }}" method="POST">
+          <div class="form-grid">
+            <div class="form-group">
+              <label>Item Code (SKU)</label>
+              <input
+                type="text"
+                name="item_code"
+                placeholder="e.g. RM-5022"
+                required
+              />
+            </div>
+            <div class="form-group">
+              <label>Item Name</label>
+              <input
+                type="text"
+                name="item_name"
+                placeholder="e.g. Steel Rod 12mm"
+                required
+              />
+            </div>
+            <div class="form-group">
+              <label>Item Category</label>
+              <select name="category">
+                <option value="Raw Material">Raw Material</option>
+                <option value="WIP">WIP</option>
+                <option value="Finished Goods">Finished Goods</option>
+                <option value="Spare Parts">Spare Parts</option>
+              </select>
+            </div>
+            <div class="form-group">
+              <label>Subcategory</label>
+              <input
+                type="text"
+                name="subcategory"
+                placeholder="e.g. Metal Alloy"
+              />
+            </div>
+            <div class="form-group">
+              <label>Unit of Measure</label>
+              <select name="unit">
+                <option value="Nos">Nos</option>
+                <option value="Kg">Kg</option>
+                <option value="Meters">Meters</option>
+                <option value="Liters">Liters</option>
+              </select>
+            </div>
+            <div class="form-group">
+              <label>Minimum Stock Threshold</label>
+              <input type="number" name="min_stock_level" value="0" />
+            </div>
+            <div class="form-group">
+              <label>Maximum Allowed Stock</label>
+              <input type="number" name="max_stock_level" value="0" />
+            </div>
+            <div class="form-group">
+              <label>Reorder Limit Level</label>
+              <input type="number" name="reorder_level" value="0" />
+            </div>
+            <div class="form-group">
+              <label>HSN / SAC Code</label>
+              <input type="text" name="hsn_sac_code" />
+            </div>
+            <div class="form-group">
+              <label>Physical Storage Area</label>
+              <input
+                type="text"
+                name="storage_location"
+                placeholder="e.g. Rack A / Shelf 3"
+              />
+            </div>
+            <div class="form-group full-width">
+              <label>Product Specifications/Description</label>
+              <textarea rows="2" name="description"></textarea>
+            </div>
+          </div>
+          <div class="actions">
+            <button type="reset" class="btn-reset">Clear</button>
+            <button type="submit" class="btn-save">Register Product</button>
+          </div>
+        </form>
+      </div>
+      <div class="container">
+        <h2>Registered Product Index</h2>
+        <table>
+          <thead>
+            <tr>
+              <th>Item Code</th>
+              <th>Item Name</th>
+              <th>Category</th>
+              <th>Unit</th>
+              <th>Barcode</th>
+              <th>Warehouse Position</th>
+              <th>Running Stock Balance</th>
+            </tr>
+          </thead>
+          <tbody>
+            {% for product in products %}
+            <tr>
+              <td><strong>{{ product.item_code }}</strong></td>
+              <td>{{ product.item_name }}</td>
+              <td>{{ product.category }}</td>
+              <td>{{ product.unit }}</td>
+              <td>
+                {% if product.barcode %}
+                <span style="font-size: 12px; font-family: monospace; color: #334155">{{ product.barcode }}</span>
+                {% else %}
+                <span style="color: #94a3b8">No barcode</span>
+                {% endif %}
+              </td>
+              <td>{{ product.storage_location or 'Unassigned' }}</td>
+              <td>{{ product.current_stock }}</td>
+            </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  </body>
+</html>

@@ -1,0 +1,189 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <title>User Management</title>
+    <style>
+      body { margin: 0; font-family: Arial, sans-serif; background: #f1f5f9; display: flex; }
+      .sidebar { width: 240px; background: #0f172a; color: #fff; min-height: 100vh; padding-top: 20px; }
+      .sidebar h2 { text-align: center; margin-bottom: 20px; font-size: 20px; }
+      .sidebar a { display: block; padding: 12px 20px; color: #cbd5e1; text-decoration: none; font-size: 15px; }
+      .sidebar a:hover { background: #1e293b; color: #fff; }
+      .main { flex: 1; padding: 25px; }
+      .container { background: white; padding: 25px; border-radius: 6px; box-shadow: 0 2px 6px rgba(0,0,0,0.08); margin-bottom: 25px; }
+      h2 { margin-top: 0; color: #1e293b; }
+      .form-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 15px; }
+      .form-group { display: flex; flex-direction: column; }
+      label { font-size: 13px; color: #475569; margin-bottom: 5px; }
+      input, select { padding: 8px 10px; font-size: 14px; border: 1px solid #cbd5e1; border-radius: 4px; }
+      .btn { padding: 9px 16px; border: none; border-radius: 4px; cursor: pointer; font-size: 13px; font-weight: bold; }
+      .btn-add    { background: #2563eb; color: white; margin-top: 15px; }
+      .btn-danger { background: #dc2626; color: white; }
+      .btn-warn   { background: #f59e0b; color: white; }
+      .btn-sm     { padding: 5px 10px; font-size: 12px; }
+      table { width: 100%; border-collapse: collapse; margin-top: 20px; }
+      th, td { padding: 11px 12px; border-bottom: 1px solid #e5e7eb; font-size: 13px; text-align: left; }
+      th { background: #f8fafc; }
+      .badge { display:inline-block; padding:3px 8px; border-radius:4px; font-size:11px; font-weight:bold; }
+      .badge-admin  { background:#dbeafe; color:#1d4ed8; }
+      .badge-staff  { background:#dcfce7; color:#15803d; }
+      .badge-viewer { background:#f3f4f6; color:#374151; }
+      .badge-active   { background:#dcfce7; color:#15803d; }
+      .badge-inactive { background:#fee2e2; color:#991b1b; }
+      .flash-ok  { color:#16a34a; font-weight:bold; font-size:14px; margin-bottom:12px; }
+      .flash-err { color:#dc2626; font-weight:bold; font-size:14px; margin-bottom:12px; }
+      .modal-overlay { display:none; position:fixed; inset:0; background:rgba(0,0,0,0.4); z-index:999; align-items:center; justify-content:center; }
+      .modal-overlay.open { display:flex; }
+      .modal-box { background:white; border-radius:8px; padding:24px; width:340px; box-shadow:0 8px 32px rgba(0,0,0,0.2); }
+      .modal-box h3 { margin-top:0; margin-bottom:16px; }
+      .modal-actions { display:flex; gap:10px; margin-top:16px; justify-content:flex-end; }
+    </style>
+  </head>
+  <body>
+    <div class="sidebar">
+      <h2>Inventory</h2>
+      <a href="{{ url_for('dashboard') }}">📊 Dashboard</a>
+      <a href="{{ url_for('product_master') }}">📦 Product Master</a>
+      <a href="{{ url_for('item_issue') }}">🧾 Item Issue</a>
+      <a href="{{ url_for('item_entry') }}">🧾 Item Entry</a>
+      <a href="{{ url_for('inventory_status') }}">📈 Inventory Status</a>
+      <a href="{{ url_for('inventory_return') }}">📈 Return Inventory</a>
+      <a href="{{ url_for('supplier_management') }}">👥 Suppliers</a>
+      <a href="{{ url_for('user_management') }}" style="background:#1e293b; color:#fff;">👤 Users</a>
+      <a href="{{ url_for('logout') }}" style="color: #ef4444">🚪 Sign Out</a>
+    </div>
+
+    <!-- Reset password modal -->
+    <div class="modal-overlay" id="resetModal">
+      <div class="modal-box">
+        <h3>Reset Password</h3>
+        <form action="{{ url_for('user_management') }}" method="POST">
+          <input type="hidden" name="action" value="reset_password">
+          <input type="hidden" name="user_id" id="resetUserId">
+          <div class="form-group" style="margin-bottom:14px;">
+            <label>New Password</label>
+            <input type="text" name="new_password" id="newPasswordInput" required placeholder="Enter new password">
+          </div>
+          <div class="modal-actions">
+            <button type="button" class="btn" style="background:#e5e7eb;" onclick="closeResetModal()">Cancel</button>
+            <button type="submit" class="btn btn-add">Save Password</button>
+          </div>
+        </form>
+      </div>
+    </div>
+
+    <div class="main">
+      <div class="container">
+        <h2>👤 Add New User</h2>
+        {% with messages = get_flashed_messages(with_categories=true) %}
+          {% for category, message in messages %}
+            <p class="{{ 'flash-ok' if category == 'success' else 'flash-err' }}">{{ message }}</p>
+          {% endfor %}
+        {% endwith %}
+        <form action="{{ url_for('user_management') }}" method="POST">
+          <input type="hidden" name="action" value="add">
+          <div class="form-grid">
+            <div class="form-group">
+              <label>Username *</label>
+              <input type="text" name="username" placeholder="e.g. jdoe" required>
+            </div>
+            <div class="form-group">
+              <label>Password *</label>
+              <input type="text" name="password" placeholder="Enter password" required>
+            </div>
+            <div class="form-group">
+              <label>Full Name</label>
+              <input type="text" name="full_name" placeholder="e.g. John Doe">
+            </div>
+            <div class="form-group">
+              <label>Role</label>
+              <select name="role">
+                <option value="staff">Staff</option>
+                <option value="admin">Admin</option>
+                <option value="viewer">Viewer</option>
+              </select>
+            </div>
+          </div>
+          <button type="submit" class="btn btn-add">Create User</button>
+        </form>
+      </div>
+
+      <div class="container">
+        <h2>All System Users</h2>
+        <table>
+          <thead>
+            <tr>
+              <th>Username</th>
+              <th>Full Name</th>
+              <th>Role</th>
+              <th>Status</th>
+              <th>Created</th>
+              <th>Actions</th>
+            </tr>
+          </thead>
+          <tbody>
+            {% for user in users %}
+            <tr>
+              <td><strong>{{ user.username }}</strong></td>
+              <td>{{ user.full_name or '—' }}</td>
+              <td>
+                <span class="badge badge-{{ user.role }}">{{ user.role }}</span>
+              </td>
+              <td>
+                <span class="badge {{ 'badge-active' if user.is_active else 'badge-inactive' }}">
+                  {{ 'Active' if user.is_active else 'Inactive' }}
+                </span>
+              </td>
+              <td style="font-size:12px; color:#475569;">
+                {{ user.created_at[:10] if user.created_at else '—' }}
+              </td>
+              <td style="display:flex; gap:8px; flex-wrap:wrap;">
+                <!-- Toggle active/inactive -->
+                <form action="{{ url_for('user_management') }}" method="POST" style="display:inline;">
+                  <input type="hidden" name="action" value="toggle">
+                  <input type="hidden" name="user_id" value="{{ user.id }}">
+                  <button type="submit" class="btn btn-warn btn-sm">
+                    {{ 'Deactivate' if user.is_active else 'Activate' }}
+                  </button>
+                </form>
+                <!-- Reset password -->
+                <button class="btn btn-sm" style="background:#0f172a; color:white;"
+                        onclick="openResetModal({{ user.id }})">
+                  Reset Pwd
+                </button>
+                <!-- Delete -->
+                <form action="{{ url_for('user_management') }}" method="POST" style="display:inline;"
+                      onsubmit="return confirm('Delete user {{ user.username }}? This cannot be undone.');">
+                  <input type="hidden" name="action" value="delete">
+                  <input type="hidden" name="user_id" value="{{ user.id }}">
+                  <button type="submit" class="btn btn-danger btn-sm">Delete</button>
+                </form>
+              </td>
+            </tr>
+            {% else %}
+            <tr>
+              <td colspan="6" style="text-align:center; color:#94a3b8;">
+                No users found in the database.
+              </td>
+            </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+    </div>
+
+    <script>
+      function openResetModal(userId) {
+        document.getElementById('resetUserId').value = userId;
+        document.getElementById('newPasswordInput').value = '';
+        document.getElementById('resetModal').classList.add('open');
+      }
+      function closeResetModal() {
+        document.getElementById('resetModal').classList.remove('open');
+      }
+      document.getElementById('resetModal').addEventListener('click', function(e) {
+        if (e.target === this) closeResetModal();
+      });
+    </script>
+  </body>
+</html>

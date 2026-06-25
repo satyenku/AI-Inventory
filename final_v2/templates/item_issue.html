@@ -1,0 +1,234 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <title>Stock Dispatch Issue</title>
+    <style>
+      body {
+        margin: 0;
+        font-family: Arial, sans-serif;
+        background: #f1f5f9;
+        display: flex;
+      }
+      .sidebar {
+        width: 240px;
+        background: #0f172a;
+        color: #fff;
+        min-height: 100vh;
+        padding-top: 20px;
+      }
+      .sidebar h2 {
+        text-align: center;
+        margin-bottom: 20px;
+        font-size: 20px;
+      }
+      .sidebar a {
+        display: block;
+        padding: 12px 20px;
+        color: #cbd5e1;
+        text-decoration: none;
+        font-size: 15px;
+      }
+      .sidebar a:hover {
+        background: #1e293b;
+        color: #fff;
+      }
+      .main {
+        flex: 1;
+        padding: 25px;
+      }
+      .container {
+        background: white;
+        padding: 25px;
+        border-radius: 6px;
+        box-shadow: 0 2px 6px rgba(0, 0, 0, 0.08);
+      }
+      h2 {
+        margin-top: 0;
+        color: #1e293b;
+      }
+      .form-row {
+        display: grid;
+        grid-template-columns: repeat(4, 1fr);
+        gap: 15px;
+        margin-bottom: 15px;
+      }
+      label {
+        font-size: 13px;
+        color: #334155;
+      }
+      input,
+      select {
+        padding: 8px 10px;
+        border: 1px solid #cbd5e1;
+        border-radius: 4px;
+        font-size: 14px;
+        width: 100%;
+        box-sizing: border-box;
+      }
+      button {
+        padding: 10px 16px;
+        background: #dc2626;
+        color: white;
+        border: none;
+        border-radius: 4px;
+        cursor: pointer;
+        font-size: 14px;
+        font-weight: bold;
+      }
+      button:hover {
+        background: #b91c1c;
+      }
+    </style>
+  </head>
+  <body>
+    <div class="sidebar">
+      <h2>Inventory</h2>
+      <a href="{{ url_for('dashboard') }}">📊 Dashboard</a>
+      <a href="{{ url_for('product_master') }}">📦 Product Master</a>
+      <a href="{{ url_for('item_issue') }}">🧾 Item Issue</a>
+      <a href="{{ url_for('item_entry') }}">🧾 Item Entry</a>
+      <a href="{{ url_for('inventory_status') }}">📈 Inventory Status</a>
+      <a href="{{ url_for('inventory_return') }}">📈 Return Inventory</a>
+      <a href="{{ url_for('supplier_management') }}">👥 Suppliers</a>
+      <a href="{{ url_for('user_management') }}">👤 Users</a>
+      <a href="{{ url_for('logout') }}" style="color: #ef4444">🚪 Sign Out</a>
+    </div>
+    <div class="main">
+      <div class="container">
+        <h2>Record Store Dispatch / Issue Out</h2>
+        {% with messages = get_flashed_messages(with_categories=true) %} {% if
+        messages %} {% for category, message in messages %}
+        <p
+          style="color: {% if category=='error' %}#dc2626{% else %}#16a34a{% endif %}; font-weight: bold; font-size: 14px;"
+        >
+          {{ message }}
+        </p>
+        {% endfor %} {% endif %} {% endwith %}
+        <form action="{{ url_for('item_issue') }}" method="POST">
+          <div class="form-row">
+            <div>
+              <label>Issue Slip Number</label>
+              <input
+                type="text"
+                name="issue_slip_no"
+                placeholder="e.g. SLIP-9921"
+                required
+              />
+            </div>
+            <div>
+              <label>Issue Date</label>
+              <input type="date" name="issue_date" required />
+            </div>
+            <div>
+              <label>Requesting Unit / Dept</label>
+              <input
+                type="text"
+                name="issued_to"
+                placeholder="e.g. Production Floor B"
+                required
+              />
+            </div>
+            <div>
+              <label>Work Order Ref Number</label>
+              <input
+                type="text"
+                name="work_order_no"
+                placeholder="e.g. WO-8812"
+              />
+            </div>
+          </div>
+          <hr
+            style="border: 0; border-top: 1px solid #cbd5e1; margin: 20px 0"
+          />
+          <div class="form-row">
+            <div style="grid-column: span 2">
+              <label>Target Product</label>
+              <select name="product_id" id="productSelect" required>
+                {% for p in products %}
+                <option value="{{ p.id }}" data-barcode="{{ p.barcode or '' }}">
+                  {{ p.item_code }} - {{ p.item_name }} (Avail: {{
+                  p.current_stock }})
+                </option>
+                {% endfor %}
+              </select>
+              <div
+                id="barcodePreviewContainer"
+                style="
+                  margin-top: 12px;
+                  display: flex;
+                  align-items: center;
+                  gap: 12px;
+                "
+              >
+                <img
+                  id="barcodePreview"
+                  src=""
+                  alt="Product barcode"
+                  style="
+                    max-height: 80px;
+                    display: none;
+                    border: 1px solid #e5e7eb;
+                    padding: 8px;
+                    background: #fff;
+                  "
+                />
+                <p
+                  id="barcodePreviewLabel"
+                  style="font-size: 12px; color: #475569; margin: 0"
+                ></p>
+              </div>
+            </div>
+            <div>
+              <label>Dispatched Issue Qty</label>
+              <input type="number" name="qty" placeholder="e.g. 50" required />
+            </div>
+            <div style="align-self: end">
+              <button type="submit">Execute Dispatch</button>
+            </div>
+          </div>
+        </form>
+      </div>
+    </div>
+    <script>
+      function updateBarcodePreview(selectId, imgId, labelId) {
+        const select = document.getElementById(selectId);
+        const image = document.getElementById(imgId);
+        const label = document.getElementById(labelId);
+        if (!select || !image || !label) return;
+
+        const barcode = select.selectedOptions[0]?.dataset?.barcode || "";
+        if (barcode) {
+          image.src = `/static/barcodes/${barcode}.png`;
+          image.style.display = "block";
+          image.onerror = function () {
+            image.style.display = "none";
+            label.textContent = "Barcode image unavailable";
+          };
+          label.textContent = `Barcode: ${barcode}`;
+        } else {
+          image.style.display = "none";
+          label.textContent = "No barcode available for this product.";
+        }
+      }
+
+      document.addEventListener("DOMContentLoaded", function () {
+        const select = document.getElementById("productSelect");
+        if (select) {
+          updateBarcodePreview(
+            "productSelect",
+            "barcodePreview",
+            "barcodePreviewLabel",
+          );
+          select.addEventListener("change", function () {
+            updateBarcodePreview(
+              "productSelect",
+              "barcodePreview",
+              "barcodePreviewLabel",
+            );
+          });
+        }
+      });
+    </script>
+  </body>
+</html>

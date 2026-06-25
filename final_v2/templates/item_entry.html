@@ -1,0 +1,314 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <title>Invoice Item Entry (GRN)</title>
+    <style>
+      body {
+        margin: 0;
+        font-family: Arial, sans-serif;
+        background: #f1f5f9;
+        display: flex;
+      }
+      .sidebar {
+        width: 240px;
+        background: #0f172a;
+        color: #fff;
+        min-height: 100vh;
+        padding-top: 20px;
+      }
+      .sidebar h2 {
+        text-align: center;
+        margin-bottom: 20px;
+        font-size: 20px;
+      }
+      .sidebar a {
+        display: block;
+        padding: 12px 20px;
+        color: #cbd5e1;
+        text-decoration: none;
+        font-size: 15px;
+      }
+      .sidebar a:hover {
+        background: #1e293b;
+        color: #fff;
+      }
+      .main {
+        flex: 1;
+        padding: 25px;
+      }
+      .container {
+        background: white;
+        padding: 25px;
+        border-radius: 6px;
+        box-shadow: 0 2px 6px rgba(0, 0, 0, 0.08);
+      }
+      h2 {
+        margin-top: 0;
+        color: #1e293b;
+      }
+      .form-row {
+        display: grid;
+        grid-template-columns: repeat(4, 1fr);
+        gap: 15px;
+        margin-bottom: 15px;
+      }
+      label {
+        font-size: 13px;
+        color: #334155;
+      }
+      input,
+      select {
+        padding: 8px 10px;
+        border: 1px solid #cbd5e1;
+        border-radius: 4px;
+        font-size: 14px;
+        width: 100%;
+        box-sizing: border-box;
+      }
+      table {
+        width: 100%;
+        border-collapse: collapse;
+        margin-top: 15px;
+      }
+      th,
+      td {
+        border-bottom: 1px solid #e5e7eb;
+        padding: 10px;
+        text-align: left;
+        font-size: 14px;
+      }
+      th {
+        background: #f8fafc;
+      }
+      .btn {
+        padding: 10px 16px;
+        border: none;
+        border-radius: 4px;
+        cursor: pointer;
+        font-size: 14px;
+        font-weight: bold;
+      }
+      .btn-add {
+        background: #2563eb;
+        color: white;
+      }
+      .btn-save {
+        background: #16a34a;
+        color: white;
+        margin-top: 15px;
+      }
+      .right {
+        text-align: right;
+      }
+      .loading {
+        display: none;
+        color: #2563eb;
+        font-weight: bold;
+        margin-top: 10px;
+      }
+    </style>
+  </head>
+  <body>
+    <div class="sidebar">
+      <h2>Inventory</h2>
+      <a href="{{ url_for('dashboard') }}">📊 Dashboard</a>
+      <a href="{{ url_for('product_master') }}">📦 Product Master</a>
+      <a href="{{ url_for('item_issue') }}">🧾 Item Issue</a>
+      <a href="{{ url_for('item_entry') }}">🧾 Item Entry</a>
+      <a href="{{ url_for('inventory_status') }}">📈 Inventory Status</a>
+      <a href="{{ url_for('inventory_return') }}">📈 Return Inventory</a>
+      <a href="{{ url_for('supplier_management') }}">👥 Suppliers</a>
+      <a href="{{ url_for('user_management') }}">👤 Users</a>
+      <a href="{{ url_for('logout') }}" style="color: #ef4444">🚪 Sign Out</a>
+    </div>
+    <div class="main">
+      <div class="container">
+        <h2>Goods Receipt Note (GRN) via AI Invoice Extractor</h2>
+        <div
+          style="
+            margin-bottom: 25px;
+            background: #f8fafc;
+            padding: 15px;
+            border-radius: 6px;
+            border: 1px dashed #cbd5e1;
+          "
+        >
+          <label style="font-weight: bold; display: block; margin-bottom: 8px"
+            >Upload Scanned Purchase Invoice (PDF)</label
+          >
+          <input type="file" id="invoiceFile" accept="application/pdf" />
+          <button
+            class="btn btn-add"
+            style="margin-top: 10px"
+            onclick="uploadAndExtract()"
+          >
+            Process Invoice
+          </button>
+          <span id="loadingMsg" class="loading"
+            >Parsing document, extracting values...</span
+          >
+        </div>
+        <div class="form-row">
+          <div>
+            <label>Invoice Number</label>
+            <input type="text" id="invoice_number" />
+          </div>
+          <div>
+            <label>Invoice Billing Date</label>
+            <input type="date" id="invoice_date" />
+          </div>
+          <div>
+            <label>Detected Vendor</label>
+            <input type="text" id="vendor_name" />
+          </div>
+          <div>
+            <label>Total Invoice Value</label>
+            <input type="number" step="0.01" id="total_amount" />
+          </div>
+        </div>
+        <hr style="border: 0; border-top: 1px solid #cbd5e1; margin: 20px 0" />
+        <h2>Line Items Inventory Register</h2>
+        <table id="itemTable">
+          <thead>
+            <tr>
+              <th>Line Item Name</th>
+              <th>Qty</th>
+              <th>Unit Price</th>
+              <th>Subtotal Amount</th>
+            </tr>
+          </thead>
+          <tbody id="lineItemsBody">
+            <tr>
+              <td colspan="4" style="text-align: center; color: #94a3b8">
+                No lines extracted. Upload document above.
+              </td>
+            </tr>
+          </tbody>
+        </table>
+        <div class="right" style="margin-top: 15px">
+          <button class="btn btn-save" onclick="saveInvoiceToDB()">
+            Confirm and Post GRN
+          </button>
+        </div>
+
+        <!-- Barcode strip shown after successful save -->
+        <div id="barcodeStrip" style="display:none; margin-top:25px; background:#f8fafc; border:1px solid #cbd5e1; border-radius:6px; padding:20px;">
+          <h2 style="margin-top:0; color:#1e293b; font-size:16px;">📦 GRN Barcodes — Print &amp; Attach to Items</h2>
+          <p style="font-size:13px; color:#475569; margin-bottom:16px;">Each barcode below is unique to this receipt. Scan to identify the item for returns or tracking.</p>
+          <div id="barcodeCards" style="display:flex; flex-wrap:wrap; gap:16px;"></div>
+          <div style="margin-top:16px;">
+            <button class="btn btn-add" onclick="window.print()" style="background:#0f172a;">🖨 Print Barcodes</button>
+          </div>
+        </div>
+      </div>
+    </div>
+    <script>
+      let extractedPayload = null;
+
+      function uploadAndExtract() {
+        const fileInput = document.getElementById("invoiceFile");
+        if (fileInput.files.length === 0) {
+          alert("Please select a file to process.");
+          return;
+        }
+        const formData = new FormData();
+        formData.append("file", fileInput.files[0]);
+
+        document.getElementById("loadingMsg").style.display = "inline";
+
+        fetch("/api/extract", {
+          method: "POST",
+          body: formData,
+        })
+          .then((res) => res.json())
+          .then((data) => {
+            document.getElementById("loadingMsg").style.display = "none";
+            if (data.error) {
+              alert("Error: " + data.error);
+              return;
+            }
+            extractedPayload = data;
+            document.getElementById("invoice_number").value =
+              data.invoice_number;
+            document.getElementById("invoice_date").value = data.invoice_date;
+            document.getElementById("vendor_name").value = data.vendor_name;
+            document.getElementById("total_amount").value = data.total_amount;
+
+            const body = document.getElementById("lineItemsBody");
+            body.innerHTML = "";
+            data.line_items.forEach((item) => {
+              const row = document.createElement("tr");
+              row.innerHTML = `
+            <td><strong>${item.description}</strong></td>
+            <td>${item.qty}</td>
+            <td>${item.unit_price}</td>
+            <td>${item.amount}</td>
+          `;
+              body.appendChild(row);
+            });
+          })
+          .catch((err) => {
+            document.getElementById("loadingMsg").style.display = "none";
+            alert("Extraction request failed.");
+          });
+      }
+
+      function saveInvoiceToDB() {
+        if (!extractedPayload) {
+          alert("No parsed content exists to commit.");
+          return;
+        }
+
+        extractedPayload.invoice_number =
+          document.getElementById("invoice_number").value;
+        extractedPayload.invoice_date =
+          document.getElementById("invoice_date").value;
+        extractedPayload.vendor_name =
+          document.getElementById("vendor_name").value;
+        extractedPayload.total_amount = parseFloat(
+          document.getElementById("total_amount").value,
+        );
+
+        fetch("/api/save", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(extractedPayload),
+        })
+          .then((res) => res.json())
+          .then((resData) => {
+            if (resData.error) {
+              alert("Post failed: " + resData.error);
+            } else {
+              showBarcodeStrip(resData.barcodes || []);
+            }
+          });
+      }
+
+      function showBarcodeStrip(barcodes) {
+        if (!barcodes.length) {
+          alert("GRN posted. No barcodes generated.");
+          window.location.reload();
+          return;
+        }
+        const strip = document.getElementById("barcodeStrip");
+        const cards = document.getElementById("barcodeCards");
+        cards.innerHTML = "";
+        barcodes.forEach(function(b) {
+          const card = document.createElement("div");
+          card.style.cssText = "border:1px solid #e2e8f0; border-radius:6px; padding:14px; background:white; text-align:center; min-width:200px;";
+          card.innerHTML = `
+            <div style="font-size:12px; font-weight:bold; color:#1e293b; margin-bottom:8px;">${b.item_name}</div>
+            <img src="${b.barcode_image}" alt="${b.barcode_no}"
+                 style="max-width:200px; max-height:80px; display:block; margin:0 auto;"
+                 onerror="this.outerHTML='<p style=color:#dc2626;font-size:11px>Image not found</p>'">
+            <div style="font-size:11px; color:#475569; font-family:monospace; margin-top:6px;">${b.barcode_no}</div>
+          `;
+          cards.appendChild(card);
+        });
+        strip.style.display = "block";
+        strip.scrollIntoView({ behavior: "smooth" });
+      }
+    </script>
+  </body>
+</html>
