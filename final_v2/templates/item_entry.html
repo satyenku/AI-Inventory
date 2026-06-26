@@ -166,6 +166,19 @@
             <label>Total Invoice Value</label>
             <input type="number" step="0.01" id="total_amount" />
           </div>
+          <div>
+            <label style="font-weight: bold; color: #dc2626"
+              >Select Supplier <span style="color: #dc2626">*</span></label
+            >
+            <select id="supplier_id" required>
+              <option value="">-- Choose a Supplier --</option>
+              {% for supplier in suppliers %}
+              <option value="{{ supplier.id }}">
+                {{ supplier.supplier_name }}
+              </option>
+              {% endfor %}
+            </select>
+          </div>
         </div>
         <hr style="border: 0; border-top: 1px solid #cbd5e1; margin: 20px 0" />
         <h2>Line Items Inventory Register</h2>
@@ -193,12 +206,36 @@
         </div>
 
         <!-- Barcode strip shown after successful save -->
-        <div id="barcodeStrip" style="display:none; margin-top:25px; background:#f8fafc; border:1px solid #cbd5e1; border-radius:6px; padding:20px;">
-          <h2 style="margin-top:0; color:#1e293b; font-size:16px;">📦 GRN Barcodes — Print &amp; Attach to Items</h2>
-          <p style="font-size:13px; color:#475569; margin-bottom:16px;">Each barcode below is unique to this receipt. Scan to identify the item for returns or tracking.</p>
-          <div id="barcodeCards" style="display:flex; flex-wrap:wrap; gap:16px;"></div>
-          <div style="margin-top:16px;">
-            <button class="btn btn-add" onclick="window.print()" style="background:#0f172a;">🖨 Print Barcodes</button>
+        <div
+          id="barcodeStrip"
+          style="
+            display: none;
+            margin-top: 25px;
+            background: #f8fafc;
+            border: 1px solid #cbd5e1;
+            border-radius: 6px;
+            padding: 20px;
+          "
+        >
+          <h2 style="margin-top: 0; color: #1e293b; font-size: 16px">
+            📦 GRN Barcodes — Print &amp; Attach to Items
+          </h2>
+          <p style="font-size: 13px; color: #475569; margin-bottom: 16px">
+            Each barcode below is unique to this receipt. Scan to identify the
+            item for returns or tracking.
+          </p>
+          <div
+            id="barcodeCards"
+            style="display: flex; flex-wrap: wrap; gap: 16px"
+          ></div>
+          <div style="margin-top: 16px">
+            <button
+              class="btn btn-add"
+              onclick="window.print()"
+              style="background: #0f172a"
+            >
+              🖨 Print Barcodes
+            </button>
           </div>
         </div>
       </div>
@@ -260,6 +297,14 @@
           return;
         }
 
+        const supplierId = document.getElementById("supplier_id").value;
+        if (!supplierId) {
+          alert(
+            "Error: You must select a supplier from the list before proceeding.",
+          );
+          return;
+        }
+
         extractedPayload.invoice_number =
           document.getElementById("invoice_number").value;
         extractedPayload.invoice_date =
@@ -269,6 +314,7 @@
         extractedPayload.total_amount = parseFloat(
           document.getElementById("total_amount").value,
         );
+        extractedPayload.supplier_id = parseInt(supplierId);
 
         fetch("/api/save", {
           method: "POST",
@@ -294,9 +340,10 @@
         const strip = document.getElementById("barcodeStrip");
         const cards = document.getElementById("barcodeCards");
         cards.innerHTML = "";
-        barcodes.forEach(function(b) {
+        barcodes.forEach(function (b) {
           const card = document.createElement("div");
-          card.style.cssText = "border:1px solid #e2e8f0; border-radius:6px; padding:14px; background:white; text-align:center; min-width:200px;";
+          card.style.cssText =
+            "border:1px solid #e2e8f0; border-radius:6px; padding:14px; background:white; text-align:center; min-width:200px;";
           card.innerHTML = `
             <div style="font-size:12px; font-weight:bold; color:#1e293b; margin-bottom:8px;">${b.item_name}</div>
             <img src="${b.barcode_image}" alt="${b.barcode_no}"

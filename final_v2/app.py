@@ -248,13 +248,24 @@ def api_save_invoice():
         with get_db_connection() as conn:
             cursor = conn.cursor()
             
-            # Resolve vendor match
-            vendor_name = data.get('vendor_name', 'Unknown')
-            cursor.execute("SELECT id FROM suppliers WHERE supplier_name LIKE ?", (f"%{vendor_name}%",))
-            sup_row = cursor.fetchone()
-            supplier_id = sup_row['id'] if sup_row else None
+            # Validate supplier is provided and exists
+            supplier_id_raw = data.get('supplier_id')
+            if not supplier_id_raw:
+                return {"error": "Supplier is required. Please select a supplier from the dropdown before proceeding."}, 400
             
-            # Create Invoice entry
+            # Convert to integer
+            try:
+                supplier_id = int(supplier_id_raw)
+            except (ValueError, TypeError):
+                return {"error": f"Invalid supplier ID format: {supplier_id_raw}"}, 400
+            
+            cursor.execute("SELECT id, supplier_name FROM suppliers WHERE id = ?", (supplier_id,))
+            supplier_row = cursor.fetchone()
+            if not supplier_row:
+                return {"error": f"Supplier ID {supplier_id} is not found in the system. Please add the supplier first."}, 400
+            
+            # Create Invoice entry with validated supplier_id
+            vendor_name = data.get('vendor_name', 'Unknown')
             invoice_num = data.get('invoice_number', '').strip()
             if not invoice_num:
                 invoice_num = f"UNMAPPED-{int(time.time())}"
@@ -266,12 +277,21 @@ def api_save_invoice():
             """, (vendor_name, invoice_num, data.get('invoice_date', ''), supplier_id, total_amt))
             invoice_id = cursor.lastrowid
             
-            # Create Goods Receipt Entry (GRN)
+            # Create Goods Receipt Entry (GRN) with validated supplier_id
             grn_no = f"GRN-{invoice_num}"
+            received_by_id = session.get('user_id')
+            if not received_by_id:
+                return {"error": "User session is invalid. Please log in again."}, 401
+            
+            try:
+                received_by_id = int(received_by_id)
+            except (ValueError, TypeError):
+                return {"error": "Invalid user session."}, 401
+            
             cursor.execute("""
                 INSERT INTO grn (grn_no, invoice_id, supplier_id, received_date, received_by)
                 VALUES (?, ?, ?, ?, ?)
-            """, (grn_no, invoice_id, supplier_id, data.get('invoice_date', ''), session.get('user_id')))
+            """, (grn_no, invoice_id, supplier_id, data.get('invoice_date', ''), received_by_id))
             grn_id = cursor.lastrowid
             
             line_items = data.get('line_items', [])
