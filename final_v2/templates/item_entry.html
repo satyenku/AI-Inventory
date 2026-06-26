@@ -189,6 +189,7 @@
               <th>Qty</th>
               <th>Unit Price</th>
               <th>Subtotal Amount</th>
+              <th>Action</th>
             </tr>
           </thead>
           <tbody id="lineItemsBody">
@@ -277,11 +278,22 @@
             data.line_items.forEach((item) => {
               const row = document.createElement("tr");
               row.innerHTML = `
-            <td><strong>${item.description}</strong></td>
-            <td>${item.qty}</td>
-            <td>${item.unit_price}</td>
-            <td>${item.amount}</td>
-          `;
+                <td><strong>${item.description}</strong></td>
+                <td>${item.qty}</td>
+                <td>${item.unit_price}</td>
+                <td>${item.amount}</td>
+
+                <td>
+                  <button
+                    class="btn btn-add"
+                    type="button">
+                    QC
+                  </button>
+                </td>
+              `;
+              row.querySelector("button").addEventListener("click", function () {
+                downloadQCSheet(item);
+              });
               body.appendChild(row);
             });
           })
@@ -356,6 +368,21 @@
         strip.style.display = "block";
         strip.scrollIntoView({ behavior: "smooth" });
       }
+      function downloadQCSheet(item) {
+        if (!item || !item.description) {
+          alert("Unable to generate QC sheet: item name is missing.");
+          return;
+        }
+        const params = new URLSearchParams({
+          item_name: item.description,
+          qty: item.qty || "",
+          invoice_number: document.getElementById("invoice_number").value || "",
+          invoice_date: document.getElementById("invoice_date").value || "",
+        });
+        window.location.href = "/qc-sheet/excel?" + params.toString();
+      }
+
+      
     </script>
   </body>
 </html>

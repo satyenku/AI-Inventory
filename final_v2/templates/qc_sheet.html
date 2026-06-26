@@ -1,0 +1,175 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>QC Sheet</title>
+
+    <style>
+        body { font-family: Arial; margin: 20px; }
+        h2 { margin-bottom: 10px; }
+
+        .info {
+            margin-bottom: 15px;
+            font-size: 14px;
+        }
+
+        table {
+            width: 100%;
+            border-collapse: collapse;
+            font-size: 13px;
+        }
+
+        th, td {
+            border: 1px solid #333;
+            padding: 6px;
+            text-align: center;
+        }
+
+        th { background: #f2f2f2; }
+
+        input {
+            width: 60px;
+            padding: 3px;
+            text-align: center;
+        }
+
+        .btn {
+            margin-top: 15px;
+            padding: 8px 12px;
+            cursor: pointer;
+        }
+    </style>
+</head>
+
+<body>
+
+<h2>QC Inspection Sheet</h2>
+
+<div class="info" id="infoBox">Loading...</div>
+
+<table>
+    <thead>
+        <tr>
+            <th>SR</th>
+            <th>Specification</th>
+            <th>Min</th>
+            <th>Max</th>
+            <th>Method</th>
+            <th>Obs1</th>
+            <th>Obs2</th>
+            <th>Obs3</th>
+            <th>Obs4</th>
+            <th>Obs5</th>
+            <th>Remarks</th>
+        </tr>
+    </thead>
+
+    <tbody id="qcTable"></tbody>
+</table>
+
+<button class="btn" onclick="saveQC()">Save QC</button>
+
+<script>
+
+let inspectionId = null;
+let specsMap = {};
+
+window.onload = function () {
+
+    const params = new URLSearchParams(window.location.search);
+
+    inspectionId = params.get("inspection_id");
+
+    if (!inspectionId) {
+        alert("Inspection ID missing");
+        return;
+    }
+
+    fetch(`/api/qc-sheet/${inspectionId}`)
+        .then(res => res.json())
+        .then(data => {
+
+            document.getElementById("infoBox").innerHTML = `
+                <b>Inspection ID:</b> ${inspectionId}<br>
+                <b>Product:</b> ${data.product_name || "-"}<br>
+                <b>Total Specs:</b> ${data.specs.length}
+            `;
+
+            renderTable(data.specs);
+        });
+};
+
+
+// TABLE RENDER
+function renderTable(specs) {
+
+    let html = "";
+
+    specs.forEach((s, i) => {
+
+        specsMap[s.id] = s;
+
+        html += `
+        <tr data-id="${s.id}">
+            <td>${i + 1}</td>
+            <td>${s.property_name}</td>
+            <td>${s.min_value}</td>
+            <td>${s.max_value}</td>
+            <td>${s.method || "-"}</td>
+
+            <td><input></td>
+            <td><input></td>
+            <td><input></td>
+            <td><input></td>
+            <td><input></td>
+
+            <td><input></td>
+        </tr>
+        `;
+    });
+
+    document.getElementById("qcTable").innerHTML = html;
+}
+
+
+// SAVE QC (FIXED)
+function saveQC() {
+
+    let results = [];
+
+    document.querySelectorAll("#qcTable tr").forEach(row => {
+
+        let specId = row.getAttribute("data-id");
+        let inputs = row.querySelectorAll("input");
+
+        results.push({
+            product_property_id: specId,
+            obs1: inputs[0].value,
+            obs2: inputs[1].value,
+            obs3: inputs[2].value,
+            obs4: inputs[3].value,
+            obs5: inputs[4].value,
+            remarks: inputs[5].value
+        });
+    });
+
+    fetch("/api/save-qc", {
+        method: "POST",
+        headers: {
+            "Content-Type": "application/json"
+        },
+        body: JSON.stringify({
+            inspection_id: inspectionId,
+            data: results
+        })
+    })
+    .then(res => res.json())
+    .then(res => {
+        alert("QC Saved Successfully!");
+        console.log(res);
+    });
+}
+
+</script>
+
+</body>
+</html>
