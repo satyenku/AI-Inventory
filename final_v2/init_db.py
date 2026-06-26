@@ -198,6 +198,46 @@ CREATE TABLE IF NOT EXISTS product_properties (
 );
 
 CREATE INDEX IF NOT EXISTS idx_properties_product ON product_properties(product_id);
+
+
+CREATE TABLE IF NOT EXISTS inspection_entries (
+
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+
+    product_id INTEGER NOT NULL,
+
+    inspection_date TEXT,
+
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+
+    FOREIGN KEY(product_id)
+    REFERENCES products(id)
+);
+
+-- Included here from update_db.py so fresh database initialization
+-- creates inspection observation storage without running a separate script.
+CREATE TABLE IF NOT EXISTS inspection_details (
+
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+
+    inspection_id INTEGER NOT NULL,
+
+    product_property_id INTEGER NOT NULL,
+
+    obs1 TEXT,
+    obs2 TEXT,
+    obs3 TEXT,
+    obs4 TEXT,
+    obs5 TEXT,
+
+    remarks TEXT,
+
+    FOREIGN KEY(inspection_id)
+    REFERENCES inspection_entries(id),
+
+    FOREIGN KEY(product_property_id)
+    REFERENCES product_properties(id)
+);
 """
 
 def init_db():

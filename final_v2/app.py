@@ -3,7 +3,11 @@ import os
 import re
 import sqlite3
 import time
-from flask import Flask, render_template, request, redirect, url_for, flash, session, jsonify
+from datetime import date
+from html import escape
+from io import BytesIO
+from zipfile import ZIP_DEFLATED, ZipFile
+from flask import Flask, render_template, request, redirect, url_for, flash, session, jsonify, Response
 
 
 def parse_decimal(value, fallback=0.0):
@@ -77,6 +81,206 @@ def ensure_barcode_asset_exists(barcode_value):
         except Exception:
             return None
     return png_path
+
+
+def resolve_product_for_qc(cursor, product_id=None, item_name=None):
+    if product_id:
+        return cursor.execute(
+            "SELECT * FROM products WHERE id = ?",
+            (product_id,)
+        ).fetchone()
+
+    item_name = (item_name or "").strip()
+    if not item_name:
+        return None
+
+    return cursor.execute("""
+        SELECT *
+        FROM products
+        WHERE item_name = ? OR item_code = ? OR item_name LIKE ?
+        ORDER BY
+            CASE
+                WHEN item_name = ? THEN 0
+                WHEN item_code = ? THEN 1
+                ELSE 2
+            END,
+            id
+        LIMIT 1
+    """, (item_name, item_name, f"%{item_name}%", item_name, item_name)).fetchone()
+
+
+def excel_col(index):
+    letters = ""
+    while index:
+        index, remainder = divmod(index - 1, 26)
+        letters = chr(65 + remainder) + letters
+    return letters
+
+
+def xlsx_cell(row_index, col_index, value="", style_id=0):
+    ref = f"{excel_col(col_index)}{row_index}"
+    style = f' s="{style_id}"' if style_id else ""
+    if value is None:
+        value = ""
+    if isinstance(value, (int, float)) and not isinstance(value, bool):
+        return f'<c r="{ref}"{style}><v>{value}</v></c>'
+    return (
+        f'<c r="{ref}" t="inlineStr"{style}>'
+        f'<is><t>{escape(str(value))}</t></is></c>'
+    )
+
+
+def xlsx_row(row_index, values, style_id=0, height=None):
+    height_xml = f' ht="{height}" customHeight="1"' if height else ""
+    cells = "".join(
+        xlsx_cell(row_index, col_index, value, style_id)
+        for col_index, value in enumerate(values, start=1)
+    )
+    return f'<row r="{row_index}"{height_xml}>{cells}</row>'
+
+
+def build_qc_xlsx(product, specs, meta, observations_by_property=None):
+    observations_by_property = observations_by_property or {}
+    product_name = product["item_name"] if product else meta.get("item_name", "")
+    item_code = product["item_code"] if product else ""
+    invoice_no = meta.get("invoice_number", "")
+    invoice_date = meta.get("invoice_date", "")
+    qty = meta.get("qty", "")
+    challan = " / ".join(part for part in [invoice_no, invoice_date] if part)
+    report_date = date.today().strftime("%d-%m-%Y")
+
+    rows = [
+        xlsx_row(1, ["Galitat", "", "", "INWARD MATERIAL INSPECTION REPORT", "", "", "", "", "", "QES/QA/14", ""], 1, 28),
+        xlsx_row(2, ["Date:", report_date, "", "", "", "", "", "", "", "02/01.03.2025", ""], 2, 22),
+        xlsx_row(3, ["Material Recd.as per RCIA No. :", "", "", "", "", "", "Invoice / Challan No. & Date :", challan, "", "", ""], 2, 24),
+        xlsx_row(4, ["Part No. :", item_code, "", "", "", "", "Qty Recd:", qty, "", "", ""], 2, 24),
+        xlsx_row(5, ["Description:", product_name, "", "", "", "", "Sampling QTY:", "", "", "", ""], 2, 24),
+        xlsx_row(6, [""] * 11, 0, 8),
+        xlsx_row(7, ["SR\nNO.", "SPECIFICATION FOR\nCRITICAL DIMENSION", "SPECIFICATION", "", "", "OBSERVATIONS", "", "", "", "", "REMARKS"], 3, 36),
+        xlsx_row(8, ["", "", "MIN", "MAX", "METHOD", "1", "2", "3", "4", "5", ""], 3, 28),
+    ]
+
+    current_row = 9
+    for index, spec in enumerate(specs, start=1):
+        min_value = "" if spec["min_value"] is None else spec["min_value"]
+        max_value = "" if spec["max_value"] is None else spec["max_value"]
+        saved_obs = observations_by_property.get(spec["id"], {})
+        rows.append(xlsx_row(current_row, [
+            index,
+            spec["property_name"] or "",
+            min_value,
+            max_value,
+            spec["method"] or "",
+            saved_obs.get("obs1", ""),
+            saved_obs.get("obs2", ""),
+            saved_obs.get("obs3", ""),
+            saved_obs.get("obs4", ""),
+            saved_obs.get("obs5", ""),
+            saved_obs.get("remarks", ""),
+        ], 4, 32))
+        current_row += 1
+
+    if not specs:
+        rows.append(xlsx_row(current_row, [
+            "", "No QC specifications found in product_properties.", "", "", "", "", "", "", "", "", ""
+        ], 4, 28))
+
+    merge_refs = [
+        "A1:C1", "D1:I1", "J1:K1",
+        "B2:C2", "J2:K2",
+        "A3:F3", "H3:K3",
+        "B4:F4", "H4:K4",
+        "B5:F5", "H5:K5",
+        "A7:A8", "B7:B8", "C7:E7", "F7:J7", "K7:K8",
+    ]
+    merges = "".join(f'<mergeCell ref="{ref}"/>' for ref in merge_refs)
+
+    sheet_xml = f"""<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main"
+    xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships">
+    <sheetViews><sheetView workbookViewId="0"/></sheetViews>
+    <sheetFormatPr defaultRowHeight="18"/>
+    <cols>
+        <col min="1" max="1" width="8" customWidth="1"/>
+        <col min="2" max="2" width="30" customWidth="1"/>
+        <col min="3" max="4" width="12" customWidth="1"/>
+        <col min="5" max="5" width="20" customWidth="1"/>
+        <col min="6" max="10" width="11" customWidth="1"/>
+        <col min="11" max="11" width="22" customWidth="1"/>
+    </cols>
+    <sheetData>{''.join(rows)}</sheetData>
+    <mergeCells count="{len(merge_refs)}">{merges}</mergeCells>
+</worksheet>"""
+
+    styles_xml = """<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<styleSheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main">
+    <fonts count="3">
+        <font><sz val="11"/><name val="Calibri"/></font>
+        <font><b/><sz val="14"/><name val="Calibri"/></font>
+        <font><b/><sz val="11"/><name val="Calibri"/></font>
+    </fonts>
+    <fills count="3">
+        <fill><patternFill patternType="none"/></fill>
+        <fill><patternFill patternType="gray125"/></fill>
+        <fill><patternFill patternType="solid"><fgColor rgb="FFD9EAF7"/><bgColor indexed="64"/></patternFill></fill>
+    </fills>
+    <borders count="2">
+        <border><left/><right/><top/><bottom/><diagonal/></border>
+        <border>
+            <left style="thin"><color auto="1"/></left>
+            <right style="thin"><color auto="1"/></right>
+            <top style="thin"><color auto="1"/></top>
+            <bottom style="thin"><color auto="1"/></bottom>
+            <diagonal/>
+        </border>
+    </borders>
+    <cellStyleXfs count="1"><xf numFmtId="0" fontId="0" fillId="0" borderId="0"/></cellStyleXfs>
+    <cellXfs count="5">
+        <xf numFmtId="0" fontId="0" fillId="0" borderId="0" xfId="0"/>
+        <xf numFmtId="0" fontId="1" fillId="0" borderId="1" xfId="0" applyAlignment="1"><alignment horizontal="center" vertical="center" wrapText="1"/></xf>
+        <xf numFmtId="0" fontId="2" fillId="0" borderId="1" xfId="0" applyAlignment="1"><alignment horizontal="left" vertical="center" wrapText="1"/></xf>
+        <xf numFmtId="0" fontId="2" fillId="2" borderId="1" xfId="0" applyAlignment="1"><alignment horizontal="center" vertical="center" wrapText="1"/></xf>
+        <xf numFmtId="0" fontId="0" fillId="0" borderId="1" xfId="0" applyAlignment="1"><alignment horizontal="center" vertical="center" wrapText="1"/></xf>
+    </cellXfs>
+    <cellStyles count="1"><cellStyle name="Normal" xfId="0" builtinId="0"/></cellStyles>
+</styleSheet>"""
+
+    workbook_xml = """<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<workbook xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main"
+    xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships">
+    <sheets><sheet name="QC Report" sheetId="1" r:id="rId1"/></sheets>
+</workbook>"""
+
+    workbook_rels = """<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">
+    <Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/worksheet" Target="worksheets/sheet1.xml"/>
+    <Relationship Id="rId2" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/styles" Target="styles.xml"/>
+</Relationships>"""
+
+    root_rels = """<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">
+    <Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="xl/workbook.xml"/>
+</Relationships>"""
+
+    content_types = """<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types">
+    <Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/>
+    <Default Extension="xml" ContentType="application/xml"/>
+    <Override PartName="/xl/workbook.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet.main+xml"/>
+    <Override PartName="/xl/worksheets/sheet1.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.worksheet+xml"/>
+    <Override PartName="/xl/styles.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.styles+xml"/>
+</Types>"""
+
+    output = BytesIO()
+    with ZipFile(output, "w", ZIP_DEFLATED) as archive:
+        archive.writestr("[Content_Types].xml", content_types)
+        archive.writestr("_rels/.rels", root_rels)
+        archive.writestr("xl/workbook.xml", workbook_xml)
+        archive.writestr("xl/_rels/workbook.xml.rels", workbook_rels)
+        archive.writestr("xl/styles.xml", styles_xml)
+        archive.writestr("xl/worksheets/sheet1.xml", sheet_xml)
+
+    return output.getvalue()
 
 # -------------------------------------------------------------
 # ROUTING HANDLERS
@@ -592,6 +796,249 @@ def barcode_lookup():
         return jsonify({"error": f"No GRN record found for barcode: {barcode_no}"}), 404
 
     return jsonify(dict(row))
+
+
+# =====================================================
+# INSPECTION ENTRY PAGE
+# =====================================================
+
+@app.route('/inspection_entry')
+@login_required
+def inspection_entry():
+    return render_template('inspection_entry.html')
+
+
+# =====================================================
+# LOAD PRODUCTS DROPDOWN
+# =====================================================
+
+@app.route('/api/products')
+@login_required
+def api_products():
+
+    conn = get_db_connection()
+
+    products = conn.execute("""
+        SELECT id, item_name
+        FROM products
+        ORDER BY item_name
+    """).fetchall()
+
+    conn.close()
+
+    return jsonify({
+        "products": [
+            {
+                "id": product["id"],
+                "item_name": product["item_name"]
+            }
+            for product in products
+        ]
+    })
+
+
+# =====================================================
+# LOAD PRODUCT PROPERTIES
+# =====================================================
+
+@app.route('/api/product-properties/<int:product_id>')
+@login_required
+def api_product_properties(product_id):
+
+    conn = get_db_connection()
+
+    rows = conn.execute("""
+        SELECT
+            id,
+            property_name,
+            min_value,
+            max_value,
+            method
+        FROM product_properties
+        WHERE product_id = ?
+        ORDER BY id
+    """, (product_id,)).fetchall()
+
+    conn.close()
+
+    return jsonify({
+        "properties": [
+            {
+                "id": row["id"],
+                "property_name": row["property_name"],
+                "min_value": row["min_value"],
+                "max_value": row["max_value"],
+                "method": row["method"]
+            }
+            for row in rows
+        ]
+    })
+
+
+# =====================================================
+# SAVE INSPECTION
+# =====================================================
+
+@app.route('/api/save-inspection', methods=['POST'])
+@login_required
+def save_inspection():
+
+    data = request.json
+
+    try:
+
+        conn = get_db_connection()
+        cursor = conn.cursor()
+
+        cursor.execute("""
+            INSERT INTO inspection_entries
+            (
+                product_id,
+                inspection_date
+            )
+            VALUES (?, ?)
+        """, (
+            data.get("product_id"),
+            data.get("inspection_date")
+        ))
+
+        inspection_id = cursor.lastrowid
+
+        details = data.get("details", [])
+
+        for detail in details:
+
+            cursor.execute("""
+                INSERT INTO inspection_details
+                (
+                    inspection_id,
+                    product_property_id,
+                    obs1,
+                    obs2,
+                    obs3,
+                    obs4,
+                    obs5,
+                    remarks
+                )
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+            """, (
+                inspection_id,
+                detail.get("product_property_id"),
+                detail.get("obs1"),
+                detail.get("obs2"),
+                detail.get("obs3"),
+                detail.get("obs4"),
+                detail.get("obs5"),
+                detail.get("remarks")
+            ))
+
+        conn.commit()
+        conn.close()
+
+        return jsonify({
+            "status": "success",
+            "message": "Inspection saved successfully."
+        })
+
+    except Exception as e:
+
+        return jsonify({
+            "status": "error",
+            "message": str(e)
+        }), 500
+
+@app.route('/qc-sheet')
+def qc_sheet():
+    product_id = request.args.get('product_id')
+    return render_template("qc_sheet.html")
+
+
+@app.route('/qc-sheet/excel')
+@login_required
+def qc_sheet_excel():
+    product_id = request.args.get('product_id', type=int)
+    item_name = request.args.get('item_name', '').strip()
+    meta = {
+        "item_name": item_name,
+        "invoice_number": request.args.get('invoice_number', '').strip(),
+        "invoice_date": request.args.get('invoice_date', '').strip(),
+        "qty": request.args.get('qty', '').strip(),
+    }
+
+    conn = get_db_connection()
+    try:
+        product = resolve_product_for_qc(conn, product_id=product_id, item_name=item_name)
+        if not product:
+            return "No matching product found in Product Master for this extracted item.", 404
+
+        specs = conn.execute("""
+            SELECT id, property_name, min_value, max_value, method
+            FROM product_properties
+            WHERE product_id = ?
+            ORDER BY id
+        """, (product["id"],)).fetchall()
+
+        latest_inspection = conn.execute("""
+            SELECT id
+            FROM inspection_entries
+            WHERE product_id = ?
+            ORDER BY inspection_date DESC, created_at DESC, id DESC
+            LIMIT 1
+        """, (product["id"],)).fetchone()
+
+        observations_by_property = {}
+        if latest_inspection:
+            observation_rows = conn.execute("""
+                SELECT product_property_id, obs1, obs2, obs3, obs4, obs5, remarks
+                FROM inspection_details
+                WHERE inspection_id = ?
+            """, (latest_inspection["id"],)).fetchall()
+            observations_by_property = {
+                row["product_property_id"]: {
+                    "obs1": row["obs1"] or "",
+                    "obs2": row["obs2"] or "",
+                    "obs3": row["obs3"] or "",
+                    "obs4": row["obs4"] or "",
+                    "obs5": row["obs5"] or "",
+                    "remarks": row["remarks"] or "",
+                }
+                for row in observation_rows
+            }
+    finally:
+        conn.close()
+
+    workbook = build_qc_xlsx(product, specs, meta, observations_by_property)
+    safe_code = re.sub(r"[^A-Za-z0-9_-]+", "_", product["item_code"] or product["item_name"]).strip("_")
+    filename = f"QC_Sheet_{safe_code or product['id']}.xlsx"
+
+    return Response(
+        workbook,
+        mimetype="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        headers={"Content-Disposition": f'attachment; filename="{filename}"'}
+    )
+
+
+@app.route('/api/qc-sheet/<int:product_id>')
+def qc_data(product_id):
+    conn = get_db_connection()
+    product = conn.execute(
+        "SELECT item_name FROM products WHERE id = ?",
+        (product_id,)
+    ).fetchone()
+    specs = conn.execute("""
+        SELECT id, property_name, min_value, max_value, method
+        FROM product_properties
+        WHERE product_id = ?
+        ORDER BY id
+    """, (product_id,)).fetchall()
+    conn.close()
+
+    return jsonify({
+        "product_name": product["item_name"] if product else "",
+        "specs": [dict(s) for s in specs]
+    })
+    
+
 
 if __name__ == '__main__':
     app.run(debug=True, port=5000)
