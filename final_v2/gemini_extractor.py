@@ -44,7 +44,10 @@ def extract_invoice_data(file_path: str) -> InvoiceExtractionSchema:
         'gemini-2.5-flash',
     ]
 
-    client = genai.Client(api_key=api_key)
+    client = genai.Client(
+    api_key=api_key,
+    http_options={"api_version": "v1beta"}
+   )
     last_error = None
 
     for model in MODELS:

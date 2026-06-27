@@ -1,266 +1,272 @@
-<!DOCTYPE html>
+<!doctype html>
 <html lang="en">
-<head>
-<meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Inspection Entry</title>
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Inspection Entry</title>
 
-<style>
-*{
-    margin:0;
-    padding:0;
-    box-sizing:border-box;
-    font-family:Arial, sans-serif;
-}
+    <style>
+      * {
+        margin: 0;
+        padding: 0;
+        box-sizing: border-box;
+        font-family: Arial, sans-serif;
+      }
 
-body{
-    background:#f4f6f9;
-    padding:20px;
-}
+      body {
+        background: #f4f6f9;
+        display: flex;
+      }
 
-.container{
-    max-width:1600px;
-    margin:auto;
-    background:white;
-    padding:25px;
-    border-radius:10px;
-    box-shadow:0 2px 10px rgba(0,0,0,0.1);
-}
+      /* SIDEBAR */
+      .sidebar {
+        width: 240px;
+        background: #0f172a;
+        color: #fff;
+        min-height: 100vh;
+        padding-top: 20px;
+        position: fixed;
+        left: 0;
+        top: 0;
+      }
 
-h1{
-    text-align:center;
-    margin-bottom:25px;
-}
+      .sidebar h2 {
+        text-align: center;
+        margin-bottom: 20px;
+        font-size: 20px;
+      }
 
-.header-grid{
-    display:grid;
-    grid-template-columns:repeat(3,1fr);
-    gap:15px;
-    margin-bottom:25px;
-}
+      .sidebar a {
+        display: block;
+        padding: 12px 20px;
+        color: #cbd5e1;
+        text-decoration: none;
+        font-size: 15px;
+      }
 
-.form-group{
-    display:flex;
-    flex-direction:column;
-}
+      .sidebar a:hover {
+        background: #1e293b;
+        color: #fff;
+      }
 
-.form-group label{
-    font-weight:bold;
-    margin-bottom:5px;
-}
+      /* MAIN CONTENT */
+      .container {
+        margin-left: 260px;
+        width: calc(100% - 260px);
+        padding: 25px;
+      }
 
-.form-group input,
-.form-group select{
-    padding:10px;
-    border:1px solid #ccc;
-    border-radius:5px;
-}
+      h1 {
+        text-align: center;
+        margin-bottom: 25px;
+      }
 
-.table-wrapper{
-    overflow-x:auto;
-}
+      /* HEADER GRID */
+      .header-grid {
+        display: grid;
+        grid-template-columns: repeat(3, 1fr);
+        gap: 15px;
+        margin-bottom: 25px;
+      }
 
-table{
-    width:100%;
-    border-collapse:collapse;
-    min-width:1200px;
-}
+      .form-group {
+        display: flex;
+        flex-direction: column;
+      }
 
-table th,
-table td{
-    border:1px solid #ccc;
-    padding:8px;
-    text-align:center;
-}
+      .form-group label {
+        font-weight: bold;
+        margin-bottom: 5px;
+      }
 
-table th{
-    background:#f0f0f0;
-}
+      .form-group input,
+      .form-group select {
+        padding: 10px;
+        border: 1px solid #ccc;
+        border-radius: 5px;
+      }
 
-table input{
-    width:100%;
-    padding:6px;
-}
+      /* TABLE */
+      .table-wrapper {
+        overflow-x: auto;
+        background: white;
+        border-radius: 10px;
+      }
 
-.readonly-cell{
-    background:#f8f8f8;
-    font-weight:bold;
-}
+      table {
+        width: 100%;
+        border-collapse: collapse;
+        min-width: 1200px;
+      }
 
-.action-section{
-    margin-top:20px;
-    text-align:right;
-}
+      table th,
+      table td {
+        border: 1px solid #ddd;
+        padding: 8px;
+        text-align: center;
+      }
 
-.btn-save{
-    border:none;
-    background:#007bff;
-    color:white;
-    padding:10px 20px;
-    border-radius:5px;
-    cursor:pointer;
-}
-</style>
-</head>
+      table th {
+        background: #f0f0f0;
+      }
 
-<body>
+      table input {
+        width: 100%;
+        padding: 6px;
+        border: 1px solid #ddd;
+        border-radius: 4px;
+      }
 
-<div class="container">
+      .readonly-cell {
+        background: #f8f8f8;
+        font-weight: bold;
+      }
 
-    <h1>Inspection Entry</h1>
+      /* BUTTON */
+      .action-section {
+        margin-top: 20px;
+        text-align: right;
+      }
 
-    <div class="header-grid">
+      .btn-save {
+        border: none;
+        background: #007bff;
+        color: white;
+        padding: 10px 20px;
+        border-radius: 5px;
+        cursor: pointer;
+      }
 
-        <div class="form-group">
-            <label>Inspection No</label>
-            <input type="text" id="inspectionNo" value="INS-001">
-        </div>
+      .btn-save:hover {
+        background: #0056b3;
+      }
+    </style>
+  </head>
 
-        <div class="form-group">
-            <label>Inspection Date</label>
-            <input type="date" id="inspectionDate">
-        </div>
-
-        <div class="form-group">
-            <label>Select Product</label>
-            <select id="productSelect" onchange="loadSpecifications()">
-                <option value="">Select Product</option>
-                <option value="Cylinder">Cylinder</option>
-                <option value="Motor">Motor</option>
-            </select>
-        </div>
-
+  <body>
+    <!-- SIDEBAR -->
+    <div class="sidebar">
+      <h2>Inventory</h2>
+      <a href="{{ url_for('dashboard') }}">📊 Dashboard</a>
+      <a href="{{ url_for('product_master') }}">📦 Product Master</a>
+      <a href="{{ url_for('inspection_entry') }}">🔍 Inspection Entry</a>
+      <a href="{{ url_for('item_issue') }}">🧾 Item Issue</a>
+      <a href="{{ url_for('item_entry') }}">🧾 Item Entry</a>
+      <a href="{{ url_for('inventory_status') }}">📈 Inventory Status</a>
+      <a href="{{ url_for('inventory_return') }}">📈 Return Inventory</a>
+      <a href="{{ url_for('supplier_management') }}">👥 Suppliers</a>
+      <a href="{{ url_for('user_management') }}">👤 Users</a>
+      <a href="{{ url_for('logout') }}" style="color: #ef4444">🚪 Sign Out</a>
     </div>
 
-    <div class="table-wrapper">
+    <!-- MAIN -->
+    <div class="container">
+      <h1>Inspection Entry</h1>
 
+      <div class="header-grid">
+        <div class="form-group">
+          <label>Inspection No</label>
+          <input type="text" id="inspectionNo" value="INS-001" />
+        </div>
+
+        <div class="form-group">
+          <label>Inspection Date</label>
+          <input type="date" id="inspectionDate" />
+        </div>
+
+        <div class="form-group">
+          <label>Select Product</label>
+          <select id="productSelect" onchange="loadSpecifications()">
+            <option value="">Select Product</option>
+          </select>
+        </div>
+      </div>
+
+      <div class="table-wrapper">
         <table>
-
-            <thead>
-
+          <thead>
             <tr>
-                <th rowspan="2">Sr No</th>
-                <th rowspan="2">Property</th>
-                <th colspan="3">Specification Details</th>
-                <th colspan="5">Observations</th>
-                <th rowspan="2">Remarks</th>
+              <th rowspan="2">Sr No</th>
+              <th rowspan="2">Property</th>
+              <th colspan="3">Specification Details</th>
+              <th colspan="5">Observations</th>
+              <th rowspan="2">Remarks</th>
             </tr>
 
             <tr>
-                <th>Min</th>
-                <th>Max</th>
-                <th>Method</th>
-
-                <th>Obs1</th>
-                <th>Obs2</th>
-                <th>Obs3</th>
-                <th>Obs4</th>
-                <th>Obs5</th>
+              <th>Min</th>
+              <th>Max</th>
+              <th>Method</th>
+              <th>Obs1</th>
+              <th>Obs2</th>
+              <th>Obs3</th>
+              <th>Obs4</th>
+              <th>Obs5</th>
             </tr>
+          </thead>
 
-            </thead>
-
-            <tbody id="inspectionBody">
-
-            </tbody>
-
+          <tbody id="inspectionBody"></tbody>
         </table>
+      </div>
 
-    </div>
-
-    <div class="action-section">
-        <button
-            class="btn-save"
-            onclick="saveInspection()">
-            Save Inspection
+      <div class="action-section">
+        <button class="btn-save" onclick="saveInspection()">
+          Save Inspection
         </button>
+      </div>
     </div>
 
-</div>
+    <script>
+      window.onload = function () {
+        loadProducts();
 
-<script>
+        document.getElementById("inspectionDate").value = new Date()
+          .toISOString()
+          .split("T")[0];
+      };
 
-window.onload = function () {
+      async function loadProducts() {
+        try {
+          const response = await fetch("/api/products");
 
-    loadProducts();
+          const data = await response.json();
 
-    document.getElementById("inspectionDate").value =
-        new Date().toISOString().split('T')[0];
-};
+          const select = document.getElementById("productSelect");
 
-async function loadProducts() {
+          select.innerHTML = '<option value="">Select Product</option>';
 
-    try {
-
-        const response =
-            await fetch('/api/products');
-
-        const data =
-            await response.json();
-
-        const select =
-            document.getElementById('productSelect');
-
-        select.innerHTML =
-            '<option value="">Select Product</option>';
-
-        data.products.forEach(product => {
-
+          data.products.forEach((product) => {
             select.innerHTML += `
                 <option value="${product.id}">
                     ${product.item_name}
                 </option>
             `;
+          });
+        } catch (error) {
+          console.error("Error loading products:", error);
+        }
+      }
 
-        });
+      async function loadSpecifications() {
+        const productId = document.getElementById("productSelect").value;
 
-    }
-    catch(error){
+        const tbody = document.getElementById("inspectionBody");
 
-        console.error(
-            "Error loading products:",
-            error
-        );
+        tbody.innerHTML = "";
 
-    }
+        if (!productId) return;
 
-}
+        try {
+          const response = await fetch(`/api/product-properties/${productId}`);
 
-async function loadSpecifications(){
+          const data = await response.json();
 
-    const productId =
-        document.getElementById(
-            "productSelect"
-        ).value;
-
-    const tbody =
-        document.getElementById(
-            "inspectionBody"
-        );
-
-    tbody.innerHTML = "";
-
-    if(!productId)
-        return;
-
-    try {
-
-        const response =
-            await fetch(
-                `/api/product-properties/${productId}`
-            );
-
-        const data =
-            await response.json();
-
-        data.properties.forEach(
-            (spec,index)=>{
-
+          data.properties.forEach((spec, index) => {
             tbody.innerHTML += `
 
             <tr>
 
-                <td>${index+1}</td>
+                <td>${index + 1}</td>
 
                 <td class="readonly-cell"
                     data-property-id="${spec.id}">
@@ -268,15 +274,15 @@ async function loadSpecifications(){
                 </td>
 
                 <td class="readonly-cell">
-                    ${spec.min_value ?? ''}
+                    ${spec.min_value ?? ""}
                 </td>
 
                 <td class="readonly-cell">
-                    ${spec.max_value ?? ''}
+                    ${spec.max_value ?? ""}
                 </td>
 
                 <td class="readonly-cell">
-                    ${spec.method ?? ''}
+                    ${spec.method ?? ""}
                 </td>
 
                 <td>
@@ -312,154 +318,75 @@ async function loadSpecifications(){
             </tr>
 
             `;
+          });
+        } catch (error) {
+          console.error("Error loading properties:", error);
+        }
+      }
 
+      async function saveInspection() {
+        const productId = document.getElementById("productSelect").value;
+
+        if (!productId) {
+          alert("Please select a product.");
+
+          return;
+        }
+
+        const details = [];
+
+        document.querySelectorAll("#inspectionBody tr").forEach((row) => {
+          details.push({
+            product_property_id: row.cells[1].dataset.propertyId,
+
+            property_name: row.cells[1].innerText,
+
+            obs1: row.querySelector(".obs1").value,
+
+            obs2: row.querySelector(".obs2").value,
+
+            obs3: row.querySelector(".obs3").value,
+
+            obs4: row.querySelector(".obs4").value,
+
+            obs5: row.querySelector(".obs5").value,
+
+            remarks: row.querySelector(".remarks").value,
+          });
         });
 
-    }
-    catch(error){
+        const payload = {
+          inspection_no: document.getElementById("inspectionNo").value,
 
-        console.error(
-            "Error loading properties:",
-            error
-        );
+          inspection_date: document.getElementById("inspectionDate").value,
 
-    }
+          product_id: productId,
 
-}
+          details: details,
+        };
 
-async function saveInspection(){
+        console.log(payload);
 
-    const productId =
-        document.getElementById(
-            "productSelect"
-        ).value;
+        try {
+          const response = await fetch("/api/save-inspection", {
+            method: "POST",
 
-    if(!productId){
+            headers: {
+              "Content-Type": "application/json",
+            },
 
-        alert(
-            "Please select a product."
-        );
+            body: JSON.stringify(payload),
+          });
 
-        return;
-    }
+          const result = await response.json();
 
-    const details = [];
+          alert(result.message || "Inspection saved successfully.");
+        } catch (error) {
+          console.error(error);
 
-    document
-    .querySelectorAll(
-        "#inspectionBody tr"
-    )
-    .forEach(row=>{
-
-        details.push({
-
-            product_property_id:
-                row.cells[1]
-                .dataset
-                .propertyId,
-
-            property_name:
-                row.cells[1]
-                .innerText,
-
-            obs1:
-                row.querySelector(
-                    ".obs1"
-                ).value,
-
-            obs2:
-                row.querySelector(
-                    ".obs2"
-                ).value,
-
-            obs3:
-                row.querySelector(
-                    ".obs3"
-                ).value,
-
-            obs4:
-                row.querySelector(
-                    ".obs4"
-                ).value,
-
-            obs5:
-                row.querySelector(
-                    ".obs5"
-                ).value,
-
-            remarks:
-                row.querySelector(
-                    ".remarks"
-                ).value
-
-        });
-
-    });
-
-    const payload = {
-
-        inspection_no:
-            document.getElementById(
-                "inspectionNo"
-            ).value,
-
-        inspection_date:
-            document.getElementById(
-                "inspectionDate"
-            ).value,
-
-        product_id:
-            productId,
-
-        details:
-            details
-
-    };
-
-    console.log(payload);
-
-    try {
-
-        const response =
-            await fetch(
-                "/api/save-inspection",
-                {
-                    method:"POST",
-
-                    headers:{
-                        "Content-Type":
-                        "application/json"
-                    },
-
-                    body:
-                    JSON.stringify(
-                        payload
-                    )
-                }
-            );
-
-        const result =
-            await response.json();
-
-        alert(
-            result.message ||
-            "Inspection saved successfully."
-        );
-
-    }
-    catch(error){
-
-        console.error(error);
-
-        alert(
-            "Error saving inspection."
-        );
-
-    }
-
-}
-
-</script>
-
-</body>
+          alert("Error saving inspection.");
+        }
+      }
+    </script>
+  </body>
 </html>
