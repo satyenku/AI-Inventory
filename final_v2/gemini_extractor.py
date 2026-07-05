@@ -77,3 +77,58 @@ def extract_invoice_data(file_path: str) -> InvoiceExtractionSchema:
                     pass
 
     raise RuntimeError(f"All processing attempts failed. Last exception details: {last_error}")
+
+class BarcodeExtractionSchema(BaseModel):
+    barcode_text: str = Field(description="The alphanumeric barcode or serial number text visible in the image.")
+
+def extract_barcode_data(file_path: str) -> BarcodeExtractionSchema:
+    prompt = (
+        "Process this image and extract the exact alphanumeric barcode string or product serial number visible. "
+        "Return the value exactly as written on the label or screen. "
+        "Do not include extra text outside the JSON schema output."
+    )
+
+    api_key = os.environ.get("GEMINI_API_KEY")
+    if not api_key:
+        raise RuntimeError("GEMINI_API_KEY value is missing.")
+
+    MODELS = [
+        'gemini-2.5-flash',
+        'gemini-2.5-flash-lite',
+        'gemini-3.5-flash',
+        'gemini-3.5-flash-lite'
+    ]
+
+    client = genai.Client(
+        api_key=api_key,
+        http_options={"api_version": "v1beta"}
+    )
+    last_error = None
+
+    for model in MODELS:
+        uploaded_file = None
+        try:
+            uploaded_file = client.files.upload(file=file_path)
+
+            response = client.models.generate_content(
+                model=model,
+                contents=[uploaded_file, prompt],
+                config=types.GenerateContentConfig(
+                    response_mime_type="application/json",
+                    response_schema=BarcodeExtractionSchema,
+                    temperature=0.1
+                ),
+            )
+            return response.parsed
+        except Exception as e:
+            last_error = e
+            time.sleep(1)
+            continue
+        finally:
+            if uploaded_file:
+                try:
+                    client.files.delete(name=uploaded_file.name)
+                except Exception:
+                    pass
+
+    raise RuntimeError(f"All processing attempts failed. Last exception details: {last_error}")

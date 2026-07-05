@@ -17,7 +17,212 @@
       input, select { padding: 8px 10px; border: 1px solid #cbd5e1; border-radius: 4px; font-size: 14px; width: 100%; box-sizing: border-box; }
       button { padding: 10px 16px; background: #16a34a; color: white; border: none; border-radius: 4px; cursor: pointer; font-size: 14px; font-weight: bold; }
       button:hover { background: #15803d; }
+      
+      /* Camera Scanner UI */
+      .scanner-overlay {
+        display: none; position: fixed; top: 0; left: 0; right: 0; bottom: 0;
+        background: rgba(0,0,0,0.8); z-index: 1000;
+        justify-content: center; align-items: center; flex-direction: column;
+      }
+      .scanner-overlay.active { display: flex; }
+      .scanner-box {
+        background: white; padding: 20px; border-radius: 8px;
+        width: 100%; max-width: 500px; text-align: center;
+      }
+      .scanner-close-btn { background: #ef4444; width: 100%; margin-top: 15px; }
+      .scanner-close-btn:hover { background: #dc2626; }
     </style>
+    
+    <script src="https://unpkg.com/html5-qrcode"></script>
+    <script>
+      // ── Barcode lookup ──────────────────────────────────────────────────────
+      function lookupBarcode() {
+        const val = document.getElementById('barcodeSearch').value.trim();
+        const errEl  = document.getElementById('lookupError');
+        const cardEl = document.getElementById('supplierCard');
+
+        if (!val) {
+          errEl.textContent = 'Please enter or scan a barcode first.';
+          errEl.style.display = 'block';
+          return;
+        }
+
+        errEl.style.display = 'none';
+
+        fetch('/api/barcode-lookup?barcode=' + encodeURIComponent(val))
+          .then(r => {
+            if (!r.ok && r.status !== 404) {
+              throw new Error('Server returned ' + r.status);
+            }
+            return r.json();
+          })
+          .then(data => {
+            if (data.error) {
+              errEl.textContent = data.error;
+              errEl.style.display = 'block';
+              cardEl.style.display = 'none';
+              return;
+            }
+
+            // Show supplier card
+            cardEl.style.display = 'block';
+            document.getElementById('si_name').textContent    = data.supplier_name    || '—';
+            document.getElementById('si_contact').textContent = data.contact_person   || '—';
+            document.getElementById('si_phone').textContent   = data.phone            || '—';
+            document.getElementById('si_email').textContent   = data.email            || '—';
+            document.getElementById('si_invoice').textContent = data.invoice_number   || '—';
+            document.getElementById('si_date').textContent    = data.invoice_date     || '—';
+            document.getElementById('si_address').textContent = data.address          || '—';
+
+            // Warn if no supplier was linked to this invoice
+            const noSupWarn = document.getElementById('noSupplierWarn');
+            if (noSupWarn) noSupWarn.style.display = data.supplier_id ? 'none' : 'block';
+
+            // Auto-select the correct product logically
+            if (data.product_id) {
+              const container = document.getElementById('returnItemsContainer');
+              if (container) {
+                const rows = container.querySelectorAll('.return-item-row');
+                let targetSelect = null;
+
+                for (let row of rows) {
+                  const sel = row.querySelector('.returnProductSelect');
+                  if (sel && sel.value === "") {
+                    targetSelect = sel;
+                    break;
+                  }
+                }
+
+                if (!targetSelect) {
+                  addReturnItem();
+                  const newRows = container.querySelectorAll('.return-item-row');
+                  targetSelect = newRows[newRows.length - 1].querySelector('.returnProductSelect');
+                }
+
+                if (targetSelect) {
+                  for (let opt of targetSelect.options) {
+                    if (parseInt(opt.value) === data.product_id) {
+                      targetSelect.value = opt.value;
+                      
+                      // Auto-fill quantity
+                      const row = targetSelect.closest('.return-item-row');
+                      if (row) {
+                        const qtyInput = row.querySelector('input[name="qty[]"]');
+                        if (qtyInput && data.original_qty) {
+                           qtyInput.value = data.original_qty;
+                        }
+                      }
+                      break;
+                    }
+                  }
+                }
+              }
+            }
+
+            // Auto-generate a return ID suggestion
+            const retField = document.getElementById('return_id_field');
+            if (retField && !retField.value) {
+              const ts = Date.now().toString().slice(-5);
+              retField.value = 'RET-' + (data.invoice_number || 'UNKNOWN') + '-' + ts;
+            }
+
+            cardEl.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+
+            const searchBox = document.getElementById('barcodeSearch');
+            if(searchBox) {
+                searchBox.value = '';
+                searchBox.focus();
+            }
+          })
+          .catch((err) => {
+            errEl.textContent = 'Lookup request failed: ' + err.message;
+            errEl.style.display = 'block';
+          });
+      }
+
+      // ── Add / Remove return item rows ──────────────────────────────────
+      function addReturnItem() {
+        const container = document.getElementById('returnItemsContainer');
+        const firstRow = container.querySelector('.return-item-row');
+        const newRow = firstRow.cloneNode(true);
+        newRow.querySelector('select[name="product_id[]"]').value = '';   // ensure blank
+        newRow.querySelector('input[name="qty[]"]').value = '';
+        newRow.querySelector('select[name="condition[]"]').selectedIndex = 0;
+        container.appendChild(newRow);
+        document.getElementById('barcodeSearch').focus();
+      }
+
+      function removeReturnItem(btn) {
+        const container = document.getElementById('returnItemsContainer');
+        const rows = container.querySelectorAll('.return-item-row');
+        if (rows.length <= 1) {
+          alert("At least one return item row is required.");
+          return;
+        }
+        btn.closest('.return-item-row').remove();
+      }
+
+      // ── Camera Scanner Logic ──────────────────────────────────
+      let html5QrcodeScannerObj = null;
+
+      function openCameraScanner() {
+        const overlay = document.getElementById('scannerOverlay');
+        const status = document.getElementById('scannerStatus');
+        overlay.classList.add('active');
+        status.textContent = 'Starting camera...';
+        document.getElementById('reader').innerHTML = '';
+
+        const config = {
+          fps: 10,
+          qrbox: { width: 350, height: 200 },
+          aspectRatio: 1.0
+        };
+
+        try {
+          html5QrcodeScannerObj = new Html5Qrcode("reader");
+          html5QrcodeScannerObj.start({ facingMode: "environment" }, config, onCameraScanSuccess, onCameraScanFailure)
+            .then(() => { status.textContent = 'Scanning... Position barcode inside the box.'; })
+            .catch((err) => {
+              status.textContent = 'Error starting camera. Please grant permissions.';
+              console.error(err);
+            });
+        } catch (e) {
+          status.textContent = 'Camera initialization failed.';
+        }
+      }
+
+      function closeCameraScanner() {
+        const overlay = document.getElementById('scannerOverlay');
+        overlay.classList.remove('active');
+        if (html5QrcodeScannerObj) {
+          try { html5QrcodeScannerObj.stop().catch(e => console.error(e)); } catch(e){}
+        }
+        document.getElementById('barcodeSearch').focus();
+      }
+
+      function onCameraScanSuccess(decodedText) {
+        if (html5QrcodeScannerObj) {
+           try { html5QrcodeScannerObj.pause(); } catch(e){}
+        }
+        document.getElementById('scannerStatus').textContent = 'Found: ' + decodedText;
+
+        const searchBox = document.getElementById('barcodeSearch');
+        searchBox.value = decodedText;
+        closeCameraScanner();
+        lookupBarcode();
+      }
+
+      function onCameraScanFailure() {}
+      
+      document.addEventListener('DOMContentLoaded', function() {
+        const searchBoxEl = document.getElementById('barcodeSearch');
+        if(searchBoxEl) {
+          searchBoxEl.addEventListener('keydown', function(e) {
+            if (e.key === 'Enter') { e.preventDefault(); lookupBarcode(); }
+          });
+        }
+      });
+    </script>
   </head>
   <body>
     <div class="sidebar">
@@ -58,10 +263,16 @@
             <input type="text" id="barcodeSearch"
                    placeholder="Scan or type GRN barcode  e.g. INV-2024-001-1-12345"
                    style="flex:1;">
+            
+            <button type="button"
+                    style="background:#16a34a; white-space:nowrap; display:flex; align-items:center; gap:6px;"
+                    onclick="openCameraScanner()">
+              Scan
+            </button>
             <button type="button"
                     style="background:#0f172a; white-space:nowrap;"
                     onclick="lookupBarcode()">
-              Lookup
+              🔍 Lookup
             </button>
           </div>
           <div id="lookupError"
@@ -114,7 +325,7 @@
           </div>
         </div>
 
-        <!-- ── Return form (unchanged from original) ── -->
+        <!-- ── Return form ── -->
         <form action="{{ url_for('inventory_return') }}" method="POST">
           <div class="form-row">
             <div>
@@ -138,38 +349,42 @@
             </div>
           </div>
           <hr style="border: 0; border-top: 1px solid #cbd5e1; margin: 20px 0" />
-          <div class="form-row">
-            <div style="grid-column: span 2">
-              <label>Select Product</label>
-              <select name="product_id" id="returnProductSelect" required>
-                {% for p in products %}
-                <option value="{{ p.id }}" data-barcode="{{ p.barcode or '' }}">
-                  {{ p.item_code }} - {{ p.item_name }}
-                </option>
-                {% endfor %}
-              </select>
-              <div id="returnBarcodePreviewContainer"
-                   style="margin-top: 12px; display: flex; align-items: center; gap: 12px;">
-                <img id="returnBarcodePreview" src="" alt="Return product barcode"
-                     style="max-height: 80px; display: none; border: 1px solid #e5e7eb;
-                            padding: 8px; background: #fff;" />
-                <p id="returnBarcodePreviewLabel"
-                   style="font-size: 12px; color: #475569; margin: 0"></p>
-              </div>
-            </div>
-            <div>
-              <label>Returned Quantity</label>
-              <input type="number" name="qty" placeholder="e.g. 5" required />
-            </div>
-            <div>
-              <label>Physical Condition</label>
-              <select name="condition">
-                <option value="Good">Good (Restock immediately)</option>
-                <option value="Damaged">Damaged / Defective</option>
-              </select>
-            </div>
+          
+          <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:10px;">
+              <h3 style="margin:0; font-size:16px; color:#1e293b;">Return Items</h3>
+              <button type="button" onclick="addReturnItem()" style="background:#2563eb; padding:6px 12px; font-size:12px;">+ Add Item</button>
           </div>
-          <div class="form-row">
+
+          <div id="returnItemsContainer">
+              <div class="form-row return-item-row" style="background:#f8fafc; padding:15px; border-radius:6px; position:relative; margin-bottom:10px; border:1px solid #e2e8f0;">
+                <div style="grid-column: span 2">
+                  <label>Select Product</label>
+                  <select name="product_id[]" class="returnProductSelect" required>
+                    <option value="">-- Select Product --</option>
+                    {% for p in products %}
+                    <option value="{{ p.id }}" data-barcode="{{ p.barcode or '' }}">
+                      {{ p.item_code }} - {{ p.item_name }}
+                    </option>
+                    {% endfor %}
+                  </select>
+                </div>
+                <div>
+                  <label>Returned Quantity</label>
+                  <input type="number" name="qty[]" placeholder="e.g. 5" required />
+                </div>
+                <div>
+                  <label>Physical Condition</label>
+                  <select name="condition[]">
+                    <option value="Good">Good (Restock immediately)</option>
+                    <option value="Damaged">Damaged / Defective</option>
+                  </select>
+                </div>
+                <!-- Remove Button -->
+                <button type="button" onclick="removeReturnItem(this)" style="position:absolute; top:8px; right:8px; background:#ef4444; color:white; border:none; padding:4px 8px; border-radius:4px; font-size:12px; cursor:pointer;">Remove</button>
+              </div>
+          </div>
+
+          <div class="form-row" style="margin-top:20px;">
             <div style="grid-column: span 3">
               <label>Reason for Inward Return</label>
               <input type="text" name="reason" placeholder="Explain reason for return" />
@@ -182,106 +397,14 @@
       </div>
     </div>
 
-    <script>
-      // ── Barcode lookup ──────────────────────────────────────────────────────
-      function lookupBarcode() {
-        const val = document.getElementById('barcodeSearch').value.trim();
-        const errEl  = document.getElementById('lookupError');
-        const cardEl = document.getElementById('supplierCard');
-
-        if (!val) {
-          errEl.textContent = 'Please enter or scan a barcode first.';
-          errEl.style.display = 'block';
-          return;
-        }
-
-        errEl.style.display = 'none';
-
-        fetch('/api/barcode-lookup?barcode=' + encodeURIComponent(val))
-          .then(r => r.json())
-          .then(data => {
-            if (data.error) {
-              errEl.textContent = data.error;
-              errEl.style.display = 'block';
-              cardEl.style.display = 'none';
-              return;
-            }
-
-            // Show supplier card
-            cardEl.style.display = 'block';
-            document.getElementById('si_name').textContent    = data.supplier_name    || '—';
-            document.getElementById('si_contact').textContent = data.contact_person   || '—';
-            document.getElementById('si_phone').textContent   = data.phone            || '—';
-            document.getElementById('si_email').textContent   = data.email            || '—';
-            document.getElementById('si_invoice').textContent = data.invoice_number   || '—';
-            document.getElementById('si_date').textContent    = data.invoice_date     || '—';
-            document.getElementById('si_address').textContent = data.address          || '—';
-
-            // Warn if no supplier was linked to this invoice
-            const noSupWarn = document.getElementById('noSupplierWarn');
-            noSupWarn.style.display = data.supplier_id ? 'none' : 'block';
-
-            // Auto-select the correct product in the dropdown
-            if (data.product_id) {
-              const sel = document.getElementById('returnProductSelect');
-              for (let opt of sel.options) {
-                if (parseInt(opt.value) === data.product_id) {
-                  sel.value = opt.value;
-                  updateReturnBarcodePreview();
-                  break;
-                }
-              }
-            }
-
-            // Auto-generate a return ID suggestion
-            const retField = document.getElementById('return_id_field');
-            if (!retField.value) {
-              const ts = Date.now().toString().slice(-5);
-              retField.value = 'RET-' + (data.invoice_number || 'UNKNOWN') + '-' + ts;
-            }
-
-            cardEl.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
-          })
-          .catch(() => {
-            errEl.textContent = 'Lookup request failed. Is the server running?';
-            errEl.style.display = 'block';
-          });
-      }
-
-      // Allow Enter key in barcode field
-      document.getElementById('barcodeSearch').addEventListener('keydown', function(e) {
-        if (e.key === 'Enter') { e.preventDefault(); lookupBarcode(); }
-      });
-
-      // ── Product barcode preview (unchanged from original) ───────────────────
-      function updateReturnBarcodePreview() {
-        const select = document.getElementById('returnProductSelect');
-        const image  = document.getElementById('returnBarcodePreview');
-        const label  = document.getElementById('returnBarcodePreviewLabel');
-        if (!select || !image || !label) return;
-
-        const bc = select.selectedOptions[0]?.dataset?.barcode || '';
-        if (bc) {
-          image.src = `/static/barcodes/${bc}.png`;
-          image.style.display = 'block';
-          image.onerror = function() {
-            image.style.display = 'none';
-            label.textContent = 'Barcode image unavailable';
-          };
-          label.textContent = `Barcode: ${bc}`;
-        } else {
-          image.style.display = 'none';
-          label.textContent = 'No barcode available for this product.';
-        }
-      }
-
-      document.addEventListener('DOMContentLoaded', function() {
-        const sel = document.getElementById('returnProductSelect');
-        if (sel) {
-          updateReturnBarcodePreview();
-          sel.addEventListener('change', updateReturnBarcodePreview);
-        }
-      });
-    </script>
+    <!-- Camera Scanner Modal Overlay -->
+    <div class="scanner-overlay" id="scannerOverlay">
+      <div class="scanner-box">
+        <h3>Camera Scanner</h3>
+        <div id="reader" style="width: 100%; border-radius: 6px; overflow: hidden; background: #000;"></div>
+        <p id="scannerStatus" style="font-weight:bold; color:#334155; margin-top:10px;"></p>
+        <button type="button" class="scanner-close-btn" onclick="closeCameraScanner()">Close</button>
+      </div>
+    </div>
   </body>
 </html>

@@ -111,6 +111,11 @@
         padding: 10px;
         background: white;
       }
+      .search-hint {
+        font-size: 12px;
+        color: #64748b;
+        margin-top: 6px;
+      }
     </style>
   </head>
   <body>
@@ -138,9 +143,22 @@
                 name="search"
                 value="{{ query }}"
                 placeholder="Search identifier..."
+                list="product-suggestions"
+                autocomplete="off"
                 autofocus
                 required
               />
+              <datalist id="product-suggestions">
+                {% for suggestion in products %}
+                <option value="{{ suggestion.item_code }}" label="{{ suggestion.item_name }}"></option>
+                {% if suggestion.item_name and suggestion.item_name != suggestion.item_code %}
+                <option value="{{ suggestion.item_name }}" label="{{ suggestion.item_code }}"></option>
+                {% endif %}
+                {% endfor %}
+              </datalist>
+              <div class="search-hint">
+                Type a partial code or name and choose a suggestion from the dropdown.
+              </div>
             </div>
             <div style="align-self: end">
               <button type="submit" style="width: 100%">Search Database</button>

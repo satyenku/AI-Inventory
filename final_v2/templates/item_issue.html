@@ -3,12 +3,24 @@
   <head>
     <meta charset="UTF-8" />
     <title>Stock Dispatch Issue</title>
+    <!-- html5-qrcode v2.3.8 — pinned browser minified build -->
+    <script src="https://unpkg.com/html5-qrcode@2.3.8/html5-qrcode.min.js"></script>
     <style>
       body {
         margin: 0;
         font-family: Arial, sans-serif;
         background: #f1f5f9;
         display: flex;
+      }
+      .flash-msg-error {
+        color: #dc2626;
+        font-weight: bold;
+        font-size: 14px;
+      }
+      .flash-msg-success {
+        color: #16a34a;
+        font-weight: bold;
+        font-size: 14px;
       }
       .sidebar {
         width: 240px;
@@ -79,6 +91,138 @@
       button:hover {
         background: #b91c1c;
       }
+      /* Scan button */
+      .scan-btn {
+        display: inline-flex;
+        align-items: center;
+        gap: 6px;
+        margin-top: 8px;
+        padding: 7px 14px;
+        background: #059669;
+        color: #fff;
+        border: none;
+        border-radius: 4px;
+        cursor: pointer;
+        font-size: 13px;
+        font-weight: bold;
+      }
+      .scan-btn:hover {
+        background: #047857;
+      }
+      /* Scanner modal overlay */
+      .scanner-overlay {
+        display: none;
+        position: fixed;
+        inset: 0;
+        background: rgba(0,0,0,0.7);
+        z-index: 9999;
+        justify-content: center;
+        align-items: center;
+      }
+      .scanner-overlay.active {
+        display: flex;
+      }
+      .scanner-box {
+        background: #fff;
+        border-radius: 10px;
+        padding: 24px;
+        width: 460px;
+        max-width: 92vw;
+        box-shadow: 0 12px 40px rgba(0,0,0,0.3);
+        text-align: center;
+      }
+      .scanner-box h3 {
+        margin: 0 0 14px;
+        color: #1e293b;
+        font-size: 17px;
+      }
+      .scanner-box #reader {
+        width: 100%;
+        border-radius: 6px;
+        border: 2px solid #059669;
+        background: #000;
+        margin: 0 auto;
+      }
+      .scanner-box .manual-row {
+        display: flex;
+        gap: 8px;
+        margin-top: 14px;
+      }
+      .scanner-box .manual-row input {
+        flex: 1;
+      }
+      .scanner-box .manual-row button {
+        background: #2563eb;
+        padding: 8px 16px;
+        white-space: nowrap;
+      }
+      .scanner-status {
+        margin-top: 10px;
+        font-size: 13px;
+        color: #475569;
+        min-height: 20px;
+      }
+      .scanner-close-btn {
+        margin-top: 14px;
+        background: #64748b !important;
+        padding: 8px 20px;
+      }
+      .manual-entry-section {
+        background: #f0f9ff;
+        border: 2px solid #2563eb;
+        border-radius: 8px;
+        padding: 16px;
+        margin-bottom: 16px;
+      }
+      .manual-entry-section label {
+        display: block;
+        font-weight: bold;
+        font-size: 14px;
+        color: #1e293b;
+        margin-bottom: 8px;
+        text-align: left;
+      }
+      .manual-entry-section input {
+        width: 100%;
+        padding: 12px 14px;
+        font-size: 15px;
+        border: 2px solid #cbd5e1;
+        border-radius: 6px;
+        box-sizing: border-box;
+        margin-bottom: 10px;
+      }
+      .manual-entry-section input:focus {
+        border-color: #2563eb;
+        outline: none;
+      }
+      .manual-entry-section button {
+        width: 100%;
+        background: #2563eb;
+        color: #fff;
+        padding: 12px;
+        font-size: 15px;
+        font-weight: bold;
+        border: none;
+        border-radius: 6px;
+        cursor: pointer;
+      }
+      .manual-entry-section button:hover {
+        background: #1d4ed8;
+      }
+      .divider-or {
+        display: flex;
+        align-items: center;
+        gap: 12px;
+        margin: 16px 0;
+        color: #94a3b8;
+        font-size: 13px;
+      }
+      .divider-or::before, .divider-or::after {
+        content: '';
+        flex: 1;
+        height: 1px;
+        background: #cbd5e1;
+      }
     </style>
   </head>
   <body>
@@ -97,14 +241,15 @@
     <div class="main">
       <div class="container">
         <h2>Record Store Dispatch / Issue Out</h2>
-        {% with messages = get_flashed_messages(with_categories=true) %} {% if
-        messages %} {% for category, message in messages %}
-        <p
-          style="color: {% if category=='error' %}#dc2626{% else %}#16a34a{% endif %}; font-weight: bold; font-size: 14px;"
-        >
-          {{ message }}
-        </p>
-        {% endfor %} {% endif %} {% endwith %}
+        {% with messages = get_flashed_messages(with_categories=true) %}
+          {% if messages %}
+            {% for category, message in messages %}
+              <p class="{% if category=='error' %}flash-msg-error{% else %}flash-msg-success{% endif %}">
+                {{ message }}
+              </p>
+            {% endfor %}
+          {% endif %}
+        {% endwith %}
         <form action="{{ url_for('item_issue') }}" method="POST">
           <div class="form-row">
             <div>
@@ -112,22 +257,31 @@
               <input
                 type="text"
                 name="issue_slip_no"
-                placeholder="e.g. SLIP-9921"
+                value="{{ next_slip_no }}"
+                readonly
                 required
               />
             </div>
             <div>
               <label>Issue Date</label>
-              <input type="date" name="issue_date" required />
+              <input
+                type="text"
+                name="issue_date"
+                value="{{ today_date }}"
+                readonly
+                required
+              />
             </div>
             <div>
               <label>Requesting Unit / Dept</label>
-              <input
-                type="text"
-                name="issued_to"
-                placeholder="e.g. Production Floor B"
-                required
-              />
+              <select name="issued_to" required>
+                <option value="" disabled selected>Select Department</option>
+                {% for dept in departments %}
+                <option value="{{ dept.dept_name }}">
+                  {{ dept.dept_name }} ({{ dept.dept_id }})
+                </option>
+                {% endfor %}
+              </select>
             </div>
             <div>
               <label>Work Order Ref Number</label>
@@ -141,93 +295,363 @@
           <hr
             style="border: 0; border-top: 1px solid #cbd5e1; margin: 20px 0"
           />
-          <div class="form-row">
-            <div style="grid-column: span 2">
-              <label>Target Product</label>
-              <select name="product_id" id="productSelect" required>
-                {% for p in products %}
-                <option value="{{ p.id }}" data-barcode="{{ p.barcode or '' }}">
-                  {{ p.item_code }} - {{ p.item_name }} (Avail: {{
-                  p.current_stock }})
-                </option>
-                {% endfor %}
-              </select>
-              <div
-                id="barcodePreviewContainer"
-                style="
-                  margin-top: 12px;
-                  display: flex;
-                  align-items: center;
-                  gap: 12px;
-                "
-              >
-                <img
-                  id="barcodePreview"
-                  src=""
-                  alt="Product barcode"
-                  style="
-                    max-height: 80px;
-                    display: none;
-                    border: 1px solid #e5e7eb;
-                    padding: 8px;
-                    background: #fff;
-                  "
-                />
-                <p
-                  id="barcodePreviewLabel"
-                  style="font-size: 12px; color: #475569; margin: 0"
-                ></p>
+          
+          <h3 style="margin-top: 0; color: #1e293b; font-size: 16px;">Dispatched Items</h3>
+          <div id="itemsContainer">
+            <div class="item-row" style="margin-bottom: 20px; border-bottom: 1px dashed #cbd5e1; padding-bottom: 20px;">
+              <div class="form-row">
+                <div style="grid-column: span 2">
+                  <label>Target Product</label>
+                  <select name="product_id" class="product-select" required>
+                    <option value="">Select Product...</option>
+                    {% for p in products %}
+                    <option value="{{ p.id }}" data-barcode="{{ p.barcode or '' }}" data-itemcode="{{ p.item_code }}" data-itemname="{{ p.item_name }}" data-qty="{{ p.current_stock }}">
+                      {{ p.item_code }} - {{ p.item_name }} | Barcode: {{ p.barcode or 'N/A' }} (Avail: {{ p.current_stock }})
+                    </option>
+                    {% endfor %}
+                  </select>
+                  <div class="row-item-details" style="margin-top: 8px; font-size: 13px; color: #475569;"></div>
+                </div>
+                <div>
+                  <label>Dispatched Issue Qty</label>
+                  <input type="number" name="qty" placeholder="e.g. 50" min="0.01" step="any" required />
+                </div>
+                <div style="align-self: end; display: flex; gap: 10px;">
+                  <button type="button" class="btn-secondary add-row-btn" style="background-color: #2563eb; color: #fff; padding: 10px 16px; border: none; border-radius: 4px; cursor: pointer; font-weight: bold;">+ Add Item</button>
+                  <button type="button" class="btn-danger remove-row-btn" style="background-color: #ef4444; color: #fff; padding: 10px 16px; border: none; border-radius: 4px; cursor: pointer; display: none; font-weight: bold;">Remove</button>
+                </div>
               </div>
             </div>
-            <div>
-              <label>Dispatched Issue Qty</label>
-              <input type="number" name="qty" placeholder="e.g. 50" required />
-            </div>
-            <div style="align-self: end">
-              <button type="submit">Execute Dispatch</button>
-            </div>
+          </div>
+          
+          <div style="margin-top: 20px; display: flex; justify-content: flex-end;">
+            <button type="submit" style="padding: 12px 24px; font-size: 15px;">Execute Dispatch</button>
           </div>
         </form>
       </div>
     </div>
-    <script>
-      function updateBarcodePreview(selectId, imgId, labelId) {
-        const select = document.getElementById(selectId);
-        const image = document.getElementById(imgId);
-        const label = document.getElementById(labelId);
-        if (!select || !image || !label) return;
 
-        const barcode = select.selectedOptions[0]?.dataset?.barcode || "";
-        if (barcode) {
-          image.src = `/static/barcodes/${barcode}.png`;
-          image.style.display = "block";
-          image.onerror = function () {
-            image.style.display = "none";
-            label.textContent = "Barcode image unavailable";
-          };
-          label.textContent = `Barcode: ${barcode}`;
-        } else {
-          image.style.display = "none";
-          label.textContent = "No barcode available for this product.";
+    <!-- Barcode Scanner Modal -->
+    <div class="scanner-overlay" id="scannerOverlay">
+      <div class="scanner-box">
+        <h3>Add Product by Barcode</h3>
+        
+        <!-- Manual Entry (Primary) -->
+        <div class="manual-entry-section">
+          <label>Enter Barcode Number</label>
+          <input type="text" id="manualBarcodeInput" placeholder="e.g. RM-5023" autofocus />
+          <button type="button" id="manualLookupBtn">Search Product</button>
+        </div>
+        
+        <div id="scanResultBox"></div>
+        
+        <!-- Camera Scanner (Secondary) -->
+        <div class="divider-or">OR scan with camera</div>
+        <div id="reader" style="width: 100%; border-radius: 6px; overflow: hidden; background: #000;"></div>
+        <p class="scanner-status" id="scannerStatus"></p>
+        
+        <button type="button" class="scanner-close-btn" id="scannerCloseBtn">Close</button>
+      </div>
+    </div>
+    
+    <script>
+
+
+      function registerRowListeners(row) {
+        const select = row.querySelector(".product-select");
+        const detailsDiv = row.querySelector(".row-item-details");
+        if (select) {
+          select.addEventListener("change", function () {
+            const selectedOpt = select.options[select.selectedIndex];
+            if (selectedOpt && selectedOpt.value !== "") {
+              const itemCode = selectedOpt.dataset.itemcode || 'N/A';
+              const itemName = selectedOpt.dataset.itemname || 'N/A';
+              const qty = selectedOpt.dataset.qty || '0';
+              if (detailsDiv) {
+                detailsDiv.innerHTML = `<span style="color:#2563eb; font-weight:bold;">Code:</span> ${itemCode} &nbsp;&nbsp;|&nbsp;&nbsp; <span style="color:#2563eb; font-weight:bold;">Name:</span> ${itemName} &nbsp;&nbsp;|&nbsp;&nbsp; <span style="color:#2563eb; font-weight:bold;">Available Qty:</span> ${qty}`;
+              }
+            } else {
+              if (detailsDiv) detailsDiv.innerHTML = '';
+            }
+          });
+        }
+        
+        const addBtn = row.querySelector(".add-row-btn");
+        if (addBtn) {
+          addBtn.addEventListener("click", function () {
+            addNewRow();
+          });
+        }
+        
+        const removeBtn = row.querySelector(".remove-row-btn");
+        if (removeBtn) {
+          removeBtn.addEventListener("click", function () {
+            row.remove();
+            updateRemoveButtons();
+          });
+        }
+
+        const scanBtn = row.querySelector(".scan-barcode-btn");
+        if (scanBtn) {
+          scanBtn.addEventListener("click", function () {
+            openScanner(row);
+          });
         }
       }
 
-      document.addEventListener("DOMContentLoaded", function () {
-        const select = document.getElementById("productSelect");
-        if (select) {
-          updateBarcodePreview(
-            "productSelect",
-            "barcodePreview",
-            "barcodePreviewLabel",
-          );
-          select.addEventListener("change", function () {
-            updateBarcodePreview(
-              "productSelect",
-              "barcodePreview",
-              "barcodePreviewLabel",
-            );
-          });
+      function addNewRow() {
+        const firstRow = document.querySelector(".item-row");
+        if (!firstRow) return;
+        
+        const newRow = firstRow.cloneNode(true);
+        
+        // Reset inputs
+        const select = newRow.querySelector(".product-select");
+        if (select) select.selectedIndex = 0;
+        
+        const qtyInput = newRow.querySelector("input[name='qty']");
+        if (qtyInput) qtyInput.value = "";
+        
+        // Hide the row until a barcode is scanned successfully
+        newRow.style.display = "none";
+        
+        // Append
+        document.getElementById("itemsContainer").appendChild(newRow);
+        
+        // Register events
+        registerRowListeners(newRow);
+        updateRemoveButtons();
+
+        // Automatically open scanner for the new row
+        openScanner(newRow);
+      }
+
+      function updateRemoveButtons() {
+        const rows = document.querySelectorAll(".item-row");
+        rows.forEach((row) => {
+          const removeBtn = row.querySelector(".remove-row-btn");
+          if (removeBtn) {
+            if (rows.length > 1) {
+              removeBtn.style.display = "inline-block";
+            } else {
+              removeBtn.style.display = "none";
+            }
+          }
+        });
+      }
+
+      // ---- Barcode Scanner Logic ----
+      let html5QrcodeScannerObj = null;
+      let activeScanRow = null;
+
+      function openScanner(row) {
+        activeScanRow = row;
+        const overlay = document.getElementById('scannerOverlay');
+        const status = document.getElementById('scannerStatus');
+        document.getElementById('manualBarcodeInput').value = '';
+        document.getElementById('scanResultBox').innerHTML = '';
+        overlay.classList.add('active');
+        status.textContent = 'Starting camera...';
+
+        // Clean up previous instance
+        document.getElementById('reader').innerHTML = '';
+        
+        // Define robust formats for 1D barcodes
+        let formatsToSupport = [];
+        try {
+          if (typeof Html5QrcodeSupportedFormats !== 'undefined') {
+            formatsToSupport = [
+              Html5QrcodeSupportedFormats.CODE_128,
+              Html5QrcodeSupportedFormats.CODE_39,
+              Html5QrcodeSupportedFormats.EAN_13,
+              Html5QrcodeSupportedFormats.EAN_8,
+              Html5QrcodeSupportedFormats.UPC_A,
+              Html5QrcodeSupportedFormats.UPC_E,
+              Html5QrcodeSupportedFormats.QR_CODE
+            ];
+          }
+        } catch (e) {}
+
+        const config = {
+          fps: 10,
+          qrbox: { width: 350, height: 200 }, // Wide box optimized for 1D barcodes
+          aspectRatio: 1.0,
+          formatsToSupport: formatsToSupport,
+          experimentalFeatures: {
+            useBarCodeDetectorIfSupported: true
+          }
+        };
+
+        try {
+          html5QrcodeScannerObj = new Html5Qrcode("reader");
+        } catch (err) {
+          status.textContent = 'Scanner library failed. Use manual entry.';
+          return;
         }
+
+        html5QrcodeScannerObj.start(
+          { facingMode: "environment" },
+          config,
+          onScanSuccess,
+          onScanFailure
+        ).then(() => {
+          status.textContent = 'Scanning live... position barcode in green box.';
+        }).catch(err => {
+          console.warn("Environment camera failed, trying front/laptop camera:", err);
+          html5QrcodeScannerObj.start(
+            { facingMode: "user" },
+            config,
+            onScanSuccess,
+            onScanFailure
+          ).then(() => {
+            status.textContent = 'Scanning live (Laptop Mode)... position barcode.';
+          }).catch(err2 => {
+            console.error("All cameras failed:", err2);
+            status.textContent = 'Camera unavailable. Type barcode manually.';
+          });
+        });
+      }
+
+      function onScanSuccess(decodedText, decodedResult) {
+        const status = document.getElementById('scannerStatus');
+        status.textContent = 'Success! Found: ' + decodedText + ' - Fetching details...';
+        
+        if (html5QrcodeScannerObj) {
+          html5QrcodeScannerObj.pause();
+        }
+        
+        applyBarcodeCode(decodedText);
+      }
+
+      function onScanFailure(error) {
+        // Silently ignore failures
+      }
+
+      function applyBarcodeCode(code) {
+        if (!activeScanRow) return;
+        const status = document.getElementById('scannerStatus');
+        status.textContent = 'Searching for barcode: ' + code + '...';
+
+        // Use the original HTML-based /search_barcode endpoint you provided
+        const formData = new FormData();
+        formData.append('barcode_no', code);
+
+        fetch('/search_barcode', {
+          method: 'POST',
+          body: formData
+        })
+        .then(response => response.text())
+        .then(html => {
+          // Parse the HTML response
+          const parser = new DOMParser();
+          const doc = parser.parseFromString(html, 'text/html');
+          
+          const select = activeScanRow.querySelector('.product-select');
+          if (!select) return;
+
+          let matched = false;
+          for (let i = 0; i < select.options.length; i++) {
+            const opt = select.options[i];
+            if (opt.dataset.barcode && opt.dataset.barcode.trim() === code.trim()) {
+              select.selectedIndex = i;
+              
+              // Trigger change event to populate the details below the dropdown
+              select.dispatchEvent(new Event('change'));
+              
+              matched = true;
+              break;
+            }
+          }
+
+          if (matched) {
+            const selectedOpt = select.options[select.selectedIndex];
+            const itemCode = selectedOpt.dataset.itemcode || 'N/A';
+            const itemName = selectedOpt.dataset.itemname || 'N/A';
+            const qty = selectedOpt.dataset.qty || '0';
+            
+            const resultDiv = document.getElementById('scanResultBox');
+            resultDiv.innerHTML = `
+              <div style="background:#ecfdf5; border:1px solid #059669; border-radius:6px; padding:12px; margin-top:10px; text-align:left;">
+                <p style="margin:0 0 4px; font-weight:bold; color:#059669;">✅ Product Found!</p>
+                <p style="margin:0; font-size:13px; color:#1e293b;"><strong>Item Code:</strong> ${itemCode}</p>
+                <p style="margin:0; font-size:13px; color:#1e293b;"><strong>Item Name:</strong> ${itemName}</p>
+                <p style="margin:0; font-size:13px; color:#1e293b;"><strong>Available Qty:</strong> ${qty}</p>
+              </div>
+            `;
+            status.textContent = 'Product matched! Closing in 2 seconds...';
+            
+            activeScanRow.style.display = '';
+            
+            setTimeout(function() {
+              closeScanner();
+            }, 2000);
+          } else {
+            showError(code, 'Check if this barcode exists in the Product Master.');
+          }
+        })
+        .catch(err => {
+          status.textContent = 'Error searching barcode. Try manual entry.';
+          console.error('Barcode search error:', err);
+        });
+      }
+
+      function showError(code, message) {
+        const resultDiv = document.getElementById('scanResultBox');
+        resultDiv.innerHTML = `
+          <div style="background:#fef2f2; border:1px solid #dc2626; border-radius:6px; padding:12px; margin-top:10px; text-align:left;">
+            <p style="margin:0; font-weight:bold; color:#dc2626;">❌ No product found with barcode: ${code}</p>
+            <p style="margin:0; font-size:12px; color:#64748b;">${message}</p>
+          </div>
+        `;
+        document.getElementById('scannerStatus').textContent = 'Product not found. Try again or type manually.';
+      }
+
+      function closeScanner() {
+        const overlay = document.getElementById('scannerOverlay');
+        overlay.classList.remove('active');
+        
+        // If the row is still hidden (no barcode matched), remove it
+        if (activeScanRow && activeScanRow.style.display === 'none') {
+          activeScanRow.remove();
+          updateRemoveButtons();
+        }
+        
+        if (html5QrcodeScannerObj) {
+          try {
+            html5QrcodeScannerObj.stop().then(() => {
+              document.getElementById('reader').innerHTML = '';
+            }).catch(e => console.warn(e));
+          } catch(e) {}
+          html5QrcodeScannerObj = null;
+        }
+        activeScanRow = null;
+      }
+
+      document.addEventListener("DOMContentLoaded", function () {
+        const firstRow = document.querySelector(".item-row");
+        if (firstRow) {
+          registerRowListeners(firstRow);
+        }
+
+        document.getElementById('scannerCloseBtn').addEventListener('click', closeScanner);
+
+        document.getElementById('manualLookupBtn').addEventListener('click', function() {
+          const code = document.getElementById('manualBarcodeInput').value.trim();
+          if (code) {
+            applyBarcodeCode(code);
+          }
+        });
+
+        document.getElementById('manualBarcodeInput').addEventListener('keydown', function(e) {
+          if (e.key === 'Enter') {
+            e.preventDefault();
+            const code = this.value.trim();
+            if (code) {
+              applyBarcodeCode(code);
+            }
+          }
+        });
+
       });
     </script>
   </body>

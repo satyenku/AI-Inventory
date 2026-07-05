@@ -1,42 +1,21 @@
-<!DOCTYPE html>
+﻿<!DOCTYPE html>
 <html>
 <head>
     <title>QC Sheet</title>
 
     <style>
-        body { font-family: Arial; margin: 20px; }
+        body { font-family: Arial, sans-serif; margin: 20px; }
         h2 { margin-bottom: 10px; }
-
-        .info {
-            margin-bottom: 15px;
-            font-size: 14px;
-        }
-
-        table {
-            width: 100%;
-            border-collapse: collapse;
-            font-size: 13px;
-        }
-
-        th, td {
-            border: 1px solid #333;
-            padding: 6px;
-            text-align: center;
-        }
-
+        .info { margin-bottom: 15px; font-size: 14px; }
+        .top-bar { display: flex; justify-content: space-between; align-items: center; gap: 12px; flex-wrap: wrap; margin-bottom: 16px; }
+        .actions button { margin-left: 8px; padding: 8px 12px; border: none; border-radius: 5px; cursor: pointer; color: white; }
+        .actions .btn-secondary { background: #475569; }
+        .actions .btn-primary { background: #2563eb; }
+        table { width: 100%; border-collapse: collapse; font-size: 13px; }
+        th, td { border: 1px solid #333; padding: 6px; text-align: center; }
         th { background: #f2f2f2; }
-
-        input {
-            width: 60px;
-            padding: 3px;
-            text-align: center;
-        }
-
-        .btn {
-            margin-top: 15px;
-            padding: 8px 12px;
-            cursor: pointer;
-        }
+        .empty-cell { color: #94a3b8; }
+        .note { margin-top: 12px; font-size: 13px; color: #4b5563; }
     </style>
 </head>
 
@@ -44,7 +23,13 @@
 
 <h2>QC Inspection Sheet</h2>
 
-<div class="info" id="infoBox">Loading...</div>
+<div class="top-bar">
+    <div class="info" id="infoBox">Loading...</div>
+    <div class="actions">
+        <button type="button" class="btn-secondary" onclick="goBack()">← Back to Invoice</button>
+        <button type="button" class="btn-primary" onclick="printReport()">Print Form</button>
+    </div>
+</div>
 
 <table>
     <thead>
@@ -62,113 +47,86 @@
             <th>Remarks</th>
         </tr>
     </thead>
-
     <tbody id="qcTable"></tbody>
 </table>
 
-<button class="btn" onclick="saveQC()">Save QC</button>
+<div class="note">This QC sheet is read-only and is generated from existing Product Master, inspection property, and latest inspection records.</div>
 
 <script>
-
-let inspectionId = null;
-let specsMap = {};
+const params = new URLSearchParams(window.location.search);
+const itemName = params.get('item_name') || '';
+const invoiceNumber = params.get('invoice_number') || '';
+const invoiceDate = params.get('invoice_date') || '';
+const qty = params.get('qty') || '';
+const returnUrl = params.get('return_url') || '/item-entry';
+const productId = {{ product.id if product else 'null' }};
+const productName = {{ (product.item_name if product else '')|tojson }};
+const lastInspectionDate = {{ last_inspection_date|tojson }};
+const latestInspectionId = {{ latest_inspection_id|tojson }};
+let specs = {{ specs|tojson | safe }};
 
 window.onload = function () {
+    document.getElementById('infoBox').innerHTML = `
+        <b>Requested Item:</b> ${itemName || '-'}<br>
+        <b>Matched Product:</b> ${productName || 'Not found in Product Master'}<br>
+        <b>Invoice:</b> ${invoiceNumber || '-'}<br>
+        <b>Invoice Date:</b> ${invoiceDate || '-'}<br>
+        <b>Qty:</b> ${qty || '-'}<br>
+        <b>Latest Inspection:</b> ${lastInspectionDate ? `${lastInspectionDate} (#${latestInspectionId})` : 'No saved inspection found'}<br>
+        <b>Total Specs:</b> ${specs.length}
+    `;
 
-    const params = new URLSearchParams(window.location.search);
-
-    inspectionId = params.get("inspection_id");
-
-    if (!inspectionId) {
-        alert("Inspection ID missing");
-        return;
-    }
-
-    fetch(`/api/qc-sheet/${inspectionId}`)
-        .then(res => res.json())
-        .then(data => {
-
-            document.getElementById("infoBox").innerHTML = `
-                <b>Inspection ID:</b> ${inspectionId}<br>
-                <b>Product:</b> ${data.product_name || "-"}<br>
-                <b>Total Specs:</b> ${data.specs.length}
-            `;
-
-            renderTable(data.specs);
-        });
+    renderTable(specs);
 };
 
-
-// TABLE RENDER
 function renderTable(specs) {
+    let html = '';
 
-    let html = "";
-
-    specs.forEach((s, i) => {
-
-        specsMap[s.id] = s;
-
-        html += `
-        <tr data-id="${s.id}">
-            <td>${i + 1}</td>
-            <td>${s.property_name}</td>
-            <td>${s.min_value}</td>
-            <td>${s.max_value}</td>
-            <td>${s.method || "-"}</td>
-
-            <td><input></td>
-            <td><input></td>
-            <td><input></td>
-            <td><input></td>
-            <td><input></td>
-
-            <td><input></td>
-        </tr>
-        `;
-    });
-
-    document.getElementById("qcTable").innerHTML = html;
-}
-
-
-// SAVE QC (FIXED)
-function saveQC() {
-
-    let results = [];
-
-    document.querySelectorAll("#qcTable tr").forEach(row => {
-
-        let specId = row.getAttribute("data-id");
-        let inputs = row.querySelectorAll("input");
-
-        results.push({
-            product_property_id: specId,
-            obs1: inputs[0].value,
-            obs2: inputs[1].value,
-            obs3: inputs[2].value,
-            obs4: inputs[3].value,
-            obs5: inputs[4].value,
-            remarks: inputs[5].value
+    if (!productId) {
+        html = `<tr><td colspan="11" style="text-align:left; padding:12px;">No matching product found in Product Master for this invoice item.</td></tr>`;
+    } else if (!specs.length) {
+        html = `<tr><td colspan="11" style="text-align:left; padding:12px;">No QC specifications found in product_properties for this product.</td></tr>`;
+    } else {
+        specs.forEach((s, i) => {
+            html += `<tr data-id="${s.id}"><td>${i + 1}</td><td style="text-align:left;">${displayValue(s.property_name)}</td><td>${displayValue(s.min_value)}</td><td>${displayValue(s.max_value)}</td><td>${displayValue(s.method)}</td><td>${displayValue(s.obs1)}</td><td>${displayValue(s.obs2)}</td><td>${displayValue(s.obs3)}</td><td>${displayValue(s.obs4)}</td><td>${displayValue(s.obs5)}</td><td style="text-align:left;">${displayValue(s.remarks)}</td></tr>`;
         });
-    });
+    }
 
-    fetch("/api/save-qc", {
-        method: "POST",
-        headers: {
-            "Content-Type": "application/json"
-        },
-        body: JSON.stringify({
-            inspection_id: inspectionId,
-            data: results
-        })
-    })
-    .then(res => res.json())
-    .then(res => {
-        alert("QC Saved Successfully!");
-        console.log(res);
-    });
+    document.getElementById('qcTable').innerHTML = html;
 }
 
+function displayValue(value) {
+    if (value === null || value === undefined || value === '') {
+        return '<span class="empty-cell">-</span>';
+    }
+    const div = document.createElement('div');
+    div.textContent = value;
+    return div.innerHTML;
+}
+
+function goBack() {
+    window.location.href = returnUrl;
+}
+
+function printReport() {
+    const printParams = new URLSearchParams(window.location.search);
+    printParams.set('print', 'true');
+    const printUrl = window.location.origin + window.location.pathname + '?' + printParams.toString();
+    const printWindow = window.open(printUrl, '_blank');
+    if (!printWindow) {
+        alert('Unable to open print window. Please allow popups for this site and try again.');
+    }
+}
+
+if (params.get('print') === 'true') {
+    setTimeout(() => {
+        try {
+            window.print();
+        } catch (error) {
+            alert('Print failed: ' + (error.message || error));
+        }
+    }, 200);
+}
 </script>
 
 </body>

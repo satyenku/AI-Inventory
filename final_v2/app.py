@@ -8,6 +8,7 @@ from html import escape
 from io import BytesIO
 from zipfile import ZIP_DEFLATED, ZipFile
 from flask import Flask, render_template, request, redirect, url_for, flash, session, jsonify, Response
+import traceback
 
 
 def parse_decimal(value, fallback=0.0):
@@ -94,19 +95,23 @@ def resolve_product_for_qc(cursor, product_id=None, item_name=None):
     if not item_name:
         return None
 
+    normalized = item_name.strip()
     return cursor.execute("""
         SELECT *
         FROM products
-        WHERE item_name = ? OR item_code = ? OR item_name LIKE ?
+        WHERE LOWER(item_name) = LOWER(?)
+           OR LOWER(item_code) = LOWER(?)
+           OR LOWER(item_name) LIKE LOWER(?)
+           OR LOWER(item_code) LIKE LOWER(?)
         ORDER BY
             CASE
-                WHEN item_name = ? THEN 0
-                WHEN item_code = ? THEN 1
+                WHEN LOWER(item_name) = LOWER(?) THEN 0
+                WHEN LOWER(item_code) = LOWER(?) THEN 1
                 ELSE 2
             END,
             id
         LIMIT 1
-    """, (item_name, item_name, f"%{item_name}%", item_name, item_name)).fetchone()
+    """, (normalized, normalized, f"%{normalized}%", f"%{normalized}%", normalized, normalized)).fetchone()
 
 
 def excel_col(index):
@@ -497,6 +502,15 @@ def api_save_invoice():
                 VALUES (?, ?, ?, ?, ?)
             """, (grn_no, invoice_id, supplier_id, data.get('invoice_date', ''), received_by_id))
             grn_id = cursor.lastrowid
+            # Ensure grn.status column exists and set initial status to 'Pending QC'
+            try:
+                grn_cols = [c['name'] for c in cursor.execute("PRAGMA table_info(grn);").fetchall()]
+                if 'status' not in grn_cols:
+                    cursor.execute("ALTER TABLE grn ADD COLUMN status TEXT DEFAULT 'Pending QC'")
+                cursor.execute("UPDATE grn SET status = ? WHERE id = ?", ('Pending QC', grn_id))
+            except Exception:
+                # non-fatal: continue without blocking the save
+                pass
             
             line_items = data.get('line_items', [])
             generated_barcodes = []
@@ -527,15 +541,12 @@ def api_save_invoice():
                 """, (invoice_id, product_id, desc, qty, price, amount))
                 invoice_item_id = cursor.lastrowid
                 
-                # GRN specific additions
+                # GRN specific additions (stock will be posted later on explicit confirmation)
                 cursor.execute("""
                     INSERT INTO grn_items (grn_id, product_id, quantity, unit, unit_price)
                     VALUES (?, ?, ?, 'Nos', ?)
                 """, (grn_id, product_id, qty, price))
                 grn_item_id = cursor.lastrowid
-                
-                # Adjust Stock and Record Movement
-                log_stock_movement(cursor, product_id, "GRN", "grn_items", grn_item_id, qty)
                 
                 # Unique barcode per GRN line item — timestamp suffix ensures
                 # same product on different invoices gets different barcodes.
@@ -558,7 +569,16 @@ def api_save_invoice():
                     "barcode_image": "/" + barcode_path.replace("\\", "/"),
                 })
                 
-        return {"status": "success", "invoice_id": invoice_id, "barcodes": generated_barcodes}, 200
+            # Ensure grn_items.qc_status column exists and default pending for this GRN
+            try:
+                gi_cols = [c['name'] for c in cursor.execute("PRAGMA table_info(grn_items);").fetchall()]
+                if 'qc_status' not in gi_cols:
+                    cursor.execute("ALTER TABLE grn_items ADD COLUMN qc_status TEXT DEFAULT 'Pending'")
+                cursor.execute("UPDATE grn_items SET qc_status = 'Pending' WHERE grn_id = ?", (grn_id,))
+            except Exception:
+                pass
+
+        return {"status": "success", "invoice_id": invoice_id, "grn_id": grn_id, "barcodes": generated_barcodes}, 200
     except Exception as e:
         return {"error": str(e)}, 500
 
@@ -571,9 +591,13 @@ def item_issue():
         issued_to = request.form.get('issued_to')
         work_order = request.form.get('work_order_no')
         
-        product_id = int(request.form.get('product_id'))
-        qty = float(request.form.get('qty') or 0.0)
+        product_ids = request.form.getlist('product_id')
+        qtys = request.form.getlist('qty')
         
+        if not product_ids or not qtys or len(product_ids) != len(qtys):
+            flash("Please add at least one item to proceed with dispatch.", "error")
+            return redirect(url_for('item_issue'))
+            
         try:
             with get_db_connection() as conn:
                 cursor = conn.cursor()
@@ -583,14 +607,26 @@ def item_issue():
                 """, (slip_no, issue_date, issued_to, work_order, session.get('user_id')))
                 issue_id = cursor.lastrowid
                 
-                cursor.execute("""
-                    INSERT INTO item_issue_items (issue_id, product_id, quantity, unit)
-                    VALUES (?, ?, ?, 'Nos')
-                """, (issue_id, product_id, qty))
-                issue_item_id = cursor.lastrowid
+                for p_id_str, qty_str in zip(product_ids, qtys):
+                    if not p_id_str or not qty_str:
+                        continue
+                    product_id = int(p_id_str)
+                    qty = float(qty_str)
+                    if qty <= 0:
+                        raise ValueError("Quantity issued must be greater than zero.")
+                    
+                    product_row = cursor.execute("SELECT unit FROM products WHERE id = ?", (product_id,)).fetchone()
+                    unit = product_row['unit'] if product_row else 'Nos'
+                    
+                    cursor.execute("""
+                        INSERT INTO item_issue_items (issue_id, product_id, quantity, unit)
+                        VALUES (?, ?, ?, ?)
+                    """, (issue_id, product_id, qty, unit))
+                    issue_item_id = cursor.lastrowid
+                    
+                    # Decrement Stock via helper (negative qty)
+                    log_stock_movement(cursor, product_id, "ISSUE", "item_issue_items", issue_item_id, -qty)
                 
-                # Decrement Stock via helper
-                log_stock_movement(cursor, product_id, "ISSUE", "item_issue_items", issue_item_id, -qty)
                 conn.commit()
                 flash("Stock issued successfully.", "success")
         except sqlite3.IntegrityError:
@@ -601,7 +637,32 @@ def item_issue():
         
     with get_db_connection() as conn:
         products = conn.execute("SELECT id, item_code, item_name, barcode, current_stock FROM products ORDER BY item_code ASC").fetchall()
-    return render_template('item_issue.html', products=products)
+        departments = conn.execute("SELECT dept_id, dept_name FROM departments ORDER BY dept_name ASC").fetchall()
+        
+        # Determine the next issue slip number
+        row = conn.execute("SELECT issue_slip_no FROM item_issues ORDER BY id DESC LIMIT 1").fetchone()
+        if not row:
+            next_slip_no = "SLIP-001"
+        else:
+            last_slip = row['issue_slip_no']
+            match = re.search(r'\d+', last_slip)
+            if match:
+                num_str = match.group()
+                num_len = len(num_str)
+                next_num = int(num_str) + 1
+                prefix = last_slip[:match.start()]
+                suffix = last_slip[match.end():]
+                next_slip_no = f"{prefix}{str(next_num).zfill(num_len)}{suffix}"
+            else:
+                next_slip_no = last_slip + "-1"
+                
+    return render_template(
+        'item_issue.html', 
+        products=products, 
+        departments=departments,
+        next_slip_no=next_slip_no,
+        today_date=date.today().strftime('%Y-%m-%d')
+    )
 
 @app.route('/inventory-return', methods=['GET', 'POST'])
 @login_required
@@ -612,9 +673,14 @@ def inventory_return():
         returned_by = request.form.get('returned_by')
         dept = request.form.get('department')
         reason = request.form.get('reason')
-        product_id = int(request.form.get('product_id'))
-        qty = float(request.form.get('qty') or 0)
-        condition = request.form.get('condition', 'Good')
+        
+        product_ids = request.form.getlist('product_id[]')
+        qtys = request.form.getlist('qty[]')
+        conditions = request.form.getlist('condition[]')
+        
+        if not return_id or not return_date or not product_ids:
+            flash("Missing required fields.", "error")
+            return redirect(url_for('inventory_return'))
         
         try:
             with get_db_connection() as conn:
@@ -625,16 +691,27 @@ def inventory_return():
                 """, (return_id, return_date, returned_by, dept, reason, session.get('user_id')))
                 ret_id = cursor.lastrowid
                 
-                cursor.execute("""
-                    INSERT INTO inventory_return_items (return_id, product_id, quantity, unit, condition)
-                    VALUES (?, ?, ?, 'Nos', ?)
-                """, (ret_id, product_id, qty, condition))
-                ret_item_id = cursor.lastrowid
+                total_items = 0
+                for i in range(len(product_ids)):
+                    pid = product_ids[i]
+                    q = float(qtys[i]) if i < len(qtys) and qtys[i] else 0
+                    cond = conditions[i] if i < len(conditions) else 'Good'
+                    
+                    if not pid or q <= 0:
+                        continue
+                    
+                    cursor.execute("""
+                        INSERT INTO inventory_return_items (return_id, product_id, quantity, unit, condition)
+                        VALUES (?, ?, ?, 'Nos', ?)
+                    """, (ret_id, int(pid), q, cond))
+                    ret_item_id = cursor.lastrowid
+                    
+                    # Returns increase stock back
+                    log_stock_movement(cursor, int(pid), "RETURN", "inventory_return_items", ret_item_id, q)
+                    total_items += 1
                 
-                # Returns increase stock back
-                log_stock_movement(cursor, product_id, "RETURN", "inventory_return_items", ret_item_id, qty)
                 conn.commit()
-                flash("Return entry logged successfully.", "success")
+                flash(f"Return entry logged successfully. {total_items} item(s) returned.", "success")
         except sqlite3.IntegrityError:
             flash("Return ID already exists in database record.", "error")
         except Exception as e:
@@ -651,24 +728,37 @@ def inventory_status():
     search_query = request.args.get('search', '').strip()
     product = None
     ledger = []
-    
-    if search_query:
-        conn = get_db_connection()
-        product = conn.execute("""
-            SELECT * FROM products 
-            WHERE item_code = ? OR barcode = ? OR item_name LIKE ?
-        """, (search_query, search_query, f"%{search_query}%")).fetchone()
-        
-        if product:
-            ledger = conn.execute("""
-                SELECT moved_at, movement_type, reference_table, quantity_change, balance_after
-                FROM stock_ledger 
-                WHERE product_id = ? 
-                ORDER BY moved_at DESC
-            """, (product['id'],)).fetchall()
+    products = []
+
+    conn = get_db_connection()
+    try:
+        products = conn.execute("""
+            SELECT id, item_code, item_name, barcode
+            FROM products
+            ORDER BY item_code ASC, item_name ASC
+        """).fetchall()
+
+        if search_query:
+            product = conn.execute("""
+                SELECT * FROM products
+                WHERE lower(item_code) = lower(?)
+                   OR lower(barcode) = lower(?)
+                   OR lower(item_name) LIKE lower(?)
+                   OR lower(item_code) LIKE lower(?)
+            """, (search_query, search_query, f"%{search_query}%", f"%{search_query}%")).fetchone()
+
+            if product:
+                ensure_barcode_asset_exists(product['barcode'])
+                ledger = conn.execute("""
+                    SELECT moved_at, movement_type, reference_table, quantity_change, balance_after
+                    FROM stock_ledger
+                    WHERE product_id = ?
+                    ORDER BY moved_at DESC
+                """, (product['id'],)).fetchall()
+    finally:
         conn.close()
-        
-    return render_template('inventory_status.html', product=product, ledger=ledger, query=search_query)
+
+    return render_template('inventory_status.html', product=product, ledger=ledger, query=search_query, products=products)
 
 
 @app.route('/users', methods=['GET', 'POST'])
@@ -907,8 +997,23 @@ def save_inspection():
         details = data.get("details", [])
 
         for detail in details:
+            # Ensure we have a valid product_property_id. If missing, try to find one
+            prop_id = detail.get("product_property_id")
+            if not prop_id:
+                # try find any property for this product
+                try:
+                    row = cursor.execute("SELECT id FROM product_properties WHERE product_id = ? LIMIT 1", (data.get("product_id"),)).fetchone()
+                    if row:
+                        prop_id = row[0]
+                    else:
+                        # create a generic property so NOT NULL constraint is satisfied
+                        cursor.execute("INSERT INTO product_properties (product_id, property_name) VALUES (?, ?)", (data.get("product_id"), 'General'))
+                        prop_id = cursor.lastrowid
+                except Exception:
+                    prop_id = None
 
-            cursor.execute("""
+                print('[DEBUG] inserting inspection_details with prop_id=', prop_id, 'inspection_id=', inspection_id, 'detail=', detail)
+                cursor.execute("""
                 INSERT INTO inspection_details
                 (
                     inspection_id,
@@ -923,7 +1028,7 @@ def save_inspection():
                 VALUES (?, ?, ?, ?, ?, ?, ?, ?)
             """, (
                 inspection_id,
-                detail.get("product_property_id"),
+                prop_id,
                 detail.get("obs1"),
                 detail.get("obs2"),
                 detail.get("obs3"),
@@ -948,77 +1053,254 @@ def save_inspection():
         }), 500
 
 @app.route('/qc-sheet')
-def qc_sheet():
-    product_id = request.args.get('product_id')
-    return render_template("qc_sheet.html")
-
-
-@app.route('/qc-sheet/excel')
 @login_required
-def qc_sheet_excel():
+def qc_sheet():
     product_id = request.args.get('product_id', type=int)
     item_name = request.args.get('item_name', '').strip()
-    meta = {
-        "item_name": item_name,
-        "invoice_number": request.args.get('invoice_number', '').strip(),
-        "invoice_date": request.args.get('invoice_date', '').strip(),
-        "qty": request.args.get('qty', '').strip(),
-    }
+    invoice_number = request.args.get('invoice_number', '').strip()
+    invoice_date = request.args.get('invoice_date', '').strip()
+    qty = request.args.get('qty', '').strip()
 
     conn = get_db_connection()
-    try:
-        product = resolve_product_for_qc(conn, product_id=product_id, item_name=item_name)
-        if not product:
-            return "No matching product found in Product Master for this extracted item.", 404
+    product = resolve_product_for_qc(conn, product_id=product_id, item_name=item_name)
+    specs = []
+    last_inspection_date = None
+    latest_inspection_id = None
+    if product:
+        latest = conn.execute(
+            "SELECT id, inspection_date FROM inspection_entries WHERE product_id = ? ORDER BY inspection_date DESC, id DESC LIMIT 1",
+            (product["id"],)
+        ).fetchone()
+        latest_inspection_id = latest["id"] if latest else None
+        last_inspection_date = latest["inspection_date"] if latest else None
 
-        specs = conn.execute("""
-            SELECT id, property_name, min_value, max_value, method
-            FROM product_properties
-            WHERE product_id = ?
-            ORDER BY id
-        """, (product["id"],)).fetchall()
+        if latest_inspection_id:
+            rows = conn.execute("""
+                SELECT
+                    p.id,
+                    p.property_name,
+                    p.min_value,
+                    p.max_value,
+                    p.method,
+                    d.obs1,
+                    d.obs2,
+                    d.obs3,
+                    d.obs4,
+                    d.obs5,
+                    d.remarks
+                FROM product_properties p
+                LEFT JOIN inspection_details d
+                    ON d.product_property_id = p.id
+                    AND d.inspection_id = ?
+                WHERE p.product_id = ?
+                ORDER BY p.id
+            """, (latest_inspection_id, product["id"]))
+        else:
+            rows = conn.execute("""
+                SELECT id, property_name, min_value, max_value, method
+                FROM product_properties
+                WHERE product_id = ?
+                ORDER BY id
+            """, (product["id"],))
+        specs = [dict(row) for row in rows]
+    conn.close()
 
-        latest_inspection = conn.execute("""
-            SELECT id
-            FROM inspection_entries
-            WHERE product_id = ?
-            ORDER BY inspection_date DESC, created_at DESC, id DESC
-            LIMIT 1
-        """, (product["id"],)).fetchone()
-
-        observations_by_property = {}
-        if latest_inspection:
-            observation_rows = conn.execute("""
-                SELECT product_property_id, obs1, obs2, obs3, obs4, obs5, remarks
-                FROM inspection_details
-                WHERE inspection_id = ?
-            """, (latest_inspection["id"],)).fetchall()
-            observations_by_property = {
-                row["product_property_id"]: {
-                    "obs1": row["obs1"] or "",
-                    "obs2": row["obs2"] or "",
-                    "obs3": row["obs3"] or "",
-                    "obs4": row["obs4"] or "",
-                    "obs5": row["obs5"] or "",
-                    "remarks": row["remarks"] or "",
-                }
-                for row in observation_rows
-            }
-    finally:
-        conn.close()
-
-    workbook = build_qc_xlsx(product, specs, meta, observations_by_property)
-    safe_code = re.sub(r"[^A-Za-z0-9_-]+", "_", product["item_code"] or product["item_name"]).strip("_")
-    filename = f"QC_Sheet_{safe_code or product['id']}.xlsx"
-
-    return Response(
-        workbook,
-        mimetype="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-        headers={"Content-Disposition": f'attachment; filename="{filename}"'}
+    return render_template(
+        "qc_sheet.html",
+        product=product,
+        item_name=item_name,
+        invoice_number=invoice_number,
+        invoice_date=invoice_date,
+        qty=qty,
+        specs=specs,
+        last_inspection_date=last_inspection_date,
+        latest_inspection_id=latest_inspection_id,
     )
 
 
+@app.route('/api/save-qc', methods=['POST'])
+@login_required
+def api_save_qc():
+    data = request.json or {}
+    print('\n[DEBUG] /api/save-qc payload:', data)
+    item_name = (data.get('item_name') or '').strip()
+    product_id = data.get('product_id')
+    invoice_number = (data.get('invoice_number') or '').strip()
+    invoice_date = (data.get('invoice_date') or '').strip()
+    qty = parse_decimal(data.get('qty'), 0.0)
+    inspection_date = (data.get('inspection_date') or date.today().isoformat()).strip()
+    details = data.get('details', [])
+
+    if not item_name and not product_id:
+        return jsonify({"status": "error", "message": "Item name or product ID is required."}), 400
+
+    try:
+        with get_db_connection() as conn:
+            cursor = conn.cursor()
+
+            if product_id:
+                product = resolve_product_for_qc(cursor, product_id=product_id, item_name=item_name)
+            else:
+                product = resolve_product_for_qc(cursor, item_name=item_name)
+
+            if not product:
+                generated_code = f"AUTO-{re.sub(r'[^A-Z0-9]', '', item_name.upper())[:10]}"
+                cursor.execute(
+                    "INSERT INTO products (item_code, barcode, item_name, unit, current_stock) VALUES (?, ?, ?, 'Nos', 0)",
+                    (generated_code, generated_code, item_name)
+                )
+                product_id = cursor.lastrowid
+            else:
+                product_id = product['id']
+
+            cursor.execute("""
+                INSERT INTO inspection_entries (product_id, inspection_date)
+                VALUES (?, ?)
+            """, (product_id, inspection_date))
+            inspection_id = cursor.lastrowid
+
+            for detail in details:
+                # Ensure we have a valid product_property_id. If missing, try to find one for this product
+                prop_id = detail.get('product_property_id')
+                if not prop_id:
+                    try:
+                        row = cursor.execute("SELECT id FROM product_properties WHERE product_id = ? LIMIT 1", (product_id,)).fetchone()
+                        if row:
+                            # row can be a tuple or Row; access first column
+                            prop_id = row[0] if isinstance(row, tuple) or isinstance(row, list) else row['id']
+                        else:
+                            cursor.execute("INSERT INTO product_properties (product_id, property_name) VALUES (?, ?)", (product_id, 'General'))
+                            prop_id = cursor.lastrowid
+                    except Exception:
+                        prop_id = None
+
+                print('[DEBUG] inserting inspection_details with prop_id=', prop_id, 'inspection_id=', inspection_id, 'detail=', detail)
+                cursor.execute("""
+                    INSERT INTO inspection_details (
+                        inspection_id,
+                        product_property_id,
+                        obs1,
+                        obs2,
+                        obs3,
+                        obs4,
+                        obs5,
+                        remarks
+                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                """, (
+                    inspection_id,
+                    prop_id,
+                    detail.get('obs1'),
+                    detail.get('obs2'),
+                    detail.get('obs3'),
+                    detail.get('obs4'),
+                    detail.get('obs5'),
+                    detail.get('remarks'),
+                ))
+
+            # If a qc_status is provided and invoice_number is known, attempt to update matching grn_items
+            qc_status = (data.get('qc_status') or '').strip()
+            invoice_number = (data.get('invoice_number') or '').strip()
+            if qc_status and invoice_number:
+                try:
+                    # map simple status values to canonical ones
+                    s_norm = qc_status.strip().lower()
+                    if s_norm in ('confirmed', 'confirm', 'ok'):
+                        s_val = 'Confirmed'
+                    elif s_norm in ('rejected', 'reject', 'fail'):
+                        s_val = 'Rejected'
+                    else:
+                        s_val = qc_status
+
+                    inv = cursor.execute("SELECT id FROM invoices WHERE invoice_number = ?", (invoice_number,)).fetchone()
+                    if inv:
+                        grn_row = cursor.execute("SELECT id FROM grn WHERE invoice_id = ? ORDER BY id DESC LIMIT 1", (inv['id'],)).fetchone()
+                        if grn_row:
+                            grn_id = grn_row['id']
+                            # Ensure qc_status column exists
+                            gi_cols = [c['name'] for c in cursor.execute("PRAGMA table_info(grn_items);").fetchall()]
+                            if 'qc_status' not in gi_cols:
+                                cursor.execute("ALTER TABLE grn_items ADD COLUMN qc_status TEXT DEFAULT 'Pending'")
+
+                            if product_id:
+                                cursor.execute("UPDATE grn_items SET qc_status = ? WHERE grn_id = ? AND product_id = ?", (s_val, grn_id, product_id))
+                            else:
+                                # try match by item_name through products
+                                cursor.execute("UPDATE grn_items SET qc_status = ? WHERE grn_id = ? AND product_id IN (SELECT id FROM products WHERE item_name = ?)", (s_val, grn_id, item_name))
+                except Exception:
+                    pass
+
+            conn.commit()
+
+        return jsonify({
+            "status": "success",
+            "message": "QC inspection saved successfully.",
+            "inspection_id": inspection_id,
+            "product_id": product_id,
+        })
+    except Exception as e:
+        traceback.print_exc()
+        return jsonify({"status": "error", "message": str(e)}), 500
+
+
+@app.route('/api/apply-qc-map', methods=['POST'])
+@login_required
+def api_apply_qc_map():
+    data = request.json or {}
+    grn_id = data.get('grn_id')
+    qc_map = data.get('qc_map') or {}
+    if not grn_id:
+        return jsonify({"status":"error","message":"grn_id required"}), 400
+    try:
+        with get_db_connection() as conn:
+            cursor = conn.cursor()
+            # ensure qc_status column
+            gi_cols = [c['name'] for c in cursor.execute("PRAGMA table_info(grn_items);").fetchall()]
+            if 'qc_status' not in gi_cols:
+                cursor.execute("ALTER TABLE grn_items ADD COLUMN qc_status TEXT DEFAULT 'Pending'")
+
+            applied = 0
+            for key, qc in (qc_map.items() if isinstance(qc_map, dict) else []):
+                # key format invoice|description — try extract description
+                try:
+                    parts = key.split('|', 1)
+                    description = parts[1] if len(parts) > 1 else None
+                except Exception:
+                    description = None
+                status = qc.get('status') if isinstance(qc, dict) else None
+                if not status:
+                    continue
+                # Normalize
+                s_norm = str(status).strip().lower()
+                if s_norm in ('confirmed','confirm','ok'):
+                    s_val = 'Confirmed'
+                elif s_norm in ('rejected','reject','fail'):
+                    s_val = 'Rejected'
+                else:
+                    s_val = status
+
+                if description:
+                    # try exact match first
+                    cursor.execute(
+                        "UPDATE grn_items SET qc_status = ? WHERE grn_id = ? AND product_id IN (SELECT id FROM products WHERE LOWER(item_name) = LOWER(?))",
+                        (s_val, grn_id, description)
+                    )
+                    applied += cursor.rowcount
+                    if cursor.rowcount == 0:
+                        # fallback to LIKE partial match
+                        cursor.execute(
+                            "UPDATE grn_items SET qc_status = ? WHERE grn_id = ? AND product_id IN (SELECT id FROM products WHERE LOWER(item_name) LIKE LOWER('%' || ? || '%'))",
+                            (s_val, grn_id, description)
+                        )
+                        applied += cursor.rowcount
+
+            conn.commit()
+        return jsonify({"status":"success","applied": applied})
+    except Exception as e:
+        return jsonify({"status":"error","message":str(e)}), 500
+
+
 @app.route('/api/qc-sheet/<int:product_id>')
+@login_required
 def qc_data(product_id):
     conn = get_db_connection()
     product = conn.execute(
@@ -1038,6 +1320,221 @@ def qc_data(product_id):
         "specs": [dict(s) for s in specs]
     })
     
+# ===========================
+# BARCODE SEARCH API
+# ===========================
+
+@app.route('/api/search_barcode', methods=['POST'])
+def api_search_barcode():
+    data = request.get_json() or {}
+    barcode_no = data.get('barcode_no', '').strip()
+
+    if not barcode_no:
+        return jsonify({'success': False, 'message': 'No barcode provided'}), 400
+
+    conn = get_db_connection()
+    try:
+        result = conn.execute("""
+            SELECT * FROM products
+            WHERE barcode = ? OR item_code = ?
+        """, (barcode_no, barcode_no)).fetchone()
+
+        if result:
+            return jsonify({'success': True, 'product': dict(result)})
+        else:
+            return jsonify({'success': False, 'message': 'Product not found in database.'})
+    finally:
+        conn.close()
+
+@app.route('/api/ai_scan_barcode', methods=['POST'])
+def api_ai_scan_barcode():
+    if 'image' not in request.files:
+        return jsonify({'success': False, 'message': 'No image file uploaded.'}), 400
+
+    image_file = request.files['image']
+    if image_file.filename == '':
+        return jsonify({'success': False, 'message': 'No selected image file.'}), 400
+
+    # Save to a temporary location
+    temp_path = os.path.join(app.root_path, 'static', 'temp_barcode.jpg')
+    image_file.save(temp_path)
+
+    extracted_code = ""
+    try:
+        # Pass the image to the AI logic in gemini_extractor
+        result_schema = ai.extract_barcode_data(temp_path)
+        extracted_code = result_schema.barcode_text.strip()
+    except Exception as e:
+        if os.path.exists(temp_path):
+            os.remove(temp_path)
+        return jsonify({'success': False, 'message': f'AI extraction failed: {str(e)}'}), 500
+
+    # Clean up file
+    if os.path.exists(temp_path):
+        os.remove(temp_path)
+
+    if not extracted_code:
+        return jsonify({'success': False, 'message': 'AI could not find a barcode in the image.'}), 404
+
+    # Now look up the extracted barcode in SQLite
+    conn = get_db_connection()
+    try:
+        product = conn.execute("""
+            SELECT * FROM products
+            WHERE barcode = ? OR item_code = ?
+        """, (extracted_code, extracted_code)).fetchone()
+
+        if product:
+            return jsonify({
+                'success': True,
+                'barcode': extracted_code,
+                'product': dict(product)
+            })
+        else:
+            return jsonify({
+                'success': False,
+                'barcode': extracted_code,
+                'message': f'AI extracted "{extracted_code}" but it is not in the database.'
+            })
+    finally:
+        conn.close()
+
+# ===========================
+# BARCODE DEMO SEARCH
+# ===========================
+
+@app.route('/search_barcode', methods=['GET', 'POST'])
+def search_barcode():
+    result = None
+
+    if request.method == 'POST':
+        barcode_no = request.form.get('barcode_no', '').strip()
+        conn = get_db_connection()
+        try:
+            result = conn.execute("""
+                SELECT *
+                FROM products
+                WHERE barcode = ?
+                OR item_code = ?
+            """, (barcode_no, barcode_no)).fetchone()
+
+            if result:
+                result = dict(result)
+        finally:
+            conn.close()
+
+    return render_template(
+        'barcode_search.html',
+        result=result
+    )
+
+@app.route('/scanner_demo')
+def scanner_demo():
+    return render_template("scanner_demo.html")
+
+@app.route('/confirm-grn/<int:grn_id>', methods=['POST'])
+@login_required
+def confirm_grn(grn_id):
+    from datetime import datetime
+    try:
+        conn = get_db_connection()
+        cursor = conn.cursor()
+
+        # Ensure migration: add columns if missing
+        cols = [c['name'] for c in cursor.execute("PRAGMA table_info(grn);").fetchall()]
+        if 'status' not in cols:
+            cursor.execute("ALTER TABLE grn ADD COLUMN status TEXT DEFAULT 'Pending'")
+        if 'posted_by' not in cols:
+            cursor.execute("ALTER TABLE grn ADD COLUMN posted_by INTEGER")
+        if 'posted_date' not in cols:
+            cursor.execute("ALTER TABLE grn ADD COLUMN posted_date TEXT")
+
+        # Begin transaction explicitly
+        cursor.execute('BEGIN')
+
+        # Ensure grn_items.qc_status exists
+        try:
+            gi_cols = [c['name'] for c in cursor.execute("PRAGMA table_info(grn_items);").fetchall()]
+            if 'qc_status' not in gi_cols:
+                cursor.execute("ALTER TABLE grn_items ADD COLUMN qc_status TEXT DEFAULT 'Pending'")
+        except Exception:
+            pass
+
+        grn_row = cursor.execute("SELECT * FROM grn WHERE id = ?", (grn_id,)).fetchone()
+        if not grn_row:
+            conn.rollback()
+            return jsonify({"status": "error", "message": f"GRN {grn_id} not found."}), 404
+
+        # SQLite Row doesn't support .get; access by key safely
+        grn_status = None
+        try:
+            if grn_row is not None and 'status' in grn_row.keys():
+                grn_status = grn_row['status']
+        except Exception:
+            grn_status = None
+
+        if grn_status == 'Posted':
+            conn.rollback()
+            return jsonify({"status": "error", "message": "GRN has already been posted."}), 400
+
+        items = cursor.execute("SELECT id, product_id, quantity, qc_status FROM grn_items WHERE grn_id = ?", (grn_id,)).fetchall()
+
+        posted_any = False
+        all_already_posted = True
+
+        for item in items:
+            gid = item['id']
+            pid = item['product_id']
+            qty = item['quantity'] or 0
+
+            # Only process items that are QC Confirmed
+            item_qc = None
+            try:
+                item_qc = item['qc_status']
+            except Exception:
+                item_qc = None
+
+            if not item_qc or str(item_qc).strip().lower() != 'confirmed':
+                # Skip items not confirmed by QC
+                continue
+
+            already = cursor.execute(
+                "SELECT 1 FROM stock_ledger WHERE movement_type = 'GRN' AND reference_table = 'grn_items' AND reference_id = ? LIMIT 1",
+                (gid,)
+            ).fetchone()
+
+            if already:
+                # This grn_item already has a ledger entry; skip to avoid duplication
+                continue
+            # Use helper to update product current_stock and add ledger record
+            log_stock_movement(cursor, pid, 'GRN', 'grn_items', gid, qty)
+            posted_any = True
+            all_already_posted = False
+
+        # If none posted (no confirmed items), rollback and inform caller
+        if not posted_any:
+            conn.rollback()
+            return jsonify({"status": "error", "message": "No confirmed GRN items to post."}), 400
+
+        # Mark GRN as posted
+        cursor.execute(
+            "UPDATE grn SET status = ?, posted_by = ?, posted_date = ? WHERE id = ?",
+            ('Posted', session.get('user_id'), datetime.utcnow().isoformat(), grn_id)
+        )
+
+        conn.commit()
+        return jsonify({"status": "success", "message": "GRN posted successfully."})
+    except Exception as e:
+        try:
+            conn.rollback()
+        except Exception:
+            pass
+        return jsonify({"status": "error", "message": str(e)}), 500
+    finally:
+        try:
+            conn.close()
+        except Exception:
+            pass
 
 
 if __name__ == '__main__':

@@ -107,6 +107,28 @@
         font-weight: bold;
         margin-top: 10px;
       }
+      /* QC modal styles */
+      .modal-overlay {
+        position: fixed;
+        inset: 0;
+        background: rgba(2,6,23,0.6);
+        display: none;
+        align-items: center;
+        justify-content: center;
+        z-index: 9999;
+      }
+      .modal {
+        background: white;
+        padding: 18px;
+        border-radius: 8px;
+        max-width: 720px;
+        width: 100%;
+        box-shadow: 0 6px 30px rgba(2,6,23,0.3);
+      }
+      .modal h3 { margin-top: 0; }
+      .qc-badge { display: inline-block; padding: 6px 8px; border-radius: 12px; font-size: 12px; margin-left:8px; font-weight:bold; }
+      .qc-confirmed { background:#16a34a; color:white; }
+      .qc-rejected { background:#dc2626; color:white; }
     </style>
   </head>
   <body>
@@ -241,6 +263,55 @@
         </div>
       </div>
     </div>
+
+    <!-- QC Modal Overlay -->
+    <div id="qcModalOverlay" class="modal-overlay" style="display:none; align-items:center; justify-content:center;">
+      <div class="modal" role="dialog" aria-modal="true">
+        <h3>QC — <span id="qc_item_name"></span></h3>
+        <div style="margin-bottom:8px;"><strong>Qty:</strong> <span id="qc_item_qty"></span></div>
+        <div style="margin-bottom:8px; display:grid; grid-template-columns:repeat(5,1fr); gap:8px;">
+          <div>
+            <label>Obs1</label>
+            <input id="qc_obs1" type="text" style="width:100%; padding:6px;" />
+          </div>
+          <div>
+            <label>Obs2</label>
+            <input id="qc_obs2" type="text" style="width:100%; padding:6px;" />
+          </div>
+          <div>
+            <label>Obs3</label>
+            <input id="qc_obs3" type="text" style="width:100%; padding:6px;" />
+          </div>
+          <div>
+            <label>Obs4</label>
+            <input id="qc_obs4" type="text" style="width:100%; padding:6px;" />
+          </div>
+          <div>
+            <label>Obs5</label>
+            <input id="qc_obs5" type="text" style="width:100%; padding:6px;" />
+          </div>
+        </div>
+        <div style="margin-top:10px; margin-bottom:8px;">
+          <label>Remarks</label>
+          <textarea id="qc_remarks" style="width:100%;height:60px;padding:8px;border:1px solid #cbd5e1;border-radius:4px;"></textarea>
+        </div>
+        <div style="margin-top:12px;">
+          <h4 style="margin:6px 0">Matched Product Specs</h4>
+          <div id="qc_specs_container" style="max-height:220px; overflow:auto; border:1px solid #eef2ff; padding:8px; border-radius:6px; background:#fbfdff;">No matched product found.</div>
+        </div>
+        <div style="display:flex;align-items:center;gap:12px;margin-bottom:12px;">
+          <input type="hidden" id="qc_current_key" value="" />
+          <input type="hidden" id="qc_product_id" value="" />
+        </div>
+        <div style="display:flex;gap:8px;justify-content:flex-end;">
+          <button class="btn" onclick="document.getElementById('qcModalOverlay').style.display='none'">Close</button>
+          <button class="btn" style="background:#0f172a;color:white" onclick="qcPrint()">Print</button>
+          <button class="btn" style="background:#dc2626;color:white" onclick="qcReject()">Reject</button>
+          <button class="btn" style="background:#16a34a;color:white" onclick="qcConfirm()">Confirm</button>
+        </div>
+      </div>
+    </div>
+
     <script>
       let extractedPayload = null;
 
@@ -277,6 +348,8 @@
             body.innerHTML = "";
             data.line_items.forEach((item) => {
               const row = document.createElement("tr");
+              const keyRaw = (data.invoice_number||'') + '|' + (item.description||'');
+              const key = sanitizeKey(keyRaw);
               row.innerHTML = `
                 <td><strong>${item.description}</strong></td>
                 <td>${item.qty}</td>
@@ -284,17 +357,15 @@
                 <td>${item.amount}</td>
 
                 <td>
-                  <button
-                    class="btn btn-add"
-                    type="button">
-                    QC
-                  </button>
+                  <button class="btn btn-add" type="button">QC</button>
+                  <span id="qc-badge-${key}" class="qc-badge" style="display:none"></span>
                 </td>
               `;
-              row.querySelector("button").addEventListener("click", function () {
-                downloadQCSheet(item);
-              });
+              const btn = row.querySelector("button");
+              btn.addEventListener("click", function () { openQCForm(item); });
               body.appendChild(row);
+              // update badge if QC exists for this item
+              setTimeout(() => updateBadgeForKey(keyRaw), 0);
             });
           })
           .catch((err) => {
@@ -304,6 +375,9 @@
       }
 
       function saveInvoiceToDB() {
+        if (!extractedPayload) {
+          extractedPayload = loadSavedPayload();
+        }
         if (!extractedPayload) {
           alert("No parsed content exists to commit.");
           return;
@@ -337,15 +411,54 @@
           .then((resData) => {
             if (resData.error) {
               alert("Post failed: " + resData.error);
-            } else {
-              showBarcodeStrip(resData.barcodes || []);
+              return;
             }
+
+            const grnId = resData.grn_id;
+            // If no grn_id returned, still show barcodes but warn
+            if (!grnId) {
+              localStorage.removeItem('ai_inventory_extracted_payload');
+              showBarcodeStrip(resData.barcodes || []);
+              return;
+            }
+
+            // Apply any local QC map to the new GRN, then call confirm-post endpoint
+            const qcMap = JSON.parse(localStorage.getItem('ai_inventory_qc_map') || '{}');
+            fetch('/api/apply-qc-map', { method: 'POST', credentials: 'same-origin', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ grn_id: grnId, qc_map: qcMap }) })
+              .then(() => fetch(`/confirm-grn/${grnId}`, { method: 'POST', credentials: 'same-origin' }))
+              .then(r => {
+                const ct = r.headers.get('content-type') || '';
+                if (ct.indexOf('application/json') !== -1) return r.json();
+                return r.text().then(t => { throw new Error(t || ('HTTP ' + r.status)); });
+              })
+              .then(postRes => {
+                if (postRes && postRes.status === 'success') {
+                  localStorage.removeItem('ai_inventory_extracted_payload');
+                  alert(postRes.message || 'GRN posted successfully.');
+                  showBarcodeStrip(resData.barcodes || []);
+                } else if (postRes && postRes.message) {
+                  alert(postRes.message || 'Failed to post GRN.');
+                } else {
+                  alert('Failed to post GRN: ' + JSON.stringify(postRes));
+                }
+              })
+              .catch(err => {
+                // If server returned HTML (e.g., redirect to login or error page), err.message will contain it
+                let msg = err && err.message ? err.message : String(err);
+                // Try to extract a short snippet
+                if (msg && msg.length > 400) msg = msg.slice(0, 400) + '...';
+                alert('Failed to confirm GRN: ' + msg);
+              });
+          })
+          .catch(err => {
+            alert('Save request failed: ' + err);
           });
       }
 
       function showBarcodeStrip(barcodes) {
         if (!barcodes.length) {
           alert("GRN posted. No barcodes generated.");
+          localStorage.removeItem('ai_inventory_extracted_payload');
           window.location.reload();
           return;
         }
@@ -368,21 +481,246 @@
         strip.style.display = "block";
         strip.scrollIntoView({ behavior: "smooth" });
       }
-      function downloadQCSheet(item) {
+      function openQCForm(item) {
         if (!item || !item.description) {
-          alert("Unable to generate QC sheet: item name is missing.");
+          alert("Unable to open QC form: item name is missing.");
           return;
         }
-        const params = new URLSearchParams({
-          item_name: item.description,
-          qty: item.qty || "",
-          invoice_number: document.getElementById("invoice_number").value || "",
-          invoice_date: document.getElementById("invoice_date").value || "",
-        });
-        window.location.href = "/qc-sheet/excel?" + params.toString();
+        const invoiceNum = document.getElementById('invoice_number').value || '';
+        const keyRaw = (invoiceNum||'') + '|' + (item.description||'');
+        const qc = loadQCForKey(keyRaw) || {};
+        document.getElementById('qc_item_name').textContent = item.description;
+        document.getElementById('qc_item_qty').textContent = item.qty || '';
+        document.getElementById('qc_obs1').value = qc.obs1 || '';
+        document.getElementById('qc_obs2').value = qc.obs2 || '';
+        document.getElementById('qc_obs3').value = qc.obs3 || '';
+        document.getElementById('qc_obs4').value = qc.obs4 || '';
+        document.getElementById('qc_obs5').value = qc.obs5 || '';
+        document.getElementById('qc_remarks').value = qc.remarks || '';
+        document.getElementById('qc_current_key').value = keyRaw;
+        document.getElementById('qc_specs_container').innerHTML = 'Searching product master...';
+        document.getElementById('qcModalOverlay').style.display = 'flex';
+        // attempt to find matching product and display specs
+        fetchMatchedProductSpecs(item.description);
       }
 
-      
+      function sanitizeKey(s) { return (s||'').replace(/[^a-z0-9\-_]/gi, '_'); }
+
+      function loadQCForKey(key) {
+        try { return JSON.parse(localStorage.getItem('ai_inventory_qc_map')||'{}')[key]; } catch(e){ return null; }
+      }
+
+      function saveQCForKey(key, obj) {
+        try {
+          const map = JSON.parse(localStorage.getItem('ai_inventory_qc_map')||'{}');
+          map[key] = obj;
+          localStorage.setItem('ai_inventory_qc_map', JSON.stringify(map));
+        } catch (e) { console.error(e); }
+      }
+
+      function updateBadgeForKey(rawKey) {
+        try {
+          const key = sanitizeKey(rawKey);
+          const badge = document.getElementById('qc-badge-' + key);
+          if (!badge) return;
+          const qc = loadQCForKey(rawKey);
+          if (!qc || !qc.status) { badge.style.display = 'none'; return; }
+          badge.style.display = 'inline-block';
+          if (qc.status === 'confirmed') { badge.className = 'qc-badge qc-confirmed'; badge.textContent = 'QC Confirmed'; }
+          else if (qc.status === 'rejected') { badge.className = 'qc-badge qc-rejected'; badge.textContent = 'QC Rejected'; }
+        } catch(e){console.error(e);}      
+      }
+
+      function qcApplyStatus(status) {
+        const key = document.getElementById('qc_current_key').value;
+        const observations = {
+          obs1: document.getElementById('qc_obs1').value || '',
+          obs2: document.getElementById('qc_obs2').value || '',
+          obs3: document.getElementById('qc_obs3').value || '',
+          obs4: document.getElementById('qc_obs4').value || '',
+          obs5: document.getElementById('qc_obs5').value || ''
+        };
+        const remarks = document.getElementById('qc_remarks').value || '';
+        const now = new Date().toISOString();
+        const obj = { status, obs1: observations.obs1, obs2: observations.obs2, obs3: observations.obs3, obs4: observations.obs4, obs5: observations.obs5, remarks, updated_at: now };
+        saveQCForKey(key, obj);
+        updateBadgeForKey(key);
+
+        // Also persist QC to server so grn_items.qc_status gets updated for posting
+        const invoiceNumber = document.getElementById('invoice_number').value || '';
+        const payload = {
+          item_name: document.getElementById('qc_item_name').textContent || '',
+          invoice_number: invoiceNumber,
+          qty: document.getElementById('qc_item_qty').textContent || '',
+          product_id: (document.getElementById('qc_product_id').value || '') || null,
+          inspection_date: new Date().toISOString(),
+          details: [
+            { obs1: observations.obs1, obs2: observations.obs2, obs3: observations.obs3, obs4: observations.obs4, obs5: observations.obs5, remarks }
+          ],
+          qc_status: status
+        };
+
+        fetch('/api/save-qc', {
+          method: 'POST',
+          credentials: 'same-origin',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(payload)
+        })
+        .then(r => r.json())
+        .then(j => {
+          // If server accepted, close modal; otherwise show message
+          if (j && j.status === 'success') {
+            document.getElementById('qcModalOverlay').style.display = 'none';
+            // refresh badges for all items (best-effort)
+            setTimeout(() => {
+              const invoiceNum = document.getElementById('invoice_number').value || '';
+              // update all badges by re-rendering keys if payload present in localStorage
+              const saved = loadSavedPayload();
+              if (saved && saved.line_items) renderLineItems(saved.line_items);
+            }, 300);
+          } else {
+            alert('QC save failed: ' + (j && j.message ? j.message : JSON.stringify(j)));
+          }
+        })
+        .catch(err => {
+          console.error('QC save failed', err);
+          alert('Failed to persist QC to server: ' + err);
+        });
+      }
+
+      function qcConfirm() { qcApplyStatus('confirmed'); }
+      function qcReject() { qcApplyStatus('rejected'); }
+
+      function qcPrint() {
+        const item = document.getElementById('qc_item_name').textContent || '';
+        const qty = document.getElementById('qc_item_qty').textContent || '';
+        const obs = {
+          obs1: document.getElementById('qc_obs1').value || '',
+          obs2: document.getElementById('qc_obs2').value || '',
+          obs3: document.getElementById('qc_obs3').value || '',
+          obs4: document.getElementById('qc_obs4').value || '',
+          obs5: document.getElementById('qc_obs5').value || ''
+        };
+        const remarks = document.getElementById('qc_remarks').value || '';
+        const specsHtml = document.getElementById('qc_specs_container').innerHTML || '';
+        const html = `
+          <html><head><title>QC Form - ${item}</title>
+            <style>body{font-family:Arial,sans-serif;padding:20px}h2{margin-bottom:6px}table{width:100%;border-collapse:collapse}td,th{border:1px solid #ccc;padding:6px;text-align:left}</style>
+          </head><body>
+            <h2>QC Form</h2>
+            <div><strong>Item:</strong> ${item}</div>
+            <div><strong>Qty:</strong> ${qty}</div>
+            <h3 style="margin-top:12px">Observations</h3>
+            <table>
+              <tr><th>Obs1</th><td>${escapeHtml(obs.obs1)}</td></tr>
+              <tr><th>Obs2</th><td>${escapeHtml(obs.obs2)}</td></tr>
+              <tr><th>Obs3</th><td>${escapeHtml(obs.obs3)}</td></tr>
+              <tr><th>Obs4</th><td>${escapeHtml(obs.obs4)}</td></tr>
+              <tr><th>Obs5</th><td>${escapeHtml(obs.obs5)}</td></tr>
+            </table>
+            <h3 style="margin-top:12px">Remarks</h3>
+            <div style="white-space:pre-wrap;border:1px solid #eee;padding:8px;background:#fff">${escapeHtml(remarks)}</div>
+            <h3 style="margin-top:12px">Matched Specs</h3>
+            <div>${specsHtml}</div>
+          </body></html>
+        `;
+        const w = window.open('', '_blank');
+        if (!w) { alert('Please allow popups to print the QC form.'); return; }
+        w.document.open();
+        w.document.write(html);
+        w.document.close();
+        setTimeout(() => { w.print(); }, 300);
+      }
+
+      function escapeHtml(s) { return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;'); }
+
+      async function fetchMatchedProductSpecs(itemName) {
+        try {
+          const res = await fetch('/api/products');
+          const data = await res.json();
+          const products = data.products || [];
+          // try exact match, then includes, case-insensitive
+          const lower = (itemName||'').toLowerCase();
+          let found = products.find(p => (p.item_name||'').toLowerCase() === lower);
+          if (!found) found = products.find(p => (p.item_name||'').toLowerCase().includes(lower));
+          if (!found) {
+            document.getElementById('qc_specs_container').innerHTML = 'No matching product found in Product Master.';
+            document.getElementById('qc_product_id').value = '';
+            return;
+          }
+          // fetch properties
+          document.getElementById('qc_product_id').value = found.id;
+          const propsRes = await fetch(`/api/product-properties/${found.id}`);
+          const propsData = await propsRes.json();
+          const props = propsData.properties || [];
+          if (!props.length) {
+            document.getElementById('qc_specs_container').innerHTML = 'No product specifications found.';
+            return;
+          }
+          let html = '<table style="width:100%; border-collapse:collapse; font-size:13px;">';
+          html += '<tr><th style="text-align:left;padding:6px;border-bottom:1px solid #e6edf8">Property</th><th style="padding:6px;border-bottom:1px solid #e6edf8">Min</th><th style="padding:6px;border-bottom:1px solid #e6edf8">Max</th><th style="padding:6px;border-bottom:1px solid #e6edf8">Method</th></tr>';
+          props.forEach(p => {
+            html += `<tr><td style="padding:6px;border-bottom:1px solid #f1f6ff;text-align:left">${p.property_name}</td><td style="padding:6px;border-bottom:1px solid #f1f6ff">${p.min_value ?? ''}</td><td style="padding:6px;border-bottom:1px solid #f1f6ff">${p.max_value ?? ''}</td><td style="padding:6px;border-bottom:1px solid #f1f6ff">${p.method ?? ''}</td></tr>`;
+          });
+          html += '</table>';
+          document.getElementById('qc_specs_container').innerHTML = html;
+        } catch (e) {
+          console.error(e);
+          document.getElementById('qc_specs_container').innerHTML = 'Failed to load product specs.';
+        }
+      }
+
+      function loadSavedPayload() {
+        const saved = localStorage.getItem('ai_inventory_extracted_payload');
+        if (!saved) return null;
+        try {
+          return JSON.parse(saved);
+        } catch (e) {
+          return null;
+        }
+      }
+
+      function renderLineItems(items) {
+        const body = document.getElementById("lineItemsBody");
+        body.innerHTML = "";
+        if (!items || !items.length) {
+          body.innerHTML = `<tr><td colspan="5" style="text-align:center; color:#94a3b8">No lines extracted. Upload document above.</td></tr>`;
+          return;
+        }
+
+        items.forEach((item) => {
+          const row = document.createElement("tr");
+          const keyRaw = (document.getElementById('invoice_number').value||'') + '|' + (item.description||'');
+          const key = sanitizeKey(keyRaw);
+          row.innerHTML = `
+            <td><strong>${item.description}</strong></td>
+            <td>${item.qty}</td>
+            <td>${item.unit_price}</td>
+            <td>${item.amount}</td>
+            <td>
+              <button class="btn btn-add" type="button">QC</button>
+              <span id="qc-badge-${key}" class="qc-badge" style="display:none"></span>
+            </td>
+          `;
+          row.querySelector("button").addEventListener("click", function () {
+            openQCForm(item);
+          });
+          body.appendChild(row);
+          setTimeout(() => updateBadgeForKey(keyRaw), 0);
+        });
+      }
+
+      document.addEventListener('DOMContentLoaded', function() {
+        const saved = loadSavedPayload();
+        if (saved) {
+          extractedPayload = saved;
+          document.getElementById("invoice_number").value = saved.invoice_number || '';
+          document.getElementById("invoice_date").value = saved.invoice_date || '';
+          document.getElementById("vendor_name").value = saved.vendor_name || '';
+          document.getElementById("total_amount").value = saved.total_amount || '';
+          renderLineItems(saved.line_items || []);
+        }
+      });
     </script>
   </body>
 </html>

@@ -93,6 +93,9 @@ CREATE TABLE IF NOT EXISTS grn (
     supplier_id     INTEGER REFERENCES suppliers(id),
     received_date   TEXT NOT NULL,
     received_by     INTEGER REFERENCES users(id),
+    status          TEXT NOT NULL DEFAULT 'Pending QC',
+    posted_by       INTEGER REFERENCES users(id),
+    posted_date     TEXT,
     created_at      TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
 
@@ -105,7 +108,17 @@ CREATE TABLE IF NOT EXISTS grn_items (
     quantity        REAL NOT NULL DEFAULT 0,
     unit            TEXT,
     unit_price      REAL DEFAULT 0,
+    qc_status       TEXT NOT NULL DEFAULT 'Pending',
     tax_percent     REAL DEFAULT 0
+);
+-- ============================================================
+-- DEPARTMENTS
+-- ============================================================
+CREATE TABLE IF NOT EXISTS departments (
+    id              INTEGER PRIMARY KEY AUTOINCREMENT,
+    dept_id         TEXT NOT NULL UNIQUE,
+    dept_name       TEXT NOT NULL,
+    created_at      TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
 
 -- ============================================================
@@ -250,6 +263,20 @@ def init_db():
     if not cursor.fetchone():
         cursor.execute(
             "INSERT INTO users (username, password_hash, full_name, role) VALUES ('admin', 'admin123', 'Administrator', 'admin')"
+        )
+        
+    # Create default departments
+    cursor.execute("SELECT id FROM departments")
+    if not cursor.fetchone():
+        depts = [
+            ('PROD', 'Production'),
+            ('MAINT', 'Maintenance'),
+            ('ASSEM', 'Assembly'),
+            ('QA', 'Quality Assurance'),
+            ('ADMIN', 'Administration')
+        ]
+        cursor.executemany(
+            "INSERT INTO departments (dept_id, dept_name) VALUES (?, ?)", depts
         )
         
     conn.commit()
