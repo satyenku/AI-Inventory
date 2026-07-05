@@ -1,0 +1,410 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <title>Stock Return Entry</title>
+    <style>
+      body { margin: 0; font-family: Arial, sans-serif; background: #f1f5f9; display: flex; }
+      .sidebar { width: 240px; background: #0f172a; color: #fff; min-height: 100vh; padding-top: 20px; }
+      .sidebar h2 { text-align: center; margin-bottom: 20px; font-size: 20px; }
+      .sidebar a { display: block; padding: 12px 20px; color: #cbd5e1; text-decoration: none; font-size: 15px; }
+      .sidebar a:hover { background: #1e293b; color: #fff; }
+      .main { flex: 1; padding: 25px; }
+      .container { background: white; padding: 25px; border-radius: 6px; box-shadow: 0 2px 6px rgba(0,0,0,0.08); }
+      h2 { margin-top: 0; color: #1e293b; }
+      .form-row { display: grid; grid-template-columns: repeat(4, 1fr); gap: 15px; margin-bottom: 15px; }
+      label { font-size: 13px; color: #334155; }
+      input, select { padding: 8px 10px; border: 1px solid #cbd5e1; border-radius: 4px; font-size: 14px; width: 100%; box-sizing: border-box; }
+      button { padding: 10px 16px; background: #16a34a; color: white; border: none; border-radius: 4px; cursor: pointer; font-size: 14px; font-weight: bold; }
+      button:hover { background: #15803d; }
+      
+      /* Camera Scanner UI */
+      .scanner-overlay {
+        display: none; position: fixed; top: 0; left: 0; right: 0; bottom: 0;
+        background: rgba(0,0,0,0.8); z-index: 1000;
+        justify-content: center; align-items: center; flex-direction: column;
+      }
+      .scanner-overlay.active { display: flex; }
+      .scanner-box {
+        background: white; padding: 20px; border-radius: 8px;
+        width: 100%; max-width: 500px; text-align: center;
+      }
+      .scanner-close-btn { background: #ef4444; width: 100%; margin-top: 15px; }
+      .scanner-close-btn:hover { background: #dc2626; }
+    </style>
+    
+    <script src="https://unpkg.com/html5-qrcode"></script>
+    <script>
+      // ── Barcode lookup ──────────────────────────────────────────────────────
+      function lookupBarcode() {
+        const val = document.getElementById('barcodeSearch').value.trim();
+        const errEl  = document.getElementById('lookupError');
+        const cardEl = document.getElementById('supplierCard');
+
+        if (!val) {
+          errEl.textContent = 'Please enter or scan a barcode first.';
+          errEl.style.display = 'block';
+          return;
+        }
+
+        errEl.style.display = 'none';
+
+        fetch('/api/barcode-lookup?barcode=' + encodeURIComponent(val))
+          .then(r => {
+            if (!r.ok && r.status !== 404) {
+              throw new Error('Server returned ' + r.status);
+            }
+            return r.json();
+          })
+          .then(data => {
+            if (data.error) {
+              errEl.textContent = data.error;
+              errEl.style.display = 'block';
+              cardEl.style.display = 'none';
+              return;
+            }
+
+            // Show supplier card
+            cardEl.style.display = 'block';
+            document.getElementById('si_name').textContent    = data.supplier_name    || '—';
+            document.getElementById('si_contact').textContent = data.contact_person   || '—';
+            document.getElementById('si_phone').textContent   = data.phone            || '—';
+            document.getElementById('si_email').textContent   = data.email            || '—';
+            document.getElementById('si_invoice').textContent = data.invoice_number   || '—';
+            document.getElementById('si_date').textContent    = data.invoice_date     || '—';
+            document.getElementById('si_address').textContent = data.address          || '—';
+
+            // Warn if no supplier was linked to this invoice
+            const noSupWarn = document.getElementById('noSupplierWarn');
+            if (noSupWarn) noSupWarn.style.display = data.supplier_id ? 'none' : 'block';
+
+            // Auto-select the correct product logically
+            if (data.product_id) {
+              const container = document.getElementById('returnItemsContainer');
+              if (container) {
+                const rows = container.querySelectorAll('.return-item-row');
+                let targetSelect = null;
+
+                for (let row of rows) {
+                  const sel = row.querySelector('.returnProductSelect');
+                  if (sel && sel.value === "") {
+                    targetSelect = sel;
+                    break;
+                  }
+                }
+
+                if (!targetSelect) {
+                  addReturnItem();
+                  const newRows = container.querySelectorAll('.return-item-row');
+                  targetSelect = newRows[newRows.length - 1].querySelector('.returnProductSelect');
+                }
+
+                if (targetSelect) {
+                  for (let opt of targetSelect.options) {
+                    if (parseInt(opt.value) === data.product_id) {
+                      targetSelect.value = opt.value;
+                      
+                      // Auto-fill quantity
+                      const row = targetSelect.closest('.return-item-row');
+                      if (row) {
+                        const qtyInput = row.querySelector('input[name="qty[]"]');
+                        if (qtyInput && data.original_qty) {
+                           qtyInput.value = data.original_qty;
+                        }
+                      }
+                      break;
+                    }
+                  }
+                }
+              }
+            }
+
+            // Auto-generate a return ID suggestion
+            const retField = document.getElementById('return_id_field');
+            if (retField && !retField.value) {
+              const ts = Date.now().toString().slice(-5);
+              retField.value = 'RET-' + (data.invoice_number || 'UNKNOWN') + '-' + ts;
+            }
+
+            cardEl.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+
+            const searchBox = document.getElementById('barcodeSearch');
+            if(searchBox) {
+                searchBox.value = '';
+                searchBox.focus();
+            }
+          })
+          .catch((err) => {
+            errEl.textContent = 'Lookup request failed: ' + err.message;
+            errEl.style.display = 'block';
+          });
+      }
+
+      // ── Add / Remove return item rows ──────────────────────────────────
+      function addReturnItem() {
+        const container = document.getElementById('returnItemsContainer');
+        const firstRow = container.querySelector('.return-item-row');
+        const newRow = firstRow.cloneNode(true);
+        newRow.querySelector('select[name="product_id[]"]').value = '';   // ensure blank
+        newRow.querySelector('input[name="qty[]"]').value = '';
+        newRow.querySelector('select[name="condition[]"]').selectedIndex = 0;
+        container.appendChild(newRow);
+        document.getElementById('barcodeSearch').focus();
+      }
+
+      function removeReturnItem(btn) {
+        const container = document.getElementById('returnItemsContainer');
+        const rows = container.querySelectorAll('.return-item-row');
+        if (rows.length <= 1) {
+          alert("At least one return item row is required.");
+          return;
+        }
+        btn.closest('.return-item-row').remove();
+      }
+
+      // ── Camera Scanner Logic ──────────────────────────────────
+      let html5QrcodeScannerObj = null;
+
+      function openCameraScanner() {
+        const overlay = document.getElementById('scannerOverlay');
+        const status = document.getElementById('scannerStatus');
+        overlay.classList.add('active');
+        status.textContent = 'Starting camera...';
+        document.getElementById('reader').innerHTML = '';
+
+        const config = {
+          fps: 10,
+          qrbox: { width: 350, height: 200 },
+          aspectRatio: 1.0
+        };
+
+        try {
+          html5QrcodeScannerObj = new Html5Qrcode("reader");
+          html5QrcodeScannerObj.start({ facingMode: "environment" }, config, onCameraScanSuccess, onCameraScanFailure)
+            .then(() => { status.textContent = 'Scanning... Position barcode inside the box.'; })
+            .catch((err) => {
+              status.textContent = 'Error starting camera. Please grant permissions.';
+              console.error(err);
+            });
+        } catch (e) {
+          status.textContent = 'Camera initialization failed.';
+        }
+      }
+
+      function closeCameraScanner() {
+        const overlay = document.getElementById('scannerOverlay');
+        overlay.classList.remove('active');
+        if (html5QrcodeScannerObj) {
+          try { html5QrcodeScannerObj.stop().catch(e => console.error(e)); } catch(e){}
+        }
+        document.getElementById('barcodeSearch').focus();
+      }
+
+      function onCameraScanSuccess(decodedText) {
+        if (html5QrcodeScannerObj) {
+           try { html5QrcodeScannerObj.pause(); } catch(e){}
+        }
+        document.getElementById('scannerStatus').textContent = 'Found: ' + decodedText;
+
+        const searchBox = document.getElementById('barcodeSearch');
+        searchBox.value = decodedText;
+        closeCameraScanner();
+        lookupBarcode();
+      }
+
+      function onCameraScanFailure() {}
+      
+      document.addEventListener('DOMContentLoaded', function() {
+        const searchBoxEl = document.getElementById('barcodeSearch');
+        if(searchBoxEl) {
+          searchBoxEl.addEventListener('keydown', function(e) {
+            if (e.key === 'Enter') { e.preventDefault(); lookupBarcode(); }
+          });
+        }
+      });
+    </script>
+  </head>
+  <body>
+    <div class="sidebar">
+      <h2>Inventory</h2>
+      <a href="{{ url_for('dashboard') }}">📊 Dashboard</a>
+      <a href="{{ url_for('product_master') }}">📦 Product Master</a>
+      <a href="{{ url_for('item_issue') }}">🧾 Item Issue</a>
+      <a href="{{ url_for('item_entry') }}">🧾 Item Entry</a>
+      <a href="{{ url_for('inventory_status') }}">📈 Inventory Status</a>
+      <a href="{{ url_for('inventory_return') }}">📈 Return Inventory</a>
+      <a href="{{ url_for('supplier_management') }}">👥 Suppliers</a>
+      <a href="{{ url_for('user_management') }}">👤 Users</a>
+      <a href="{{ url_for('logout') }}" style="color: #ef4444">🚪 Sign Out</a>
+    </div>
+    <div class="main">
+      <div class="container">
+        <h2>Record Store Return Inwards</h2>
+        {% with messages = get_flashed_messages(with_categories=true) %}
+          {% if messages %}
+            {% for category, message in messages %}
+            <p style="color: {% if category=='error' %}#dc2626{% else %}#16a34a{% endif %}; font-weight: bold; font-size: 14px;">
+              {{ message }}
+            </p>
+            {% endfor %}
+          {% endif %}
+        {% endwith %}
+
+        <!-- ── Barcode lookup strip ── -->
+        <div style="margin-bottom:20px; background:#f8fafc; padding:15px; border-radius:6px; border:1px dashed #cbd5e1;">
+          <label style="font-weight:bold; display:block; margin-bottom:8px; font-size:13px;">
+            🔍 Scan GRN Barcode to Auto-Fill Return Details
+          </label>
+          <p style="font-size:12px; color:#64748b; margin:0 0 10px;">
+            Scan the barcode label attached to the physical item at the time of receipt.
+            The system will look up which supplier it came from automatically.
+          </p>
+          <div style="display:flex; gap:10px;">
+            <input type="text" id="barcodeSearch"
+                   placeholder="Scan or type GRN barcode  e.g. INV-2024-001-1-12345"
+                   style="flex:1;">
+            
+            <button type="button"
+                    style="background:#16a34a; white-space:nowrap; display:flex; align-items:center; gap:6px;"
+                    onclick="openCameraScanner()">
+              Scan
+            </button>
+            <button type="button"
+                    style="background:#0f172a; white-space:nowrap;"
+                    onclick="lookupBarcode()">
+              🔍 Lookup
+            </button>
+          </div>
+          <div id="lookupError"
+               style="display:none; color:#dc2626; font-size:13px; margin-top:8px; font-weight:bold;">
+          </div>
+        </div>
+
+        <!-- ── Supplier info card (shown after successful lookup) ── -->
+        <div id="supplierCard"
+             style="display:none; margin-bottom:20px; background:#eff6ff;
+                    border:1px solid #bfdbfe; border-radius:6px; padding:16px;">
+          <div style="font-weight:bold; font-size:14px; color:#1e40af; margin-bottom:12px;">
+            📦 Return To Supplier
+          </div>
+          <div style="display:grid; grid-template-columns:repeat(3,1fr); gap:12px; font-size:13px;">
+            <div>
+              <span style="color:#475569; font-size:11px; text-transform:uppercase;">Supplier</span><br>
+              <strong id="si_name">—</strong>
+            </div>
+            <div>
+              <span style="color:#475569; font-size:11px; text-transform:uppercase;">Contact Person</span><br>
+              <strong id="si_contact">—</strong>
+            </div>
+            <div>
+              <span style="color:#475569; font-size:11px; text-transform:uppercase;">Phone</span><br>
+              <strong id="si_phone">—</strong>
+            </div>
+            <div>
+              <span style="color:#475569; font-size:11px; text-transform:uppercase;">Email</span><br>
+              <strong id="si_email">—</strong>
+            </div>
+            <div>
+              <span style="color:#475569; font-size:11px; text-transform:uppercase;">Original Invoice</span><br>
+              <strong id="si_invoice">—</strong>
+            </div>
+            <div>
+              <span style="color:#475569; font-size:11px; text-transform:uppercase;">Invoice Date</span><br>
+              <strong id="si_date">—</strong>
+            </div>
+          </div>
+          <div style="margin-top:10px; font-size:12px; color:#475569; border-top:1px solid #bfdbfe; padding-top:10px;">
+            <strong>Address:</strong> <span id="si_address">—</span>
+          </div>
+          <div id="noSupplierWarn"
+               style="display:none; margin-top:10px; background:#fef3c7;
+                      border:1px solid #fcd34d; border-radius:4px; padding:8px;
+                      font-size:12px; color:#92400e;">
+            ⚠ No supplier is linked to this invoice. Check the invoice record and
+            link it to a supplier manually via the Suppliers page.
+          </div>
+        </div>
+
+        <!-- ── Return form ── -->
+        <form action="{{ url_for('inventory_return') }}" method="POST">
+          <div class="form-row">
+            <div>
+              <label>Return Document ID</label>
+              <input type="text" name="return_id" id="return_id_field"
+                     placeholder="e.g. RET-5512" required />
+            </div>
+            <div>
+              <label>Return Date</label>
+              <input type="date" name="return_date" required />
+            </div>
+            <div>
+              <label>Returned By (Staff)</label>
+              <input type="text" name="returned_by"
+                     placeholder="Staff Full Name" required />
+            </div>
+            <div>
+              <label>Source Department</label>
+              <input type="text" name="department"
+                     placeholder="Department / Client" required />
+            </div>
+          </div>
+          <hr style="border: 0; border-top: 1px solid #cbd5e1; margin: 20px 0" />
+          
+          <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:10px;">
+              <h3 style="margin:0; font-size:16px; color:#1e293b;">Return Items</h3>
+              <button type="button" onclick="addReturnItem()" style="background:#2563eb; padding:6px 12px; font-size:12px;">+ Add Item</button>
+          </div>
+
+          <div id="returnItemsContainer">
+              <div class="form-row return-item-row" style="background:#f8fafc; padding:15px; border-radius:6px; position:relative; margin-bottom:10px; border:1px solid #e2e8f0;">
+                <div style="grid-column: span 2">
+                  <label>Select Product</label>
+                  <select name="product_id[]" class="returnProductSelect" required>
+                    <option value="">-- Select Product --</option>
+                    {% for p in products %}
+                    <option value="{{ p.id }}" data-barcode="{{ p.barcode or '' }}">
+                      {{ p.item_code }} - {{ p.item_name }}
+                    </option>
+                    {% endfor %}
+                  </select>
+                </div>
+                <div>
+                  <label>Returned Quantity</label>
+                  <input type="number" name="qty[]" placeholder="e.g. 5" required />
+                </div>
+                <div>
+                  <label>Physical Condition</label>
+                  <select name="condition[]">
+                    <option value="Good">Good (Restock immediately)</option>
+                    <option value="Damaged">Damaged / Defective</option>
+                  </select>
+                </div>
+                <!-- Remove Button -->
+                <button type="button" onclick="removeReturnItem(this)" style="position:absolute; top:8px; right:8px; background:#ef4444; color:white; border:none; padding:4px 8px; border-radius:4px; font-size:12px; cursor:pointer;">Remove</button>
+              </div>
+          </div>
+
+          <div class="form-row" style="margin-top:20px;">
+            <div style="grid-column: span 3">
+              <label>Reason for Inward Return</label>
+              <input type="text" name="reason" placeholder="Explain reason for return" />
+            </div>
+            <div style="align-self: end; text-align: right">
+              <button type="submit">Submit Return Inward</button>
+            </div>
+          </div>
+        </form>
+      </div>
+    </div>
+
+    <!-- Camera Scanner Modal Overlay -->
+    <div class="scanner-overlay" id="scannerOverlay">
+      <div class="scanner-box">
+        <h3>Camera Scanner</h3>
+        <div id="reader" style="width: 100%; border-radius: 6px; overflow: hidden; background: #000;"></div>
+        <p id="scannerStatus" style="font-weight:bold; color:#334155; margin-top:10px;"></p>
+        <button type="button" class="scanner-close-btn" onclick="closeCameraScanner()">Close</button>
+      </div>
+    </div>
+  </body>
+</html>

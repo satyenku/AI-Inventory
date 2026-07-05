@@ -1,0 +1,245 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <title>Stock Ledger Ledger Audit Status</title>
+    <style>
+      body {
+        margin: 0;
+        font-family: Arial, sans-serif;
+        background: #f1f5f9;
+        display: flex;
+      }
+      .sidebar {
+        width: 240px;
+        background: #0f172a;
+        color: #fff;
+        min-height: 100vh;
+        padding-top: 20px;
+      }
+      .sidebar h2 {
+        text-align: center;
+        margin-bottom: 20px;
+        font-size: 20px;
+      }
+      .sidebar a {
+        display: block;
+        padding: 12px 20px;
+        color: #cbd5e1;
+        text-decoration: none;
+        font-size: 15px;
+      }
+      .sidebar a:hover {
+        background: #1e293b;
+        color: #fff;
+      }
+      .main {
+        flex: 1;
+        padding: 25px;
+      }
+      .container {
+        background: white;
+        padding: 25px;
+        border-radius: 6px;
+        box-shadow: 0 2px 6px rgba(0, 0, 0, 0.08);
+        margin-bottom: 25px;
+      }
+      h2 {
+        margin-top: 0;
+        color: #1e293b;
+      }
+      .form-row {
+        display: grid;
+        grid-template-columns: 3fr 1fr;
+        gap: 15px;
+        margin-bottom: 20px;
+      }
+      label {
+        font-size: 13px;
+        color: #334155;
+      }
+      input {
+        padding: 8px 10px;
+        border: 1px solid #cbd5e1;
+        border-radius: 4px;
+        font-size: 14px;
+        width: 100%;
+        box-sizing: border-box;
+      }
+      button {
+        padding: 10px 16px;
+        background: #2563eb;
+        color: white;
+        border: none;
+        border-radius: 4px;
+        cursor: pointer;
+        font-size: 14px;
+        font-weight: bold;
+      }
+      table {
+        width: 100%;
+        border-collapse: collapse;
+        margin-top: 15px;
+      }
+      th,
+      td {
+        padding: 10px;
+        border-bottom: 1px solid #e5e7eb;
+        font-size: 14px;
+        text-align: left;
+      }
+      th {
+        background: #f8fafc;
+      }
+      .badge {
+        padding: 4px 8px;
+        border-radius: 4px;
+        font-size: 12px;
+        color: white;
+        font-weight: bold;
+      }
+      .ok {
+        background: #16a34a;
+      }
+      .low {
+        background: #dc2626;
+      }
+      .barcode-img {
+        margin-top: 15px;
+        max-width: 250px;
+        border: 1px solid #e5e7eb;
+        padding: 10px;
+        background: white;
+      }
+    </style>
+  </head>
+  <body>
+    <div class="sidebar">
+      <h2>Inventory</h2>
+      <a href="{{ url_for('dashboard') }}">📊 Dashboard</a>
+      <a href="{{ url_for('product_master') }}">📦 Product Master</a>
+      <a href="{{ url_for('item_issue') }}">🧾 Item Issue</a>
+      <a href="{{ url_for('item_entry') }}">🧾 Item Entry</a>
+      <a href="{{ url_for('inventory_status') }}">📈 Inventory Status</a>
+      <a href="{{ url_for('inventory_return') }}">📈 Return Inventory</a>
+      <a href="{{ url_for('supplier_management') }}">👥 Suppliers</a>
+      <a href="{{ url_for('user_management') }}">👤 Users</a>
+      <a href="{{ url_for('logout') }}" style="color: #ef4444">🚪 Sign Out</a>
+    </div>
+    <div class="main">
+      <div class="container">
+        <h2>Item Stock Balance Search Lookup</h2>
+        <form action="{{ url_for('inventory_status') }}" method="GET">
+          <div class="form-row">
+            <div>
+              <label>Scan Barcode or Search by Product Code / Name</label>
+              <input
+                type="text"
+                name="search"
+                value="{{ query }}"
+                placeholder="Search identifier..."
+                autofocus
+                required
+              />
+            </div>
+            <div style="align-self: end">
+              <button type="submit" style="width: 100%">Search Database</button>
+            </div>
+          </div>
+        </form>
+      </div>
+      {% if product %}
+      <div class="container">
+        <h2>Product Match Found: {{ product.item_name }}</h2>
+        <div
+          style="
+            display: flex;
+            justify-content: space-between;
+            align-items: flex-start;
+          "
+        >
+          <div style="flex: 1">
+            <p><strong>Item Code:</strong> {{ product.item_code }}</p>
+            <p>
+              <strong>Category:</strong> {{ product.category }} |
+              <strong>Unit:</strong> {{ product.unit }}
+            </p>
+            <p>
+              <strong>Warehouse Location Position:</strong> {{
+              product.storage_location or 'Unassigned' }}
+            </p>
+            <p>
+              <strong>Running Inventory Balance:</strong> {{
+              product.current_stock }} Units
+            </p>
+            <p>
+              <strong>Status Badge Check:</strong>
+              {% if product.current_stock <= product.min_stock_level %}
+              <span class="badge low">Low stock</span>
+              {% else %}
+              <span class="badge ok">Stock level OK</span>
+              {% endif %}
+            </p>
+          </div>
+          <div>
+            {% if product.barcode %}
+            <p><strong>Active Barcode System Label:</strong></p>
+            <img
+              class="barcode-img"
+              src="/static/barcodes/{{ product.barcode }}.png"
+              alt="Product Barcode Asset"
+              onerror="this.style.display = 'none'"
+            />
+            <p style="font-size: 11px; color: #64748b; text-align: center">
+              Barcode Value: {{ product.barcode }}
+            </p>
+            {% endif %}
+          </div>
+        </div>
+      </div>
+      <div class="container">
+        <h2>Database Ledger Stock Movement History</h2>
+        <table>
+          <thead>
+            <tr>
+              <th>Timestamp</th>
+              <th>Type</th>
+              <th>Logged Source Table</th>
+              <th>Inventory Impact Change</th>
+              <th>Updated System Balance After</th>
+            </tr>
+          </thead>
+          <tbody>
+            {% for log in ledger %}
+            <tr>
+              <td>{{ log.moved_at }}</td>
+              <td><strong>{{ log.movement_type }}</strong></td>
+              <td>{{ log.reference_table }}</td>
+              <td
+                style="color: {% if log.quantity_change > 0 %}#16a34a{% else %}#dc2626{% endif %}; font-weight: bold;"
+              >
+                {{ '+' if log.quantity_change > 0 }}{{ log.quantity_change }}
+              </td>
+              <td>{{ log.balance_after }} Units</td>
+            </tr>
+            {% else %}
+            <tr>
+              <td colspan="5" style="text-align: center; color: #94a3b8">
+                No physical movements tracked for this product inside ledger
+                registers.
+              </td>
+            </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+      {% elif query %}
+      <div class="container">
+        <p style="color: #dc2626; font-weight: bold">
+          No products matching "{{ query }}" located inside database records.
+        </p>
+      </div>
+      {% endif %}
+    </div>
+  </body>
+</html>

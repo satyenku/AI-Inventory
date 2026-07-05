@@ -1,0 +1,204 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <title>Inventory Dashboard</title>
+    <style>
+      body {
+        margin: 0;
+        font-family: Arial, sans-serif;
+        background: #f1f5f9;
+        display: flex;
+      }
+      .sidebar {
+        width: 240px;
+        background: #0f172a;
+        color: #fff;
+        min-height: 100vh;
+        padding-top: 20px;
+      }
+      .sidebar h2 {
+        text-align: center;
+        margin-bottom: 20px;
+        font-size: 20px;
+      }
+      .sidebar a {
+        display: block;
+        padding: 12px 20px;
+        color: #cbd5e1;
+        text-decoration: none;
+        font-size: 15px;
+      }
+      .sidebar a:hover {
+        background: #1e293b;
+        color: #fff;
+      }
+      .main {
+        flex: 1;
+        padding: 25px;
+      }
+      .header {
+        background: #ffffff;
+        padding: 15px;
+        border-radius: 6px;
+        box-shadow: 0 2px 6px rgba(0, 0, 0, 0.08);
+        margin-bottom: 25px;
+      }
+      .header h1 {
+        margin: 0;
+        color: #1e293b;
+      }
+      .cards {
+        display: grid;
+        grid-template-columns: repeat(2, 1fr);
+        gap: 20px;
+        margin-bottom: 25px;
+      }
+      .card {
+        background: #ffffff;
+        padding: 20px;
+        border-radius: 6px;
+        box-shadow: 0 2px 6px rgba(0, 0, 0, 0.08);
+      }
+      .card h3 {
+        margin: 0;
+        font-size: 15px;
+        color: #475569;
+      }
+      .card p {
+        font-size: 28px;
+        margin: 10px 0 0;
+        color: #0f172a;
+      }
+      .table-box {
+        background: #ffffff;
+        padding: 20px;
+        border-radius: 6px;
+        box-shadow: 0 2px 6px rgba(0, 0, 0, 0.08);
+        margin-bottom: 25px;
+      }
+      table {
+        width: 100%;
+        border-collapse: collapse;
+      }
+      th,
+      td {
+        padding: 12px;
+        border-bottom: 1px solid #e5e7eb;
+        font-size: 14px;
+        text-align: left;
+      }
+      th {
+        background: #f8fafc;
+      }
+      .low {
+        color: #dc2626;
+        font-weight: bold;
+      }
+    </style>
+  </head>
+  <body>
+    <div class="sidebar">
+      <h2>Inventory</h2>
+      <a href="{{ url_for('dashboard') }}">📊 Dashboard</a>
+      <a href="{{ url_for('product_master') }}">📦 Product Master</a>
+      <a href="{{ url_for('item_issue') }}">🧾 Item Issue</a>
+      <a href="{{ url_for('item_entry') }}">🧾 Item Entry</a>
+      <a href="{{ url_for('inventory_status') }}">📈 Inventory Status</a>
+      <a href="{{ url_for('inventory_return') }}">📈 Return Inventory</a>
+      <a href="{{ url_for('supplier_management') }}">👥 Suppliers</a>
+      <a href="{{ url_for('user_management') }}">👤 Users</a>
+      <a href="{{ url_for('logout') }}" style="color: #ef4444">🚪 Sign Out</a>
+    </div>
+    <div class="main">
+      <div class="header">
+        <h1>Inventory Dashboard</h1>
+        <p style="color: #475569; font-size: 14px; margin: 5px 0 0 0">
+          Today's operational stock metrics
+        </p>
+      </div>
+      <div class="cards">
+        <div class="card">
+          <h3>Critical Low Stock Alarms</h3>
+          <p style="color: #dc2626">{{ low_stock }}</p>
+        </div>
+        <div class="card">
+          <h3>Connected Operator Profile</h3>
+          <p style="font-size: 18px">
+            {{ session.get('user', 'Standard User') }}
+          </p>
+        </div>
+      </div>
+      <div class="table-box">
+        <h3 style="margin-top: 0; color: #1e293b">Standard Stock Quantities</h3>
+        <table>
+          <thead>
+            <tr>
+              <th>Item Code</th>
+              <th>Item Name</th>
+              <th>Category</th>
+              <th>Unit</th>
+              <th>Storage Location</th>
+              <th>Available Qty</th>
+            </tr>
+          </thead>
+          <tbody>
+            {% for item in items %}
+            <tr>
+              <td>{{ item.item_code }}</td>
+              <td>{{ item.item_name }}</td>
+              <td>{{ item.category or 'Unassigned' }}</td>
+              <td>{{ item.unit }}</td>
+              <td>{{ item.storage_location or 'N/A' }}</td>
+              <td
+                class="{{ 'low' if item.current_stock <= item.min_stock_level }}"
+              >
+                {{ item.current_stock }}
+              </td>
+            </tr>
+            {% else %}
+            <tr>
+              <td colspan="6" style="text-align: center; color: #94a3b8">
+                No items located within catalog database registry.
+              </td>
+            </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+      <div class="table-box">
+        <h3 style="margin-top: 0; color: #1e293b">Today's Dispatched Stock</h3>
+        <table>
+          <thead>
+            <tr>
+              <th>Date</th>
+              <th>Slip No</th>
+              <th>Item Code</th>
+              <th>Item Name</th>
+              <th>Target Unit</th>
+              <th>Dispatched Qty</th>
+            </tr>
+          </thead>
+          <tbody>
+            {% for issue in issues %}
+            <tr>
+              <td>{{ issue.issue_date }}</td>
+              <td>{{ issue.issue_slip_no }}</td>
+              <td>{{ issue.item_code }}</td>
+              <td>{{ issue.item_name }}</td>
+              <td>{{ issue.issued_to }}</td>
+              <td>{{ issue.quantity }} {{ issue.unit }}</td>
+            </tr>
+            {% else %}
+            <tr>
+              <td colspan="6" style="text-align: center; color: #94a3b8">
+                No registered stock withdrawals tracked today.
+              </td>
+            </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  </body>
+</html>
