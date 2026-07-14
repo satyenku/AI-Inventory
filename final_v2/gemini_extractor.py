@@ -19,19 +19,22 @@ class InvoiceExtractionSchema(BaseModel):
     invoice_number: str = Field(description="Unique string identifiers denoting billing sequence numbers.")
     invoice_date: str = Field(description="Standardized date of billing as YYYY-MM-DD.")
     vendor_name: str = Field(description="The corporate legal entity name representing supplier.")
+    vendor_gst: str = Field(
+        description="Supplier GSTIN exactly as printed on the invoice. Return empty string if not available."
+    )
     tax_amount_clean: str = Field(description="The clean isolated numeric tax/VAT details (e.g. 150.00).")
     line_items: List[InvoiceItem] = Field(description="Line items.")
     total_amount: float = Field(description="Aggregate check total including taxes.")
 
+
 def extract_invoice_data(file_path: str) -> InvoiceExtractionSchema:
     prompt = (
-        "Process this transaction invoice or receipt and isolate all values matching schema formats. "
-        "Return only plain, machine-readable values. "
-        "Dates must be ISO format YYYY-MM-DD. "
-        "Quantities, unit prices, amounts, and totals must be numeric strings without comma grouping separators or currency symbols. "
-        "Line item descriptions should be clear and concise. "
-        "Do not include extra text outside the JSON schema output."
-    )
+    "Process this transaction invoice or receipt and isolate all values matching schema formats. "
+    "Extract the supplier company name and supplier GSTIN exactly as printed on the invoice. "
+    "Return only plain machine-readable values. "
+    "Dates must be ISO format YYYY-MM-DD. "
+    "Do not include extra text outside the JSON schema output."
+)
 
     api_key = os.environ.get("GEMINI_API_KEY")
     if not api_key:

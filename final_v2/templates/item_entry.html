@@ -141,6 +141,7 @@
       <a href="{{ url_for('inventory_status') }}">📈 Inventory Status</a>
       <a href="{{ url_for('inventory_return') }}">📈 Return Inventory</a>
       <a href="{{ url_for('supplier_management') }}">👥 Suppliers</a>
+      <a href="{{ url_for('department_management') }}">🏢 Departments</a>
       <a href="{{ url_for('user_management') }}">👤 Users</a>
       <a href="{{ url_for('logout') }}" style="color: #ef4444">🚪 Sign Out</a>
     </div>
@@ -156,20 +157,34 @@
             border: 1px dashed #cbd5e1;
           "
         >
-          <label style="font-weight: bold; display: block; margin-bottom: 8px"
-            >Upload Scanned Purchase Invoice (PDF)</label
-          >
-          <input type="file" id="invoiceFile" accept="application/pdf" />
-          <button
-            class="btn btn-add"
-            style="margin-top: 10px"
-            onclick="uploadAndExtract()"
-          >
-            Process Invoice
-          </button>
-          <span id="loadingMsg" class="loading"
-            >Parsing document, extracting values...</span
-          >
+          <label style="font-weight: bold; display: block; margin-bottom: 8px">
+    Upload Scanned Purchase Invoice (PDF)
+</label>
+
+<input type="file" id="invoiceFile" accept="application/pdf" />
+
+<button
+    class="btn btn-add"
+    style="margin-top:10px"
+    onclick="uploadAndExtract()">
+    Process Invoice
+</button>
+
+<span id="loadingMsg" class="loading">
+    Parsing document, extracting values...
+</span>
+
+<hr style="margin:20px 0">
+
+<div style="text-align:right">
+    <button
+        type="button"
+        class="btn btn-add"
+        onclick="addManualItem()">
+        + Add Manual Item
+    </button>
+</div>
+
         </div>
         <div class="form-row">
           <div>
@@ -196,7 +211,7 @@
               <option value="">-- Choose a Supplier --</option>
               {% for supplier in suppliers %}
               <option value="{{ supplier.id }}">
-                {{ supplier.supplier_name }}
+                {{ supplier.supplier_name }}({{ supplier.gst_number }})
               </option>
               {% endfor %}
             </select>
@@ -217,7 +232,7 @@
           <tbody id="lineItemsBody">
             <tr>
               <td colspan="4" style="text-align: center; color: #94a3b8">
-                No lines extracted. Upload document above.
+                
               </td>
             </tr>
           </tbody>
@@ -229,6 +244,11 @@
         </div>
 
         <!-- Barcode strip shown after successful save -->
+        <!-- Generated GRN info (populated after successful post) -->
+        <div id="grnInfo" style="display:none; margin-top:18px; background:#fff; border:1px solid #e6eef8; padding:12px; border-radius:6px">
+          <div style="font-size:14px; font-weight:bold; color:#0f172a; margin-bottom:6px">Generated GRN</div>
+          <div id="grnInfoContent" style="font-size:13px; color:#334155"></div>
+        </div>
         <div
           id="barcodeStrip"
           style="
@@ -342,6 +362,9 @@
               data.invoice_number;
             document.getElementById("invoice_date").value = data.invoice_date;
             document.getElementById("vendor_name").value = data.vendor_name;
+            if(data.supplier_id){
+            document.getElementById("supplier_id").value = data.supplier_id;
+            }
             document.getElementById("total_amount").value = data.total_amount;
 
             const body = document.getElementById("lineItemsBody");
@@ -376,12 +399,38 @@
 
       function saveInvoiceToDB() {
         if (!extractedPayload) {
-          extractedPayload = loadSavedPayload();
+    extractedPayload = loadSavedPayload();
+}
+
+if (!extractedPayload) {
+
+    const manualItems = [];
+
+    document.querySelectorAll("#lineItemsBody tr").forEach(row => {
+
+        const desc = row.querySelector(".manual-description");
+
+        if (desc) {
+
+            manualItems.push({
+                description: desc.value,
+                qty: row.querySelector(".manual-qty").value,
+                unit_price: row.querySelector(".manual-price").value,
+                amount: row.querySelector(".manual-amount").textContent
+            });
+
         }
-        if (!extractedPayload) {
-          alert("No parsed content exists to commit.");
-          return;
-        }
+
+    });
+
+    extractedPayload = {
+        invoice_number: document.getElementById("invoice_number").value,
+        invoice_date: document.getElementById("invoice_date").value,
+        vendor_name: document.getElementById("vendor_name").value,
+        total_amount: parseFloat(document.getElementById("total_amount").value) || 0,
+        line_items: manualItems
+    };
+}
 
         const supplierId = document.getElementById("supplier_id").value;
         if (!supplierId) {
@@ -435,7 +484,13 @@
                 if (postRes && postRes.status === 'success') {
                   localStorage.removeItem('ai_inventory_extracted_payload');
                   alert(postRes.message || 'GRN posted successfully.');
-                  showBarcodeStrip(resData.barcodes || []);
+                  // display GRN details and barcodes without page refresh
+                  const grnInfo = {
+                    grn_no: postRes.grn_no || null,
+                    invoice_number: postRes.invoice_number || null,
+                    supplier_name: postRes.supplier_name || null,
+                  };
+                  showBarcodeStrip(resData.barcodes || [], grnInfo);
                 } else if (postRes && postRes.message) {
                   alert(postRes.message || 'Failed to post GRN.');
                 } else {
@@ -455,8 +510,16 @@
           });
       }
 
-      function showBarcodeStrip(barcodes) {
-        if (!barcodes.length) {
+      function showBarcodeStrip(barcodes, grnInfo) {
+        // grnInfo: { grn_no, invoice_number, supplier_name } (optional)
+        if (!barcodes || !barcodes.length) {
+          // still show grn info if present
+          if (grnInfo && grnInfo.grn_no) {
+            document.getElementById('grnInfoContent').innerHTML = `Supplier: <strong>${escapeHtml(grnInfo.supplier_name || '')}</strong><br/>Invoice No: <strong>${escapeHtml(grnInfo.invoice_number || '')}</strong><br/>Generated GRN: <strong>${escapeHtml(grnInfo.grn_no || '')}</strong>`;
+            document.getElementById('grnInfo').style.display = 'block';
+            localStorage.removeItem('ai_inventory_extracted_payload');
+            return;
+          }
           alert("GRN posted. No barcodes generated.");
           localStorage.removeItem('ai_inventory_extracted_payload');
           window.location.reload();
@@ -479,7 +542,15 @@
           cards.appendChild(card);
         });
         strip.style.display = "block";
-        strip.scrollIntoView({ behavior: "smooth" });
+
+        // display GRN info above strip when available
+        if (grnInfo && grnInfo.grn_no) {
+          document.getElementById('grnInfoContent').innerHTML = `Supplier: <strong>${escapeHtml(grnInfo.supplier_name || '')}</strong><br/>Invoice No: <strong>${escapeHtml(grnInfo.invoice_number || '')}</strong><br/>Generated GRN: <strong>${escapeHtml(grnInfo.grn_no || '')}</strong>`;
+          document.getElementById('grnInfo').style.display = 'block';
+          document.getElementById('grnInfo').scrollIntoView({ behavior: 'smooth' });
+        } else {
+          strip.scrollIntoView({ behavior: "smooth" });
+        }
       }
       function openQCForm(item) {
         if (!item || !item.description) {
@@ -488,6 +559,7 @@
         }
         const invoiceNum = document.getElementById('invoice_number').value || '';
         const keyRaw = (invoiceNum||'') + '|' + (item.description||'');
+        
         const qc = loadQCForKey(keyRaw) || {};
         document.getElementById('qc_item_name').textContent = item.description;
         document.getElementById('qc_item_qty').textContent = item.qty || '';
@@ -532,6 +604,7 @@
       }
 
       function qcApplyStatus(status) {
+        console.log("qcApplyStatus called:", status);
         const key = document.getElementById('qc_current_key').value;
         const observations = {
           obs1: document.getElementById('qc_obs1').value || '',
@@ -559,6 +632,7 @@
           ],
           qc_status: status
         };
+        console.log(payload);
 
         fetch('/api/save-qc', {
           method: 'POST',
@@ -570,6 +644,20 @@
         .then(j => {
           // If server accepted, close modal; otherwise show message
           if (j && j.status === 'success') {
+             if(j.status==="success"){
+
+        updateBadgeForKey(key);
+
+        document.getElementById("qcModalOverlay").style.display="none";
+
+    }
+
+    else{
+
+        alert(j.message);
+
+    }
+            
             document.getElementById('qcModalOverlay').style.display = 'none';
             // refresh badges for all items (best-effort)
             setTimeout(() => {
@@ -721,6 +809,109 @@
           renderLineItems(saved.line_items || []);
         }
       });
+
+  function addManualItem() {
+
+    const body = document.getElementById("lineItemsBody");
+
+    const row = document.createElement("tr");
+
+    row.innerHTML = `
+        <td>
+            <input class="manual-description"
+                   placeholder="Enter Item Name">
+        </td>
+
+        <td>
+            <input class="manual-qty"
+                   type="number"
+                   value="1"
+                   min="1">
+        </td>
+
+        <td>
+            <input class="manual-price"
+                   type="number"
+                   step="0.01"
+                   value="0">
+        </td>
+
+        <td class="manual-amount">
+            0.00
+        </td>
+
+        <td>
+            <button class="btn btn-add" type="button">
+                QC
+            </button>
+
+            <span class="qc-badge"
+                  style="display:none"></span>
+        </td>
+    `;
+
+    body.appendChild(row);
+
+    const qtyInput = row.querySelector(".manual-qty");
+    const priceInput = row.querySelector(".manual-price");
+    const amountCell = row.querySelector(".manual-amount");
+    const descInput = row.querySelector(".manual-description");
+
+    function updateAmount() {
+
+        const qty = parseFloat(qtyInput.value) || 0;
+        const price = parseFloat(priceInput.value) || 0;
+
+        amountCell.textContent = (qty * price).toFixed(2);
+    }
+
+    qtyInput.addEventListener("input", updateAmount);
+    priceInput.addEventListener("input", updateAmount);
+
+    updateAmount();
+
+    const qcButton = row.querySelector("button");
+
+    qcButton.onclick = function () {
+
+        const description = descInput.value.trim();
+
+        if (!description) {
+            alert("Please enter Item Name first.");
+            return;
+        }
+
+        const item = {
+
+            description: description,
+
+            qty: qtyInput.value,
+
+            unit_price: priceInput.value,
+
+            amount: amountCell.textContent
+
+        };
+
+        openQCForm(item);
+
+        // Save badge element for manual row
+        const invoiceNo =
+            document.getElementById("invoice_number").value || "MANUAL";
+
+        const keyRaw = invoiceNo + "|" + description;
+
+        document.getElementById("qc_current_key").value = keyRaw;
+
+        const badge = row.querySelector(".qc-badge");
+
+        badge.id = "qc-badge-" + sanitizeKey(keyRaw);
+
+        updateBadgeForKey(keyRaw);
+    };
+
+}
+      
     </script>
   </body>
 </html>

@@ -234,6 +234,7 @@
       <a href="{{ url_for('inventory_status') }}">📈 Inventory Status</a>
       <a href="{{ url_for('inventory_return') }}">📈 Return Inventory</a>
       <a href="{{ url_for('supplier_management') }}">👥 Suppliers</a>
+      <a href="{{ url_for('department_management') }}">🏢 Departments</a>
       <a href="{{ url_for('user_management') }}">👤 Users</a>
       <a href="{{ url_for('logout') }}" style="color: #ef4444">🚪 Sign Out</a>
     </div>
@@ -344,8 +345,14 @@
             </div>
             <div>
               <label>Source Department</label>
-              <input type="text" name="department"
-                     placeholder="Department / Client" required />
+              <select name="department" required>
+                <option value="" disabled selected>Select Department</option>
+                {% for dept in departments %}
+                <option value="{{ dept.dept_name }}">
+                  {{ dept.dept_name }} ({{ dept.dept_id }})
+                </option>
+                {% endfor %}
+              </select>
             </div>
           </div>
           <hr style="border: 0; border-top: 1px solid #cbd5e1; margin: 20px 0" />

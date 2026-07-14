@@ -1,6 +1,9 @@
 venv/
 inventory.db
+instance/
 __pycache__/
 *.pyc
 uploads/
 .env
+static/barcodes/*.png
+!static/barcodes/.gitkeep

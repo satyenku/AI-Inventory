@@ -4,6 +4,10 @@ import re
 import sqlite3
 import time
 from datetime import date
+import secrets
+import smtplib
+from email.mime.text import MIMEText
+from email.mime.multipart import MIMEMultipart
 from html import escape
 from io import BytesIO
 from zipfile import ZIP_DEFLATED, ZipFile
@@ -33,6 +37,11 @@ def parse_decimal(value, fallback=0.0):
         return float(cleaned)
     except ValueError:
         return fallback
+
+
+def normalize_item_text(value):
+    return " ".join(str(value or "").strip().lower().split())
+
 from config import Config
 from db_helpers import get_db_connection, log_stock_movement, insert_product_property
 
@@ -51,6 +60,109 @@ import gemini_extractor as ai
 app = Flask(__name__)
 app.config.from_object(Config)
 Config.validate()
+
+
+
+SMTP_SERVER = "smtp.gmail.com"
+SMTP_PORT = 587
+
+SMTP_USERNAME = os.getenv("EMAIL_USER")
+SMTP_PASSWORD = os.getenv("EMAIL_PASS")
+
+print("SMTP_USERNAME =", SMTP_USERNAME)
+print("SMTP_PASSWORD =", SMTP_PASSWORD)
+
+# ==========================================
+# LIVE SMTP EMAIL CONFIGURATION
+# ==========================================
+SMTP_SERVER = "smtp.gmail.com"             
+SMTP_PORT = 587
+SMTP_USERNAME = os.getenv("EMAIL_USER")     # Outbound business email address
+SMTP_PASSWORD = os.getenv("EMAIL_PASS")     # Secure App Password (16 characters)
+
+def send_recovery_email(target_email, username, reset_link):
+    """Dispatches an HTML transactional recovery link to the user's verified address."""
+    msg = MIMEMultipart()
+    msg['From'] = SMTP_USERNAME
+    msg['To'] = target_email
+    msg['Subject'] = f"Password Reset Request for {username}"
+
+    body = f"""
+    <div style="font-family: sans-serif; padding: 20px; color: #333; max-width: 600px; border: 1px solid #e5e7eb; border-radius: 8px;">
+        <h3 style="color: #111827;">Hello {username},</h3>
+        <p>We received a request to reset your application password. Click the secure link below to set a new password:</p>
+        <p style="margin: 25px 0;">
+            <a href="{reset_link}" style="background-color: #2563eb; color: white; padding: 10px 18px; text-decoration: none; border-radius: 5px; display: inline-block; font-weight: bold;">Reset Password</a>
+        </p>
+        <p>This recovery channel is confidential and will automatically expire in 15 minutes.</p>
+        <p style="color: #6b7280; font-size: 0.85em; margin-top: 20px; border-top: 1px solid #f3f4f6; padding-top: 10px;">
+            If you did not make this request, you can safely ignore this automated message.
+        </p>
+    </div>
+    """
+    msg.attach(MIMEText(body, 'html'))
+
+    try:
+        server = smtplib.SMTP(SMTP_SERVER, SMTP_PORT)
+        server.starttls()  # Initialize safe Transport Layer Security channel
+        server.login(SMTP_USERNAME, SMTP_PASSWORD)
+        server.send_message(msg)
+        server.quit()
+        return True
+    except Exception as e:
+        print(f"[MAIL SERVER ERROR] Failed email delivery: {e}")
+        return False
+
+def login_required(f):
+    """Simple helper ensuring secure authenticated system routes."""
+    from functools import wraps
+    @wraps(f)
+    def decorated_function(*args, **kwargs):
+        if 'user' not in session:
+            return redirect(url_for('login'))
+        return f(*args, **kwargs)
+    return decorated_function
+
+# Ensure ledger integrity triggers and indexes exist (safe to run multiple times)
+def ensure_ledger_integrity():
+    try:
+        conn = get_db_connection()
+        cur = conn.cursor()
+        # unique index to prevent accidental duplicate ledger entries for same source
+        cur.execute("CREATE UNIQUE INDEX IF NOT EXISTS idx_ledger_ref_unique ON stock_ledger(reference_table, reference_id, movement_type);")
+
+        # trigger to remove stock_ledger entries when grn_items deleted
+        trigger_name = 'trg_delete_grn_items_ledger'
+        cur.execute("SELECT name FROM sqlite_master WHERE type='trigger' AND name = ?", (trigger_name,))
+        if not cur.fetchone():
+            cur.execute(f"CREATE TRIGGER {trigger_name} AFTER DELETE ON grn_items BEGIN DELETE FROM stock_ledger WHERE reference_table = 'grn_items' AND reference_id = OLD.id; END;")
+
+        # trigger to remove stock_ledger entries when item_issue_items deleted
+        trig2 = 'trg_delete_issue_items_ledger'
+        cur.execute("SELECT name FROM sqlite_master WHERE type='trigger' AND name = ?", (trig2,))
+        if not cur.fetchone():
+            cur.execute(f"CREATE TRIGGER {trig2} AFTER DELETE ON item_issue_items BEGIN DELETE FROM stock_ledger WHERE reference_table = 'item_issue_items' AND reference_id = OLD.id; END;")
+
+        # trigger to remove stock_ledger entries when inventory_return_items deleted
+        trig3 = 'trg_delete_return_items_ledger'
+        cur.execute("SELECT name FROM sqlite_master WHERE type='trigger' AND name = ?", (trig3,))
+        if not cur.fetchone():
+            cur.execute(f"CREATE TRIGGER {trig3} AFTER DELETE ON inventory_return_items BEGIN DELETE FROM stock_ledger WHERE reference_table = 'inventory_return_items' AND reference_id = OLD.id; END;")
+
+        conn.commit()
+    except Exception:
+        try:
+            conn.rollback()
+        except Exception:
+            pass
+    finally:
+        try:
+            conn.close()
+        except Exception:
+            pass
+
+
+ensure_ledger_integrity()
 
 def login_required(f):
     """Simple helper ensuring secure authenticated system routes."""
@@ -95,20 +207,22 @@ def resolve_product_for_qc(cursor, product_id=None, item_name=None):
     if not item_name:
         return None
 
-    normalized = item_name.strip()
+    normalized = normalize_item_text(item_name)
     return cursor.execute("""
         SELECT *
         FROM products
-        WHERE LOWER(item_name) = LOWER(?)
-           OR LOWER(item_code) = LOWER(?)
-           OR LOWER(item_name) LIKE LOWER(?)
-           OR LOWER(item_code) LIKE LOWER(?)
+        WHERE LOWER(item_name) = ?
+           OR LOWER(item_code) = ?
+           OR LOWER(item_name) LIKE ?
+           OR LOWER(item_code) LIKE ?
         ORDER BY
             CASE
-                WHEN LOWER(item_name) = LOWER(?) THEN 0
-                WHEN LOWER(item_code) = LOWER(?) THEN 1
+                WHEN LOWER(item_name) = ? THEN 0
+                WHEN LOWER(item_code) = ? THEN 1
                 ELSE 2
             END,
+            CASE WHEN status = 'Active' THEN 0 ELSE 1 END,
+            COALESCE(current_stock, 0) DESC,
             id
         LIMIT 1
     """, (normalized, normalized, f"%{normalized}%", f"%{normalized}%", normalized, normalized)).fetchone()
@@ -358,7 +472,17 @@ def product_master():
         hsn = request.form.get('hsn_sac_code')
         location = request.form.get('storage_location')
         description = request.form.get('description')
-        
+
+        normalized_name = normalize_item_text(item_name)
+        existing_product = conn.execute(
+            "SELECT id FROM products WHERE LOWER(item_code) = ? OR LOWER(item_name) = ? LIMIT 1",
+            (item_code.strip().lower(), normalized_name)
+        ).fetchone()
+        if existing_product:
+            flash("Product Code or Product Name already exists.", "error")
+            conn.close()
+            return redirect(url_for('product_master'))
+
         try:
             cur = conn.execute("""
                 INSERT INTO products 
@@ -405,24 +529,124 @@ def product_master():
 @login_required
 def supplier_management():
     conn = get_db_connection()
+
     if request.method == 'POST':
-        name = request.form.get('supplier_name')
-        contact = request.form.get('contact_person')
-        phone = request.form.get('phone')
-        email = request.form.get('email')
-        address = request.form.get('address')
-        
-        conn.execute("""
-            INSERT INTO suppliers (supplier_name, contact_person, phone, email, address)
-            VALUES (?, ?, ?, ?, ?)
-        """, (name, contact, phone, email, address))
-        conn.commit()
-        flash("Supplier record created successfully.", "success")
+        name = request.form.get('supplier_name', '').strip()
+        gst_number = request.form.get('gst_number', '').strip().upper()
+        contact = request.form.get('contact_person', '').strip()
+        phone = request.form.get('phone', '').strip()
+        email = request.form.get('email', '').strip()
+        address = request.form.get('address', '').strip()
+
+        try:
+            conn.execute("""
+                INSERT INTO suppliers
+                (supplier_name, gst_number, contact_person, phone, email, address)
+                VALUES (?, ?, ?, ?, ?, ?)
+            """, (
+                name,
+                gst_number,
+                contact,
+                phone,
+                email,
+                address
+            ))
+
+            conn.commit()
+            flash("Supplier record created successfully.", "success")
+
+        except sqlite3.IntegrityError:
+            # Duplicate GST Number
+            flash("GST Number already exists.", "error")
+
+        finally:
+            conn.close()
+
         return redirect(url_for('supplier_management'))
-        
-    suppliers = conn.execute("SELECT * FROM suppliers ORDER BY supplier_name ASC").fetchall()
+
+    suppliers = conn.execute("""
+        SELECT *
+        FROM suppliers
+        ORDER BY supplier_name ASC
+    """).fetchall()
+
     conn.close()
-    return render_template('supplier_management.html', suppliers=suppliers)
+
+    return render_template(
+        'supplier_management.html',
+        suppliers=suppliers
+    )
+
+@app.route('/departments', methods=['GET', 'POST'])
+@login_required
+def department_management():
+    conn = get_db_connection()
+    if request.method == 'POST':
+        dept_id = request.form.get('dept_id')
+        dept_name = request.form.get('dept_name')
+        
+        if not dept_id or not dept_name:
+            flash("Department ID and Name are required.", "error")
+            return redirect(url_for('department_management'))
+        
+        try:
+            conn.execute("""
+                INSERT INTO departments (dept_id, dept_name)
+                VALUES (?, ?)
+            """, (dept_id, dept_name))
+            conn.commit()
+            flash("Department created successfully.", "success")
+        except sqlite3.IntegrityError:
+            flash("Department ID already exists. Please use a unique ID.", "error")
+        except Exception as e:
+            flash(f"Error creating department: {e}", "error")
+        return redirect(url_for('department_management'))
+        
+    departments = conn.execute("SELECT id, dept_id, dept_name, created_at FROM departments ORDER BY dept_name ASC").fetchall()
+    conn.close()
+    return render_template('department_management.html', departments=departments)
+
+@app.route('/department/edit', methods=['POST'])
+@login_required
+def edit_department():
+    conn = get_db_connection()
+    dept_id = request.form.get('dept_id')
+    dept_id_new = request.form.get('dept_id_new')
+    dept_name = request.form.get('dept_name')
+    
+    if not dept_id or not dept_id_new or not dept_name:
+        flash("All fields are required.", "error")
+        return redirect(url_for('department_management'))
+    
+    try:
+        conn.execute("""
+            UPDATE departments
+            SET dept_id = ?, dept_name = ?
+            WHERE id = ?
+        """, (dept_id_new, dept_name, dept_id))
+        conn.commit()
+        flash("Department updated successfully.", "success")
+    except sqlite3.IntegrityError:
+        flash("Department ID already exists. Please use a unique ID.", "error")
+    except Exception as e:
+        flash(f"Error updating department: {e}", "error")
+    
+    conn.close()
+    return redirect(url_for('department_management'))
+
+@app.route('/department/delete/<int:dept_id>', methods=['POST'])
+@login_required
+def delete_department(dept_id):
+    conn = get_db_connection()
+    try:
+        conn.execute("DELETE FROM departments WHERE id = ?", (dept_id,))
+        conn.commit()
+        flash("Department deleted successfully.", "success")
+    except Exception as e:
+        flash(f"Error deleting department: {e}", "error")
+    
+    conn.close()
+    return redirect(url_for('department_management'))
 
 @app.route('/item-entry')
 @login_required
@@ -437,17 +661,49 @@ def item_entry():
 def api_extract_data():
     if 'file' not in request.files:
         return {"error": "Missing upload file payload"}, 400
+
     file = request.files['file']
     file_path = os.path.join(app.config['UPLOAD_FOLDER'], file.filename)
     file.save(file_path)
+
     try:
+        # AI Extraction
         extracted = ai.extract_invoice_data(file_path)
-        return extracted.model_dump()
+
+        # Print Gemini Output (Temporary Debug)
+        print("========== GEMINI OUTPUT ==========")
+        print(extracted.model_dump())
+        print("===================================")
+
+        result = extracted.model_dump()
+
+        # Database Connection
+        conn = get_db_connection()
+
+        supplier = conn.execute("""
+            SELECT id, supplier_name
+            FROM suppliers
+            WHERE gst_number = ?
+        """, (extracted.vendor_gst,)).fetchone()
+
+        conn.close()
+
+        if supplier:
+            result["supplier_id"] = supplier["id"]
+            result["supplier_name"] = supplier["supplier_name"]
+        else:
+            result["supplier_id"] = ""
+            result["supplier_name"] = ""
+
+        # Always return the result
+        return result
+
     except Exception as e:
         return {"error": str(e)}, 500
+
     finally:
         if os.path.exists(file_path):
-            os.remove(file_path)
+            os.remove(file_path) 
 
 @app.route('/api/save', methods=['POST'])
 @login_required
@@ -521,8 +777,24 @@ def api_save_invoice():
                 amount = parse_decimal(item.get('amount'), 0.0)
                 
                 # Check / Resolve matching internal item codes
-                cursor.execute("SELECT id FROM products WHERE item_name = ? OR item_code = ?", (desc, desc))
+                # Match by item_code first, then by normalized item_name to avoid duplicates
+                cursor.execute("SELECT id FROM products WHERE LOWER(item_code) = ? LIMIT 1", (desc.strip().lower(),))
                 prod = cursor.fetchone()
+                if not prod:
+                    normalized = normalize_item_text(desc)
+                    cursor.execute("""
+                        SELECT id
+                        FROM products
+                        WHERE LOWER(item_name) = ?
+                           OR LOWER(item_code) = ?
+                        ORDER BY
+                            CASE WHEN status = 'Active' THEN 0 ELSE 1 END,
+                            COALESCE(current_stock, 0) DESC,
+                            id
+                        LIMIT 1
+                    """, (normalized, normalized))
+                    prod = cursor.fetchone()
+
                 if prod:
                     product_id = prod['id']
                 else:
@@ -636,7 +908,9 @@ def item_issue():
         return redirect(url_for('item_issue'))
         
     with get_db_connection() as conn:
-        products = conn.execute("SELECT id, item_code, item_name, barcode, current_stock FROM products ORDER BY item_code ASC").fetchall()
+        products = conn.execute(
+            "SELECT id, item_code, item_name, barcode, current_stock FROM products WHERE status = 'Active' AND COALESCE(current_stock, 0) > 0 ORDER BY item_code ASC"
+        ).fetchall()
         departments = conn.execute("SELECT dept_id, dept_name FROM departments ORDER BY dept_name ASC").fetchall()
         
         # Determine the next issue slip number
@@ -720,7 +994,8 @@ def inventory_return():
         
     with get_db_connection() as conn:
         products = conn.execute("SELECT id, item_code, item_name, barcode FROM products ORDER BY item_code ASC").fetchall()
-    return render_template('inventory_return.html', products=products)
+        departments = conn.execute("SELECT dept_id, dept_name FROM departments ORDER BY dept_name ASC").fetchall()
+    return render_template('inventory_return.html', products=products, departments=departments)
 
 @app.route('/inventory-status')
 @login_required
@@ -1522,8 +1797,21 @@ def confirm_grn(grn_id):
             ('Posted', session.get('user_id'), datetime.utcnow().isoformat(), grn_id)
         )
 
+        # prepare extra info to return to caller: grn_no, invoice_number, supplier_name
+        try:
+            info = cursor.execute("SELECT g.grn_no, inv.invoice_number, s.supplier_name FROM grn g LEFT JOIN invoices inv ON g.invoice_id = inv.id LEFT JOIN suppliers s ON g.supplier_id = s.id WHERE g.id = ?", (grn_id,)).fetchone()
+            result_extra = {
+                "grn_no": info['grn_no'] if info and 'grn_no' in info.keys() else None,
+                "invoice_number": info['invoice_number'] if info and 'invoice_number' in info.keys() else None,
+                "supplier_name": info['supplier_name'] if info and 'supplier_name' in info.keys() else None,
+            }
+        except Exception:
+            result_extra = {"grn_no": None, "invoice_number": None, "supplier_name": None}
+
         conn.commit()
-        return jsonify({"status": "success", "message": "GRN posted successfully."})
+        resp = {"status": "success", "message": "GRN posted successfully."}
+        resp.update(result_extra)
+        return jsonify(resp)
     except Exception as e:
         try:
             conn.rollback()
@@ -1535,6 +1823,143 @@ def confirm_grn(grn_id):
             conn.close()
         except Exception:
             pass
+
+        # =====================================================
+# ADDED: FORGOT PASSWORD ROUTING HANDLERS
+# =====================================================
+
+@app.route('/forgot-password', methods=['GET', 'POST'])
+def forgot_password():
+    if request.method == 'POST':
+        # CHANGED: Read 'email' from the form submission instead of 'username'
+        email = request.form.get('email', '').strip()
+        
+        conn = get_db_connection()
+        # CHANGED: Query the database by 'email' to find the matching user profile
+        user = conn.execute("SELECT * FROM users WHERE email = ?", (email,)).fetchone()
+        
+        # Verify user exists AND check if they have a registered email
+        if user and user['email']:
+            username = user['username'] # Retrieve their username from the database row
+            
+            # Create a unique 32-character security token
+            token = secrets.token_urlsafe(32)
+            # Token expires 15 minutes from now (900 seconds)
+            expiry = time.time() + 900 
+            
+            conn.execute(
+                "UPDATE users SET reset_token = ?, token_expiry = ? WHERE id = ?",
+                (token, expiry, user['id'])
+            )
+            conn.commit()
+            conn.close()
+            
+            # Formulate outbound reset link payload
+            reset_url = url_for('reset_password', token=token, _external=True)
+            print("\n" + "="*60)
+            print(f" PASSWORD RESET URL GENERATED FOR USER '{username}' ({email}):")
+            print(f" {reset_url}")
+            print("="*60 + "\n")
+            
+            # Trigger Live Transactive Email
+            email_sent = send_recovery_email(user['email'], username, reset_url)
+            
+            if email_sent:
+                flash(f"A password reset link has been safely dispatched to {user['email']}.", "success")
+            else:
+                flash("Internal transactional mail connection timeout. Token printed to local console system logs.", "success")
+        else:
+            if conn:
+                conn.close()
+            # Security best practice: keep the alert text generic so attackers don't know which emails exist
+            flash("If the account exists and has a configured email profile, a link was generated. Check system console logs.", "success")
+            
+        return redirect(url_for('login'))
+        
+    return render_template('forgot_password.html')
+
+
+@app.route('/reset-password', methods=['GET', 'POST'])
+def reset_password():
+    token = request.args.get('token')
+    if not token:
+        flash("Invalid request token syntax.", "error")
+        return redirect(url_for('login'))
+        
+    conn = get_db_connection()
+    user = conn.execute(
+        "SELECT * FROM users WHERE reset_token = ? AND token_expiry > ?", 
+        (token, time.time())
+    ).fetchone()
+    
+    if not user:
+        conn.close()
+        flash("The link has either expired or is invalid.", "error")
+        return redirect(url_for('login'))
+        
+    if request.method == 'POST':
+        new_password = request.form.get('password', '').strip()
+        confirm_password = request.form.get('confirm_password', '').strip()
+        
+        if not new_password:
+            flash("Password cannot be blank.", "error")
+            conn.close()
+            return render_template('reset_password.html', token=token)
+            
+        if new_password != confirm_password:
+            flash("Passwords do not match.", "error")
+            conn.close()
+            return render_template('reset_password.html', token=token)
+            
+        # Match alignment pattern with user registration logic (plain text)
+        conn.execute(
+            "UPDATE users SET password_hash = ?, reset_token = NULL, token_expiry = NULL WHERE id = ?",
+            (new_password, user['id'])
+        )
+        conn.commit()
+        conn.close()
+        
+        flash("Your password has been successfully updated. Please log in.", "success")
+        return redirect(url_for('login'))
+        
+    conn.close()
+    return render_template('reset_password.html', token=token)
+
+
+# =====================================================
+# ADDED: USER ADMINISTRATIVE EMAIL DIRECTORY PANEL
+# =====================================================
+
+@app.route('/admin/users-email', methods=['GET', 'POST'])
+@login_required
+def manage_users_emails():
+    """Administrative access dashboard to attach emails and verification flags to user accounts."""
+    conn = get_db_connection()
+    current_role = conn.execute("SELECT role FROM users WHERE username = ?", (session.get('user'),)).fetchone()
+    
+    if not current_role or current_role['role'] != 'admin':
+        conn.close()
+        flash('Access denied. Admin role configuration validation failed.', 'error')
+        return redirect(url_for('dashboard'))
+
+    if request.method == 'POST':
+        user_id = request.form.get('user_id')
+        new_email = request.form.get('email', '').strip()
+        is_verified = request.form.get('verified') == '1'
+        
+        conn.execute(
+            "UPDATE users SET email = ?, email_verified = ? WHERE id = ?", 
+            (new_email if new_email else None, 1 if is_verified else 0, user_id)
+        )
+        conn.commit()
+        flash("User profile email record updated successfully.", "success")
+        
+    all_users = conn.execute("SELECT id, username, role, is_active, email, email_verified FROM users ORDER BY username ASC").fetchall()
+    conn.close()
+    
+    # CHANGED: Swapped 'user_email_management.html' to your actual file 'user_management.html'
+    return render_template('user_management.html', users=all_users)
+
 
 
 if __name__ == '__main__':

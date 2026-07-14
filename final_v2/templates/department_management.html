@@ -1,0 +1,340 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <title>Department Management</title>
+    <style>
+      body {
+        margin: 0;
+        font-family: Arial, sans-serif;
+        background: #f1f5f9;
+        display: flex;
+      }
+      .sidebar {
+        width: 240px;
+        background: #0f172a;
+        color: #fff;
+        min-height: 100vh;
+        padding-top: 20px;
+      }
+      .sidebar h2 {
+        text-align: center;
+        margin-bottom: 20px;
+        font-size: 20px;
+      }
+      .sidebar a {
+        display: block;
+        padding: 12px 20px;
+        color: #cbd5e1;
+        text-decoration: none;
+        font-size: 15px;
+      }
+      .sidebar a:hover {
+        background: #1e293b;
+        color: #fff;
+      }
+      .main {
+        flex: 1;
+        padding: 25px;
+      }
+      .container {
+        background: white;
+        padding: 25px;
+        border-radius: 6px;
+        box-shadow: 0 2px 6px rgba(0, 0, 0, 0.08);
+        margin-bottom: 25px;
+      }
+      h2 {
+        margin-top: 0;
+        color: #1e293b;
+      }
+      .form-grid {
+        display: grid;
+        grid-template-columns: repeat(2, 1fr);
+        gap: 15px;
+      }
+      .form-group {
+        display: flex;
+        flex-direction: column;
+      }
+      label {
+        font-size: 13px;
+        color: #475569;
+        margin-bottom: 5px;
+        font-weight: bold;
+      }
+      input {
+        padding: 8px;
+        font-size: 14px;
+        border: 1px solid #cbd5e1;
+        border-radius: 4px;
+      }
+      input:focus {
+        outline: none;
+        border-color: #0078d4;
+        box-shadow: 0 0 0 2px rgba(0, 120, 212, 0.1);
+      }
+      button {
+        padding: 10px 16px;
+        background: #0078d4;
+        color: white;
+        border: none;
+        border-radius: 4px;
+        cursor: pointer;
+        font-size: 14px;
+        margin-top: 15px;
+        font-weight: bold;
+      }
+      button:hover {
+        background: #106ebe;
+      }
+      .flash-msg-error {
+        color: #dc2626;
+        font-weight: bold;
+        font-size: 14px;
+        background: #fee2e2;
+        padding: 10px 12px;
+        border-radius: 4px;
+        margin-bottom: 15px;
+      }
+      .flash-msg-success {
+        color: #16a34a;
+        font-weight: bold;
+        font-size: 14px;
+        background: #dcfce7;
+        padding: 10px 12px;
+        border-radius: 4px;
+        margin-bottom: 15px;
+      }
+      table {
+        width: 100%;
+        border-collapse: collapse;
+        margin-top: 20px;
+      }
+      th,
+      td {
+        padding: 12px;
+        border-bottom: 1px solid #e5e7eb;
+        font-size: 13px;
+        text-align: left;
+      }
+      th {
+        background: #0078d4;
+        color: white;
+        font-weight: bold;
+      }
+      tr:hover {
+        background: #f8fafc;
+      }
+      .action-buttons {
+        display: flex;
+        gap: 8px;
+      }
+      .btn-edit {
+        background: #16a34a;
+        padding: 6px 12px;
+        font-size: 12px;
+        border: none;
+        border-radius: 4px;
+        cursor: pointer;
+        color: white;
+      }
+      .btn-edit:hover {
+        background: #15803d;
+      }
+      .btn-delete {
+        background: #dc2626;
+        padding: 6px 12px;
+        font-size: 12px;
+        border: none;
+        border-radius: 4px;
+        cursor: pointer;
+        color: white;
+      }
+      .btn-delete:hover {
+        background: #b91c1c;
+      }
+      .modal {
+        display: none;
+        position: fixed;
+        z-index: 1000;
+        left: 0;
+        top: 0;
+        width: 100%;
+        height: 100%;
+        background-color: rgba(0, 0, 0, 0.5);
+      }
+      .modal.active {
+        display: flex;
+        justify-content: center;
+        align-items: center;
+      }
+      .modal-content {
+        background-color: white;
+        padding: 25px;
+        border-radius: 8px;
+        width: 90%;
+        max-width: 500px;
+        box-shadow: 0 4px 20px rgba(0, 0, 0, 0.15);
+      }
+      .modal-header {
+        font-size: 18px;
+        font-weight: bold;
+        color: #1e293b;
+        margin-bottom: 20px;
+      }
+      .modal-close {
+        float: right;
+        font-size: 28px;
+        font-weight: bold;
+        color: #94a3b8;
+        cursor: pointer;
+      }
+      .modal-close:hover {
+        color: #475569;
+      }
+    </style>
+  </head>
+  <body>
+    <div class="sidebar">
+      <h2>Inventory</h2>
+      <a href="{{ url_for('dashboard') }}">📊 Dashboard</a>
+      <a href="{{ url_for('product_master') }}">📦 Product Master</a>
+      <a href="{{ url_for('item_issue') }}">🧾 Item Issue</a>
+      <a href="{{ url_for('item_entry') }}">🧾 Item Entry</a>
+      <a href="{{ url_for('inventory_status') }}">📈 Inventory Status</a>
+      <a href="{{ url_for('inventory_return') }}">📈 Return Inventory</a>
+      <a href="{{ url_for('supplier_management') }}">👥 Suppliers</a>
+      <a href="{{ url_for('department_management') }}">🏢 Departments</a>
+      <a href="{{ url_for('user_management') }}">👤 Users</a>
+      <a href="{{ url_for('logout') }}" style="color: #ef4444">🚪 Sign Out</a>
+    </div>
+    <div class="main">
+      <div class="container">
+        <h2>Add New Department</h2>
+        {% with messages = get_flashed_messages(with_categories=true) %}
+          {% if messages %}
+            {% for category, message in messages %}
+              <p class="{% if category=='error' %}flash-msg-error{% else %}flash-msg-success{% endif %}">
+                {{ message }}
+              </p>
+            {% endfor %}
+          {% endif %}
+        {% endwith %}
+        <form action="{{ url_for('department_management') }}" method="POST">
+          <div class="form-grid">
+            <div class="form-group">
+              <label>Department ID (Code)</label>
+              <input
+                type="text"
+                name="dept_id"
+                placeholder="e.g. D001, HR, OPS"
+                required
+              />
+            </div>
+            <div class="form-group">
+              <label>Department Name</label>
+              <input
+                type="text"
+                name="dept_name"
+                placeholder="e.g. Human Resources, Operations"
+                required
+              />
+            </div>
+          </div>
+          <button type="submit">Create Department</button>
+        </form>
+      </div>
+
+      <div class="container">
+        <h2>Active Departments</h2>
+        <table>
+          <thead>
+            <tr>
+              <th>Department ID</th>
+              <th>Department Name</th>
+              <th>Created Date</th>
+              <th>Actions</th>
+            </tr>
+          </thead>
+          <tbody>
+            {% for dept in departments %}
+            <tr>
+              <td><strong>{{ dept.dept_id }}</strong></td>
+              <td>{{ dept.dept_name }}</td>
+              <td>{{ dept.created_at or 'N/A' }}</td>
+              <td>
+                <div class="action-buttons">
+                  <button class="btn-edit" onclick="openEditModal({{ dept.id }}, '{{ dept.dept_id }}', '{{ dept.dept_name }}')">Edit</button>
+                  <form action="{{ url_for('delete_department', dept_id=dept.id) }}" method="POST" style="display: inline;" onsubmit="return confirm('Are you sure you want to delete this department?');">
+                    <button type="submit" class="btn-delete">Delete</button>
+                  </form>
+                </div>
+              </td>
+            </tr>
+            {% else %}
+            <tr>
+              <td colspan="4" style="text-align: center; color: #94a3b8">
+                No departments configured yet. Add a new department above.
+              </td>
+            </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+    </div>
+
+    <!-- Edit Modal -->
+    <div id="editModal" class="modal">
+      <div class="modal-content">
+        <span class="modal-close" onclick="closeEditModal()">&times;</span>
+        <div class="modal-header">Edit Department</div>
+        <form action="{{ url_for('edit_department') }}" method="POST">
+          <input type="hidden" name="dept_id" id="editDeptId" />
+          <div class="form-group" style="margin-bottom: 15px;">
+            <label>Department ID (Code)</label>
+            <input
+              type="text"
+              name="dept_id_new"
+              id="editDeptCode"
+              placeholder="e.g. D001, HR, OPS"
+              required
+            />
+          </div>
+          <div class="form-group" style="margin-bottom: 15px;">
+            <label>Department Name</label>
+            <input
+              type="text"
+              name="dept_name"
+              id="editDeptName"
+              placeholder="e.g. Human Resources, Operations"
+              required
+            />
+          </div>
+          <button type="submit" style="width: 100%;">Update Department</button>
+          <button type="button" style="width: 100%; background: #94a3b8; margin-top: 8px;" onclick="closeEditModal()">Cancel</button>
+        </form>
+      </div>
+    </div>
+
+    <script>
+      function openEditModal(id, deptId, deptName) {
+        document.getElementById('editDeptId').value = id;
+        document.getElementById('editDeptCode').value = deptId;
+        document.getElementById('editDeptName').value = deptName;
+        document.getElementById('editModal').classList.add('active');
+      }
+
+      function closeEditModal() {
+        document.getElementById('editModal').classList.remove('active');
+      }
+
+      window.onclick = function(event) {
+        const modal = document.getElementById('editModal');
+        if (event.target == modal) {
+          modal.classList.remove('active');
+        }
+      }
+    </script>
+  </body>
+</html>

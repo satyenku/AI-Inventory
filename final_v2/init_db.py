@@ -24,6 +24,7 @@ CREATE TABLE IF NOT EXISTS users (
 CREATE TABLE IF NOT EXISTS suppliers (
     id              INTEGER PRIMARY KEY AUTOINCREMENT,
     supplier_name   TEXT NOT NULL,
+    gst_number      TEXT NOT NULL UNIQUE,
     contact_person  TEXT,
     phone           TEXT,
     email           TEXT,

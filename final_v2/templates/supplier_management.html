@@ -106,6 +106,7 @@
       <a href="{{ url_for('inventory_status') }}">📈 Inventory Status</a>
       <a href="{{ url_for('inventory_return') }}">📈 Return Inventory</a>
       <a href="{{ url_for('supplier_management') }}">👥 Suppliers</a>
+      <a href="{{ url_for('department_management') }}">🏢 Departments</a>
       <a href="{{ url_for('user_management') }}">👤 Users</a>
       <a href="{{ url_for('logout') }}" style="color: #ef4444">🚪 Sign Out</a>
     </div>
@@ -122,6 +123,15 @@
                 placeholder="e.g. ABC Metals"
                 required
               />
+            </div>
+            <div class="form-group">
+                 <label>GST Number <span style="color:red">*</span></label>
+                 <input
+                    type="text"
+                    name="gst_number"
+                    placeholder="e.g. 27ABCDE1234F1Z5"
+                    required
+                 />
             </div>
             <div class="form-group">
               <label>Contact Person</label>
@@ -161,6 +171,7 @@
           <thead>
             <tr>
               <th>Company Name</th>
+              <th>GST Number</th>
               <th>Primary Contact</th>
               <th>Phone</th>
               <th>Email</th>
@@ -171,6 +182,7 @@
             {% for supplier in suppliers %}
             <tr>
               <td><strong>{{ supplier.supplier_name }}</strong></td>
+              <td>{{ supplier.gst_number or 'N/A' }}</td>
               <td>{{ supplier.contact_person or 'N/A' }}</td>
               <td>{{ supplier.phone or 'N/A' }}</td>
               <td>{{ supplier.email or 'N/A' }}</td>
@@ -178,7 +190,7 @@
             </tr>
             {% else %}
             <tr>
-              <td colspan="5" style="text-align: center; color: #94a3b8">
+              <td colspan="6" style="text-align: center; color: #94a3b8">
                 No registered supplier accounts configured.
               </td>
             </tr>
