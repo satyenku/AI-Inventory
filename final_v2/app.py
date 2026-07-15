@@ -863,8 +863,8 @@ def item_issue():
         issued_to = request.form.get('issued_to')
         work_order = request.form.get('work_order_no')
         
-        product_ids = request.form.getlist('product_id')
-        qtys = request.form.getlist('qty')
+        product_ids = request.form.getlist('product_id[]')
+        qtys = request.form.getlist('qty[]')
         
         if not product_ids or not qtys or len(product_ids) != len(qtys):
             flash("Please add at least one item to proceed with dispatch.", "error")

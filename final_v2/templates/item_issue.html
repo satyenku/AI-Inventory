@@ -303,7 +303,7 @@
               <div class="form-row">
                 <div style="grid-column: span 2">
                   <label>Target Product</label>
-                  <select name="product_id" class="product-select" required>
+                  <select name="product_id[]" class="product-select" required>
                     <option value="">Select Product...</option>
                     {% for p in products %}
                     <option value="{{ p.id }}" data-barcode="{{ p.barcode or '' }}" data-itemcode="{{ p.item_code }}" data-itemname="{{ p.item_name }}" data-qty="{{ p.current_stock }}">
@@ -311,11 +311,17 @@
                     </option>
                     {% endfor %}
                   </select>
+                  <button
+                       type="button"
+                       class="scan-barcode-btn scan-btn"
+                       style="margin-top:8px;">
+                       📷 Scan Barcode
+                   </button>
                   <div class="row-item-details" style="margin-top: 8px; font-size: 13px; color: #475569;"></div>
                 </div>
                 <div>
                   <label>Dispatched Issue Qty</label>
-                  <input type="number" name="qty" placeholder="e.g. 50" min="0.01" step="any" required />
+                  <input type="number" name="qty[]" placeholder="e.g. 50" min="0.01" step="any" required />
                 </div>
                 <div style="align-self: end; display: flex; gap: 10px;">
                   <button type="button" class="btn-secondary add-row-btn" style="background-color: #2563eb; color: #fff; padding: 10px 16px; border: none; border-radius: 4px; cursor: pointer; font-weight: bold;">+ Add Item</button>
@@ -401,31 +407,37 @@
       }
 
       function addNewRow() {
-        const firstRow = document.querySelector(".item-row");
-        if (!firstRow) return;
-        
-        const newRow = firstRow.cloneNode(true);
-        
-        // Reset inputs
-        const select = newRow.querySelector(".product-select");
-        if (select) select.selectedIndex = 0;
-        
-        const qtyInput = newRow.querySelector("input[name='qty']");
-        if (qtyInput) qtyInput.value = "";
-        
-        // Hide the row until a barcode is scanned successfully
-        newRow.style.display = "none";
-        
-        // Append
-        document.getElementById("itemsContainer").appendChild(newRow);
-        
-        // Register events
-        registerRowListeners(newRow);
-        updateRemoveButtons();
+    const firstRow = document.querySelector(".item-row");
+    if (!firstRow) return;
 
-        // Automatically open scanner for the new row
-        openScanner(newRow);
-      }
+    const newRow = firstRow.cloneNode(true);
+
+    // Reset product selection
+    const select = newRow.querySelector(".product-select");
+    if (select) {
+        select.selectedIndex = 0;
+    }
+
+    // Reset quantity
+    const qtyInput = newRow.querySelector("input[name='qty[]']");
+    if (qtyInput) {
+        qtyInput.value = "";
+    }
+
+    // Clear product details
+    const details = newRow.querySelector(".row-item-details");
+    if (details) {
+        details.innerHTML = "";
+    }
+
+    // Show row immediately
+    
+
+    document.getElementById("itemsContainer").appendChild(newRow);
+
+    registerRowListeners(newRow);
+    updateRemoveButtons();
+}
 
       function updateRemoveButtons() {
         const rows = document.querySelectorAll(".item-row");
