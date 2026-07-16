@@ -53,8 +53,7 @@ if not hasattr(ImageFont.FreeTypeFont, 'getsize'):
         return bbox[2] - bbox[0], bbox[3] - bbox[1]
     ImageFont.FreeTypeFont.getsize = _free_type_font_getsize
 
-import barcode
-from barcode.writer import ImageWriter
+import qrcode
 import gemini_extractor as ai
 
 app = Flask(__name__)
@@ -175,11 +174,16 @@ def login_required(f):
     return decorated_function
 
 def generate_barcode_asset(barcode_value):
+    """Generate a QR code PNG for the given value and return the file path."""
     folder = os.path.join(app.root_path, 'static', 'barcodes')
     os.makedirs(folder, exist_ok=True)
-    code128 = barcode.get('code128', barcode_value, writer=ImageWriter())
-    file_path = os.path.join(folder, barcode_value)
-    return code128.save(file_path)
+    qr = qrcode.QRCode(version=1, error_correction=qrcode.constants.ERROR_CORRECT_M, box_size=8, border=2)
+    qr.add_data(barcode_value)
+    qr.make(fit=True)
+    img = qr.make_image(fill_color='black', back_color='white')
+    png_path = os.path.join(folder, f"{barcode_value}.png")
+    img.save(png_path)
+    return png_path
 
 
 def ensure_barcode_asset_exists(barcode_value):

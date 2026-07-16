@@ -174,14 +174,14 @@
 
         const config = {
           fps: 10,
-          qrbox: { width: 350, height: 200 },
+          qrbox: { width: 250, height: 250 },
           aspectRatio: 1.0
         };
 
         try {
           html5QrcodeScannerObj = new Html5Qrcode("reader");
           html5QrcodeScannerObj.start({ facingMode: "environment" }, config, onCameraScanSuccess, onCameraScanFailure)
-            .then(() => { status.textContent = 'Scanning... Position barcode inside the box.'; })
+            .then(() => { status.textContent = 'Scanning... Position QR code inside the box.'; })
             .catch((err) => {
               status.textContent = 'Error starting camera. Please grant permissions.';
               console.error(err);
@@ -254,15 +254,15 @@
         <!-- ── Barcode lookup strip ── -->
         <div style="margin-bottom:20px; background:#f8fafc; padding:15px; border-radius:6px; border:1px dashed #cbd5e1;">
           <label style="font-weight:bold; display:block; margin-bottom:8px; font-size:13px;">
-            🔍 Scan GRN Barcode to Auto-Fill Return Details
+            🔍 Scan GRN QR Code to Auto-Fill Return Details
           </label>
           <p style="font-size:12px; color:#64748b; margin:0 0 10px;">
-            Scan the barcode label attached to the physical item at the time of receipt.
+            Scan the QR code printed/attached to the physical item at the time of receipt.
             The system will look up which supplier it came from automatically.
           </p>
           <div style="display:flex; gap:10px;">
             <input type="text" id="barcodeSearch"
-                   placeholder="Scan or type GRN barcode  e.g. INV-2024-001-1-12345"
+                   placeholder="Scan or type GRN QR Code  e.g. INV-2024-001-1-12345"
                    style="flex:1;">
             
             <button type="button"
