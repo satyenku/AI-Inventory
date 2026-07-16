@@ -1,0 +1,254 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+
+<meta charset="UTF-8">
+
+<title>Scan QR Code</title>
+
+<script src="{{ url_for('static', filename='js/html5-qrcode.min.js') }}"></script>
+
+<style>
+
+body{
+
+    font-family:Arial;
+
+    background:#f4f6f9;
+
+    margin:0;
+
+}
+
+.container{
+
+    width:800px;
+
+    margin:30px auto;
+
+    background:white;
+
+    padding:30px;
+
+    border-radius:10px;
+
+    box-shadow:0 0 10px lightgray;
+
+}
+
+h2{
+
+    text-align:center;
+
+}
+
+#reader{
+
+    width:500px;
+
+    margin:auto;
+
+}
+
+#result{
+
+    margin-top:30px;
+
+    padding:20px;
+
+    border-radius:8px;
+
+    background:#eef8ff;
+
+    display:none;
+
+}
+
+.success{
+
+    color:green;
+
+    font-size:22px;
+
+    font-weight:bold;
+
+}
+
+.error{
+
+    color:red;
+
+    font-size:20px;
+
+    font-weight:bold;
+
+}
+
+button{
+
+    padding:10px 20px;
+
+    background:#2563eb;
+
+    color:white;
+
+    border:none;
+
+    border-radius:5px;
+
+    cursor:pointer;
+
+    font-size:16px;
+
+}
+
+.back{
+
+    text-align:center;
+
+    margin-top:25px;
+
+}
+
+</style>
+
+</head>
+
+<body>
+
+<div class="container">
+
+<h2>Scan QR Code</h2>
+
+<div id="reader"></div>
+
+<div id="result"></div>
+
+<div class="back">
+
+<a href="/">
+
+<button>
+
+Back
+
+</button>
+
+</a>
+
+</div>
+
+</div>
+
+<script>
+
+let scanner = new Html5Qrcode("reader");
+
+scanner.start(
+
+{
+
+facingMode:"environment"
+
+},
+
+{
+
+fps:10,
+
+qrbox:250
+
+},
+
+function(decodedText){
+
+scanner.stop();
+
+fetch("/search_qr",{
+
+method:"POST",
+
+headers:{
+
+"Content-Type":"application/json"
+
+},
+
+body:JSON.stringify({
+
+qr:decodedText
+
+})
+
+})
+
+.then(response=>response.json())
+
+.then(data=>{
+
+let result=document.getElementById("result");
+
+result.style.display="block";
+
+if(data.status=="success"){
+
+result.innerHTML=`
+
+<div class="success">
+
+✅ QR Found
+
+</div>
+
+<br>
+
+<b>Product :</b>
+
+${data.product}
+
+<br><br>
+
+<b>QR Number :</b>
+
+${data.qr}
+
+`;
+
+}
+
+else{
+
+result.innerHTML=`
+
+<div class="error">
+
+❌ QR Not Found
+
+</div>
+
+<br>
+
+Scanned QR :
+
+${decodedText}
+
+`;
+
+}
+
+});
+
+},
+
+function(error){
+
+}
+
+);
+
+</script>
+
+</body>
+
+</html>

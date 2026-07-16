@@ -706,154 +706,693 @@ def api_extract_data():
             os.remove(file_path) 
 
 @app.route('/api/save', methods=['POST'])
+
 @login_required
+
 def api_save_invoice():
+
+
+
     data = request.json
+
+
+
     try:
+
+
+
         with get_db_connection() as conn:
+
+
+
             cursor = conn.cursor()
-            
-            # Validate supplier is provided and exists
+
+
+
+            # -------------------------------
+
+            # Validate Supplier
+
+            # -------------------------------
+
+
+
             supplier_id_raw = data.get('supplier_id')
+
+
+
             if not supplier_id_raw:
-                return {"error": "Supplier is required. Please select a supplier from the dropdown before proceeding."}, 400
-            
-            # Convert to integer
+
+                return {
+
+                    "error": "Supplier is required. Please select a supplier."
+
+                }, 400
+
+
+
             try:
+
                 supplier_id = int(supplier_id_raw)
+
             except (ValueError, TypeError):
-                return {"error": f"Invalid supplier ID format: {supplier_id_raw}"}, 400
-            
-            cursor.execute("SELECT id, supplier_name FROM suppliers WHERE id = ?", (supplier_id,))
+
+                return {
+
+                    "error": f"Invalid supplier ID : {supplier_id_raw}"
+
+                }, 400
+
+
+
+            cursor.execute(
+
+                "SELECT id,supplier_name FROM suppliers WHERE id=?",
+
+                (supplier_id,)
+
+            )
+
+
+
             supplier_row = cursor.fetchone()
+
+
+
             if not supplier_row:
-                return {"error": f"Supplier ID {supplier_id} is not found in the system. Please add the supplier first."}, 400
-            
-            # Create Invoice entry with validated supplier_id
-            vendor_name = data.get('vendor_name', 'Unknown')
-            invoice_num = data.get('invoice_number', '').strip()
+
+                return {
+
+                    "error": "Supplier not found."
+
+                }, 400
+
+
+
+            # -------------------------------
+
+            # Create Invoice
+
+            # -------------------------------
+
+
+
+            vendor_name = data.get("vendor_name", "Unknown")
+
+
+
+            invoice_num = data.get("invoice_number", "").strip()
+
+
+
             if not invoice_num:
+
                 invoice_num = f"UNMAPPED-{int(time.time())}"
 
-            total_amt = parse_decimal(data.get('total_amount'), 0.0)
+
+
+            total_amt = parse_decimal(
+
+                data.get("total_amount"),
+
+                0.0
+
+            )
+
+
+
             cursor.execute("""
-                INSERT INTO invoices (vendor_name, invoice_number, invoice_date, supplier_id, total_amount)
-                VALUES (?, ?, ?, ?, ?)
-            """, (vendor_name, invoice_num, data.get('invoice_date', ''), supplier_id, total_amt))
+
+                INSERT INTO invoices
+
+                (
+
+                    vendor_name,
+
+                    invoice_number,
+
+                    invoice_date,
+
+                    supplier_id,
+
+                    total_amount
+
+                )
+
+                VALUES
+
+                (
+
+                    ?,?,?,?,?
+
+                )
+
+            """,
+
+            (
+
+                vendor_name,
+
+                invoice_num,
+
+                data.get("invoice_date", ""),
+
+                supplier_id,
+
+                total_amt
+
+            ))
+
+
+
             invoice_id = cursor.lastrowid
-            
-            # Create Goods Receipt Entry (GRN) with validated supplier_id
+
+
+
+            # -------------------------------
+
+            # Create GRN
+
+            # -------------------------------
+
+
+
             grn_no = f"GRN-{invoice_num}"
-            received_by_id = session.get('user_id')
+
+
+
+            received_by_id = session.get("user_id")
+
+
+
             if not received_by_id:
-                return {"error": "User session is invalid. Please log in again."}, 401
-            
-            try:
-                received_by_id = int(received_by_id)
-            except (ValueError, TypeError):
-                return {"error": "Invalid user session."}, 401
-            
+
+                return {
+
+                    "error": "Invalid session."
+
+                }, 401
+
+
+
+            received_by_id = int(received_by_id)
+
+
+
             cursor.execute("""
-                INSERT INTO grn (grn_no, invoice_id, supplier_id, received_date, received_by)
-                VALUES (?, ?, ?, ?, ?)
-            """, (grn_no, invoice_id, supplier_id, data.get('invoice_date', ''), received_by_id))
+
+                INSERT INTO grn
+
+                (
+
+                    grn_no,
+
+                    invoice_id,
+
+                    supplier_id,
+
+                    received_date,
+
+                    received_by
+
+                )
+
+                VALUES
+
+                (
+
+                    ?,?,?,?,?
+
+                )
+
+            """,
+
+            (
+
+                grn_no,
+
+                invoice_id,
+
+                supplier_id,
+
+                data.get("invoice_date", ""),
+
+                received_by_id
+
+            ))
+
+
+
             grn_id = cursor.lastrowid
-            # Ensure grn.status column exists and set initial status to 'Pending QC'
+
+
+
             try:
-                grn_cols = [c['name'] for c in cursor.execute("PRAGMA table_info(grn);").fetchall()]
-                if 'status' not in grn_cols:
-                    cursor.execute("ALTER TABLE grn ADD COLUMN status TEXT DEFAULT 'Pending QC'")
-                cursor.execute("UPDATE grn SET status = ? WHERE id = ?", ('Pending QC', grn_id))
-            except Exception:
-                # non-fatal: continue without blocking the save
-                pass
-            
-            line_items = data.get('line_items', [])
-            generated_barcodes = []
-            for index, item in enumerate(line_items, start=1):
-                desc = item.get('description', 'Generic Item')
-                qty = parse_decimal(item.get('qty'), 0.0)
-                price = parse_decimal(item.get('unit_price'), 0.0)
-                amount = parse_decimal(item.get('amount'), 0.0)
-                
-                # Check / Resolve matching internal item codes
-                # Match by item_code first, then by normalized item_name to avoid duplicates
-                cursor.execute("SELECT id FROM products WHERE LOWER(item_code) = ? LIMIT 1", (desc.strip().lower(),))
-                prod = cursor.fetchone()
-                if not prod:
-                    normalized = normalize_item_text(desc)
+
+
+
+                cols = [
+
+                    c["name"]
+
+                    for c in cursor.execute(
+
+                        "PRAGMA table_info(grn)"
+
+                    ).fetchall()
+
+                ]
+
+
+
+                if "status" not in cols:
+
+
+
                     cursor.execute("""
+
+                    ALTER TABLE grn
+
+                    ADD COLUMN status TEXT
+
+                    DEFAULT 'Pending QC'
+
+                    """)
+
+
+
+                cursor.execute("""
+
+                    UPDATE grn
+
+                    SET status='Pending QC'
+
+                    WHERE id=?
+
+                """,(grn_id,))
+
+
+
+            except:
+
+                pass
+
+
+
+            # -------------------------------
+
+            # Line Items
+
+            # -------------------------------
+
+
+
+            line_items = data.get("line_items", [])
+
+
+
+            generated_barcodes = []
+
+
+
+            for index, item in enumerate(line_items, start=1):
+
+
+
+                desc = item.get("description","Generic Item")
+
+
+
+                qty = parse_decimal(
+
+                    item.get("qty"),
+
+                    0
+
+                )
+
+
+
+                price = parse_decimal(
+
+                    item.get("unit_price"),
+
+                    0
+
+                )
+
+
+
+                amount = parse_decimal(
+
+                    item.get("amount"),
+
+                    0
+
+                )
+
+
+
+                # =====================================
+
+                # PRODUCT LOOKUP (FIXED)
+
+                # =====================================
+
+
+
+                normalized = normalize_item_text(desc)
+
+
+
+                cursor.execute("""
+
+                    SELECT id
+
+                    FROM products
+
+                    WHERE LOWER(item_name)=?
+
+                    LIMIT 1
+
+                """,(normalized,))
+
+
+
+                prod = cursor.fetchone()
+
+
+
+                if not prod:
+
+
+
+                    item_code = (
+
+                        "AUTO-"
+
+                        +
+
+                        re.sub(
+
+                            r'[^A-Z0-9]',
+
+                            '',
+
+                            desc.upper()
+
+                        )[:10]
+
+                    )
+
+
+
+                    cursor.execute("""
+
                         SELECT id
+
                         FROM products
-                        WHERE LOWER(item_name) = ?
-                           OR LOWER(item_code) = ?
-                        ORDER BY
-                            CASE WHEN status = 'Active' THEN 0 ELSE 1 END,
-                            COALESCE(current_stock, 0) DESC,
-                            id
+
+                        WHERE item_code=?
+
                         LIMIT 1
-                    """, (normalized, normalized))
+
+                    """,(item_code,))
+
+
+
                     prod = cursor.fetchone()
 
+
+
                 if prod:
-                    product_id = prod['id']
+
+
+
+                    product_id = prod["id"]
+
+
+
                 else:
-                    item_code = f"AUTO-{re.sub(r'[^A-Z0-9]', '', desc.upper())[:10]}"
+
+
+
+                    item_code = (
+
+                        "AUTO-"
+
+                        +
+
+                        re.sub(
+
+                            r'[^A-Z0-9]',
+
+                            '',
+
+                            desc.upper()
+
+                        )[:10]
+
+                    )
+
+
+
                     cursor.execute("""
-                        INSERT INTO products (item_code, barcode, item_name, unit, current_stock)
-                        VALUES (?, ?, ?, 'Nos', 0)
-                    """, (item_code, item_code, desc))
+
+                        INSERT INTO products
+
+                        (
+
+                            item_code,
+
+                            barcode,
+
+                            item_name,
+
+                            unit,
+
+                            current_stock
+
+                        )
+
+                        VALUES
+
+                        (
+
+                            ?,?,?, 'Nos',0
+
+                        )
+
+                    """,
+
+                    (
+
+                        item_code,
+
+                        item_code,
+
+                        desc
+
+                    ))
+
+
+
                     product_id = cursor.lastrowid
+
+
+
                     ensure_barcode_asset_exists(item_code)
 
-                # Add Line Item
+                                    # -------------------------------
+                # Add Invoice Item
+                # -------------------------------
+
                 cursor.execute("""
-                    INSERT INTO invoice_items (invoice_id, product_id, item_name, quantity, unit, unit_price, line_total)
-                    VALUES (?, ?, ?, ?, 'Nos', ?, ?)
-                """, (invoice_id, product_id, desc, qty, price, amount))
+                    INSERT INTO invoice_items
+                    (
+                        invoice_id,
+                        product_id,
+                        item_name,
+                        quantity,
+                        unit,
+                        unit_price,
+                        line_total
+                    )
+                    VALUES
+                    (
+                        ?, ?, ?, ?, 'Nos', ?, ?
+                    )
+                """,
+                (
+                    invoice_id,
+                    product_id,
+                    desc,
+                    qty,
+                    price,
+                    amount
+                ))
+
                 invoice_item_id = cursor.lastrowid
-                
-                # GRN specific additions (stock will be posted later on explicit confirmation)
+
+
+                # -------------------------------
+                # Add GRN Item
+                # -------------------------------
+
                 cursor.execute("""
-                    INSERT INTO grn_items (grn_id, product_id, quantity, unit, unit_price)
-                    VALUES (?, ?, ?, 'Nos', ?)
-                """, (grn_id, product_id, qty, price))
+                    INSERT INTO grn_items
+                    (
+                        grn_id,
+                        product_id,
+                        quantity,
+                        unit,
+                        unit_price
+                    )
+                    VALUES
+                    (
+                        ?, ?, ?, 'Nos', ?
+                    )
+                """,
+                (
+                    grn_id,
+                    product_id,
+                    qty,
+                    price
+                ))
+
                 grn_item_id = cursor.lastrowid
-                
-                # Unique barcode per GRN line item — timestamp suffix ensures
-                # same product on different invoices gets different barcodes.
-                # Allows individual-item returns by scanning barcode.
-                unique_suffix = str(int(time.time() * 1000) % 100000 + index)
-                barcode_no = f"{invoice_num}-{index}-{unique_suffix}"
-                barcode_file_path = generate_barcode_asset(barcode_no)
-                barcode_path = os.path.relpath(barcode_file_path, app.root_path)
+
+
+                # -------------------------------
+                # Generate Unique Barcode
+                # -------------------------------
+
+                unique_suffix = str(
+                    int(time.time() * 1000) % 100000 + index
+                )
+
+                barcode_no = (
+                    f"{invoice_num}-{index}-{unique_suffix}"
+                )
+
+                barcode_file_path = generate_barcode_asset(
+                    barcode_no
+                )
+
+                barcode_path = os.path.relpath(
+                    barcode_file_path,
+                    app.root_path
+                )
+
 
                 cursor.execute("""
-                    INSERT INTO barcode_registry (barcode_no, invoice_id, invoice_item_id, barcode_image)
-                    VALUES (?, ?, ?, ?)
-                """, (barcode_no, invoice_id, invoice_item_id, barcode_path))
+                    INSERT INTO barcode_registry
+                    (
+                        barcode_no,
+                        invoice_id,
+                        invoice_item_id,
+                        barcode_image
+                    )
+                    VALUES
+                    (
+                        ?, ?, ?, ?
+                    )
+                """,
+                (
+                    barcode_no,
+                    invoice_id,
+                    invoice_item_id,
+                    barcode_path
+                ))
 
-                # Product master barcode NOT overwritten — GRN barcodes are
-                # per-receipt items, product master keeps its own item_code barcode.
+
                 generated_barcodes.append({
+
                     "barcode_no": barcode_no,
+
                     "item_name": desc,
-                    "barcode_image": "/" + barcode_path.replace("\\", "/"),
+
+                    "barcode_image":
+                        "/" +
+                        barcode_path.replace("\\", "/")
+
                 })
-                
-            # Ensure grn_items.qc_status column exists and default pending for this GRN
+
+
+            # -------------------------------
+            # QC Status
+            # -------------------------------
+
             try:
-                gi_cols = [c['name'] for c in cursor.execute("PRAGMA table_info(grn_items);").fetchall()]
-                if 'qc_status' not in gi_cols:
-                    cursor.execute("ALTER TABLE grn_items ADD COLUMN qc_status TEXT DEFAULT 'Pending'")
-                cursor.execute("UPDATE grn_items SET qc_status = 'Pending' WHERE grn_id = ?", (grn_id,))
-            except Exception:
+
+                cols = [
+
+                    c["name"]
+
+                    for c in cursor.execute(
+
+                        "PRAGMA table_info(grn_items)"
+
+                    ).fetchall()
+
+                ]
+
+                if "qc_status" not in cols:
+
+                    cursor.execute("""
+
+                        ALTER TABLE grn_items
+
+                        ADD COLUMN qc_status TEXT
+
+                        DEFAULT 'Pending'
+
+                    """)
+
+                cursor.execute("""
+
+                    UPDATE grn_items
+
+                    SET qc_status='Pending'
+
+                    WHERE grn_id=?
+
+                """,
+
+                (grn_id,))
+
+            except:
+
                 pass
 
-        return {"status": "success", "invoice_id": invoice_id, "grn_id": grn_id, "barcodes": generated_barcodes}, 200
-    except Exception as e:
-        return {"error": str(e)}, 500
 
+            conn.commit()
+
+
+        return {
+
+            "status": "success",
+
+            "invoice_id": invoice_id,
+
+            "grn_id": grn_id,
+
+            "barcodes": generated_barcodes
+
+        }, 200
+
+
+    except Exception as e:
+
+        import traceback
+
+        traceback.print_exc()
+
+        return {
+
+            "error": str(e)
+
+        }, 500
 @app.route('/item-issue', methods=['GET', 'POST'])
 @login_required
 def item_issue():
