@@ -269,10 +269,10 @@
           "
         >
           <h2 style="margin-top: 0; color: #1e293b; font-size: 16px">
-            📦 GRN Barcodes — Print &amp; Attach to Items
+            📦 GRN QR Codes — Print &amp; Attach to Items
           </h2>
           <p style="font-size: 13px; color: #475569; margin-bottom: 16px">
-            Each barcode below is unique to this receipt. Scan to identify the
+            Each QR code below is unique to this receipt. Scan to identify the
             item for returns or tracking.
           </p>
           <div
@@ -285,7 +285,7 @@
               onclick="window.print()"
               style="background: #0f172a"
             >
-              🖨 Print Barcodes
+              🖨 Print QR Codes
             </button>
           </div>
         </div>
@@ -558,7 +558,7 @@ if (!extractedPayload) {
             localStorage.removeItem('ai_inventory_extracted_payload');
             return;
           }
-          alert("GRN posted. No barcodes generated.");
+          alert("GRN posted. No QR codes generated.");
           localStorage.removeItem('ai_inventory_extracted_payload');
           window.location.reload();
           return;
@@ -569,13 +569,13 @@ if (!extractedPayload) {
         barcodes.forEach(function (b) {
           const card = document.createElement("div");
           card.style.cssText =
-            "border:1px solid #e2e8f0; border-radius:6px; padding:14px; background:white; text-align:center; min-width:200px;";
+            "border:1px solid #e2e8f0; border-radius:6px; padding:14px; background:white; text-align:center; min-width:160px;";
           card.innerHTML = `
             <div style="font-size:12px; font-weight:bold; color:#1e293b; margin-bottom:8px;">${b.item_name}</div>
             <img src="${b.barcode_image}" alt="${b.barcode_no}"
-                 style="max-width:200px; max-height:80px; display:block; margin:0 auto;"
+                 style="width:140px; height:140px; display:block; margin:0 auto;"
                  onerror="this.outerHTML='<p style=color:#dc2626;font-size:11px>Image not found</p>'">
-            <div style="font-size:11px; color:#475569; font-family:monospace; margin-top:6px;">${b.barcode_no}</div>
+            <div style="font-size:10px; color:#475569; font-family:monospace; margin-top:6px; word-break:break-all;">${b.barcode_no}</div>
           `;
           cards.appendChild(card);
         });

@@ -281,7 +281,7 @@
               <th>Item Name</th>
               <th>Category</th>
               <th>Unit</th>
-              <th>Barcode</th>
+              <th>QR Code</th>
               <th>Warehouse Position</th>
               <th>Running Stock Balance</th>
             </tr>
@@ -304,7 +304,7 @@
                   >{{ product.barcode }}</span
                 >
                 {% else %}
-                <span style="color: #94a3b8">No barcode</span>
+                <span style="color: #94a3b8">No QR code</span>
                 {% endif %}
               </td>
               <td>{{ product.storage_location or 'Unassigned' }}</td>
