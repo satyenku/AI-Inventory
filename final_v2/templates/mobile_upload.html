@@ -1,0 +1,440 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Mobile Invoice Scanner</title>
+    <!-- Outfit Font for Premium Feel -->
+    <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;600;800&display=swap" rel="stylesheet">
+    <style>
+        :root {
+            --primary: #8b5cf6;
+            --primary-dark: #6d28d9;
+            --bg-dark: #0f172a;
+            --card-bg: #1e293b;
+            --text-main: #f8fafc;
+            --text-muted: #94a3b8;
+            --success: #10b981;
+            --error: #ef4444;
+        }
+
+        * {
+            box-sizing: border-box;
+            margin: 0;
+            padding: 0;
+        }
+
+        body {
+            font-family: 'Outfit', sans-serif;
+            background: linear-gradient(135deg, #090d16 0%, #0f172a 100%);
+            color: var(--text-main);
+            min-height: 100vh;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            padding: 20px;
+        }
+
+        .container {
+            width: 100%;
+            max-width: 480px;
+            background: rgba(30, 41, 59, 0.7);
+            backdrop-filter: blur(16px);
+            border: 1px solid rgba(255, 255, 255, 0.08);
+            border-radius: 24px;
+            padding: 30px;
+            text-align: center;
+            box-shadow: 0 20px 40px rgba(0, 0, 0, 0.4);
+            transition: all 0.4s ease;
+        }
+
+        h1 {
+            font-weight: 800;
+            font-size: 28px;
+            margin-bottom: 8px;
+            background: linear-gradient(135deg, #c084fc 0%, #8b5cf6 100%);
+            -webkit-background-clip: text;
+            background-clip: text;
+            -webkit-text-fill-color: transparent;
+        }
+
+        p.subtitle {
+            color: var(--text-muted);
+            font-size: 15px;
+            margin-bottom: 30px;
+            line-height: 1.5;
+        }
+
+        .capture-area {
+            border: 2px dashed rgba(139, 92, 246, 0.4);
+            border-radius: 16px;
+            padding: 40px 20px;
+            background: rgba(139, 92, 246, 0.04);
+            cursor: pointer;
+            transition: all 0.3s ease;
+            margin-bottom: 25px;
+            position: relative;
+            overflow: hidden;
+        }
+
+        .capture-area:hover {
+            border-color: var(--primary);
+            background: rgba(139, 92, 246, 0.08);
+        }
+
+        .capture-icon {
+            width: 64px;
+            height: 64px;
+            margin: 0 auto 16px;
+            color: var(--primary);
+            transition: transform 0.3s ease;
+        }
+
+        .capture-area:hover .capture-icon {
+            transform: scale(1.1);
+        }
+
+        .capture-text {
+            font-weight: 600;
+            font-size: 16px;
+            color: #d8b4fe;
+            margin-bottom: 4px;
+        }
+
+        .capture-hint {
+            font-size: 12px;
+            color: var(--text-muted);
+        }
+
+        #previewContainer {
+            display: none;
+            margin-top: 15px;
+            text-align: left;
+            background: rgba(0, 0, 0, 0.2);
+            padding: 12px;
+            border-radius: 12px;
+            border: 1px solid rgba(255, 255, 255, 0.05);
+        }
+
+        .preview-header {
+            font-size: 12px;
+            color: var(--text-muted);
+            margin-bottom: 8px;
+            font-weight: 600;
+            text-transform: uppercase;
+            letter-spacing: 0.05em;
+        }
+
+        .preview-details {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+        }
+
+        #previewImage {
+            width: 50px;
+            height: 50px;
+            object-fit: cover;
+            border-radius: 6px;
+            border: 1px solid rgba(255, 255, 255, 0.1);
+            background: #000;
+        }
+
+        .preview-meta {
+            flex: 1;
+            min-width: 0;
+        }
+
+        .file-name {
+            font-size: 14px;
+            font-weight: 600;
+            color: var(--text-main);
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
+        }
+
+        .file-size {
+            font-size: 12px;
+            color: var(--text-muted);
+            margin-top: 2px;
+        }
+
+        .btn {
+            width: 100%;
+            padding: 14px;
+            background: linear-gradient(135deg, #a78bfa 0%, #8b5cf6 100%);
+            color: white;
+            border: none;
+            border-radius: 12px;
+            font-size: 16px;
+            font-weight: 600;
+            cursor: pointer;
+            box-shadow: 0 4px 14px rgba(139, 92, 246, 0.3);
+            transition: all 0.3s ease;
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            gap: 8px;
+        }
+
+        .btn:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 6px 20px rgba(139, 92, 246, 0.4);
+        }
+
+        .btn:disabled {
+            background: #475569;
+            box-shadow: none;
+            cursor: not-allowed;
+            transform: none;
+        }
+
+        /* Screen state displays */
+        .state-panel {
+            display: none;
+        }
+
+        /* Spinner animation */
+        .spinner {
+            width: 50px;
+            height: 50px;
+            border: 4px solid rgba(139, 92, 246, 0.1);
+            border-top-color: var(--primary);
+            border-radius: 50%;
+            animation: spin 1s linear infinite;
+            margin: 30px auto;
+        }
+
+        @keyframes spin {
+            to { transform: rotate(360deg); }
+        }
+
+        /* Success tick */
+        .success-tick {
+            width: 72px;
+            height: 72px;
+            background: rgba(16, 185, 129, 0.1);
+            border-radius: 50%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            margin: 20px auto;
+            color: var(--success);
+        }
+
+        .success-tick svg {
+            width: 40px;
+            height: 40px;
+        }
+
+        /* Error graphic */
+        .error-graphic {
+            width: 72px;
+            height: 72px;
+            background: rgba(239, 68, 68, 0.1);
+            border-radius: 50%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            margin: 20px auto;
+            color: var(--error);
+        }
+
+        .error-graphic svg {
+            width: 40px;
+            height: 40px;
+        }
+
+        .status-msg {
+            font-size: 15px;
+            color: var(--text-muted);
+            margin-top: 15px;
+            line-height: 1.6;
+        }
+
+        .retry-link {
+            display: inline-block;
+            margin-top: 20px;
+            color: var(--primary);
+            text-decoration: none;
+            font-weight: 600;
+            font-size: 14px;
+        }
+        
+        .retry-link:hover {
+            text-decoration: underline;
+        }
+    </style>
+</head>
+<body>
+
+    <div class="container" id="uploadStatePanel">
+        <h1>Scan Document</h1>
+        <p class="subtitle">Capture your invoice or receipt using your mobile camera for automated desktop data extraction.</p>
+
+        <form id="mobileUploadForm">
+            <!-- Input hook triggers direct camera capture -->
+            <input type="file" id="mobileFileInput" accept="image/*,application/pdf" capture="environment" style="display: none;" onchange="handleFileChange(this)">
+            
+            <div class="capture-area" onclick="document.getElementById('mobileFileInput').click()">
+                <svg class="capture-icon" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M3 9a2 2 0 012-2h.93a2 2 0 001.664-.89l.812-1.22A2 2 0 0110.07 4h3.86a2 2 0 011.664.89l.812 1.22A2 2 0 0018.07 7H19a2 2 0 012 2v9a2 2 0 01-2 2H5a2 2 0 01-2-2V9z"></path>
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M15 13a3 3 0 11-6 0 3 3 0 016 0z"></path>
+                </svg>
+                <div class="capture-text">Take Photo / Capture Invoice</div>
+                <div class="capture-hint">Supports Camera Snapshots or Image Files</div>
+            </div>
+
+            <!-- Thumbnail Preview Section -->
+            <div id="previewContainer">
+                <div class="preview-header">Captured Document</div>
+                <div class="preview-details">
+                    <img id="previewImage" src="" alt="Thumbnail Preview">
+                    <div class="preview-meta">
+                        <div class="file-name" id="fileNameText">invoice.jpg</div>
+                        <div class="file-size" id="fileSizeText">0.0 MB</div>
+                    </div>
+                </div>
+            </div>
+
+            <button type="submit" id="submitBtn" class="btn" style="margin-top: 25px;" disabled>
+                Upload & Ingest to Desktop
+            </button>
+        </form>
+    </div>
+
+    <!-- Loading State View -->
+    <div class="container state-panel" id="loadingStatePanel">
+        <h1>Ingesting Invoice</h1>
+        <div class="spinner"></div>
+        <p class="status-msg" id="loadingMsgText">Uploading image to secure server repository...</p>
+    </div>
+
+    <!-- Success Output View -->
+    <div class="container state-panel" id="successStatePanel">
+        <div class="success-tick">
+            <svg fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" d="M5 13l4 4L19 7"></path>
+            </svg>
+        </div>
+        <h1>Scan Verified!</h1>
+        <p class="status-msg">Your transaction invoice has been successfully processed by Gemini AI. Extracting metrics are currently filling in on your desktop screen.</p>
+        <p class="status-msg" style="font-size: 13px; margin-top: 25px; border-top: 1px solid rgba(255,255,255,0.05); padding-top: 15px;">You can now safely close this web browser tab.</p>
+    </div>
+
+    <!-- Error Output View -->
+    <div class="container state-panel" id="errorStatePanel">
+        <div class="error-graphic">
+            <svg fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z"></path>
+            </svg>
+        </div>
+        <h1>Upload Failed</h1>
+        <p class="status-msg" id="errorMsgText">An unknown network configuration anomaly occurred during file transfer.</p>
+        <a href="" class="retry-link" onclick="location.reload(); return false;">Try Scanning Again</a>
+    </div>
+
+    <script>
+        const sessionId = "{{ session_id }}";
+        
+        function handleFileChange(input) {
+            const previewContainer = document.getElementById('previewContainer');
+            const previewImage = document.getElementById('previewImage');
+            const fileNameText = document.getElementById('fileNameText');
+            const fileSizeText = document.getElementById('fileSizeText');
+            const submitBtn = document.getElementById('submitBtn');
+
+            if (input.files && input.files[0]) {
+                const file = input.files[0];
+                
+                // Set metadata
+                fileNameText.textContent = file.name;
+                fileSizeText.textContent = (file.size / (1024 * 1024)).toFixed(2) + ' MB';
+                
+                // Show thumbnail if it's an image
+                if (file.type.startsWith('image/')) {
+                    previewImage.src = URL.createObjectURL(file);
+                    previewImage.style.display = 'block';
+                } else {
+                    // PDF or other
+                    previewImage.style.display = 'none';
+                }
+                
+                previewContainer.style.display = 'block';
+                submitBtn.disabled = false;
+            } else {
+                previewContainer.style.display = 'none';
+                submitBtn.disabled = true;
+            }
+        }
+
+        document.getElementById('mobileUploadForm').addEventListener('submit', function(e) {
+            e.preventDefault();
+            const fileInput = document.getElementById('mobileFileInput');
+            if (fileInput.files.length === 0) return;
+
+            const formData = new FormData();
+            formData.append('file', fileInput.files[0]);
+            formData.append('session_id', sessionId);
+
+            // Transition UI State
+            document.getElementById('uploadStatePanel').style.display = 'none';
+            document.getElementById('loadingStatePanel').style.display = 'block';
+            const loadText = document.getElementById('loadingMsgText');
+            
+            loadText.textContent = "Uploading document files for processing...";
+
+            fetch('/api/mobile-upload-submit', {
+                method: 'POST',
+                body: formData
+            })
+            .then(res => {
+                if (!res.ok) throw new Error("HTTP connection failed status " + res.status);
+                return res.json();
+            })
+            .then(data => {
+                if (data.error) {
+                    showError(data.error);
+                } else {
+                    // Start polling session state locally to confirm to user when processing ends successfully!
+                    loadText.textContent = "Processing and extracting invoice details using Gemini AI...";
+                    pollStatus();
+                }
+            })
+            .catch(err => {
+                showError("Form submission failure: " + err.message);
+            });
+        });
+
+        function pollStatus() {
+            const interval = setInterval(() => {
+                fetch('/api/mobile-status/' + sessionId)
+                .then(res => res.json())
+                .then(data => {
+                    if (data.status === 'success') {
+                        clearInterval(interval);
+                        document.getElementById('loadingStatePanel').style.display = 'none';
+                        document.getElementById('successStatePanel').style.display = 'block';
+                    } else if (data.status === 'error') {
+                        clearInterval(interval);
+                        showError("Gemini Ingestion Failed: " + data.error);
+                    }
+                })
+                .catch(err => {
+                    // Don't stop on transient network failure during polling
+                    console.error("Status polling failure: ", err);
+                });
+            }, 2000);
+        }
+
+        function showError(msg) {
+            document.getElementById('uploadStatePanel').style.display = 'none';
+            document.getElementById('loadingStatePanel').style.display = 'none';
+            document.getElementById('errorStatePanel').style.display = 'block';
+            document.getElementById('errorMsgText').textContent = msg;
+        }
+    </script>
+</body>
+</html>
