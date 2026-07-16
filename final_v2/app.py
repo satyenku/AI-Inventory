@@ -11,7 +11,7 @@ from email.mime.multipart import MIMEMultipart
 from html import escape
 from io import BytesIO
 from zipfile import ZIP_DEFLATED, ZipFile
-from flask import Flask, render_template, request, redirect, url_for, flash, session, jsonify, Response
+from flask import Flask, render_template, request, redirect, url_for, flash, session, jsonify, Response, send_file
 import traceback
 
 
@@ -1393,6 +1393,312 @@ def qc_sheet():
     )
 
 
+@app.route('/api/export-qc-excel', methods=['POST'])
+@login_required
+def api_export_qc_excel():
+    import openpyxl
+    from openpyxl.styles import Font, PatternFill, Alignment, Border, Side
+    from openpyxl.utils import get_column_letter
+
+    data = request.json or {}
+    item_name = (data.get('item_name') or '').strip()
+    product_id = data.get('product_id')
+    qty = (data.get('qty') or '').strip()
+    obs1 = (data.get('obs1') or '').strip()
+    obs2 = (data.get('obs2') or '').strip()
+    obs3 = (data.get('obs3') or '').strip()
+    obs4 = (data.get('obs4') or '').strip()
+    obs5 = (data.get('obs5') or '').strip()
+    remarks = (data.get('remarks') or '').strip()
+    invoice_number = (data.get('invoice_number') or '').strip()
+    invoice_date = (data.get('invoice_date') or '').strip()
+    status = (data.get('status') or '').strip()
+
+    # Query product code / specifications
+    conn = get_db_connection()
+    part_no = ""
+    properties = []
+    try:
+        # Fetch part_no (item_code)
+        if product_id:
+            prod_row = conn.execute("SELECT item_code, item_name FROM products WHERE id = ?", (product_id,)).fetchone()
+            if prod_row:
+                part_no = prod_row['item_code']
+        else:
+            # fallback match by item_name
+            prod_row = conn.execute("SELECT id, item_code FROM products WHERE LOWER(item_name) = LOWER(?) LIMIT 1", (item_name,)).fetchone()
+            if prod_row:
+                product_id = prod_row['id']
+                part_no = prod_row['item_code']
+
+        # Fetch specifications properties
+        if product_id:
+            rows = conn.execute("""
+                SELECT property_name, min_value, max_value, method 
+                FROM product_properties 
+                WHERE product_id = ?
+                ORDER BY id
+            """, (product_id,)).fetchall()
+            properties = [dict(r) for r in rows]
+    except Exception as e:
+        print("[ERROR] Failed to query product specifications:", e)
+    finally:
+        conn.close()
+
+    # Create Workbook
+    wb = openpyxl.Workbook()
+    ws = wb.active
+    ws.title = "Inspection Report"
+    ws.views.sheetView[0].showGridLines = True
+
+    # Column dimensions
+    column_widths = {
+        'A': 6, 'B': 26, 'C': 10, 'D': 10, 'E': 16,
+        'F': 7, 'G': 7, 'H': 7, 'I': 7, 'J': 7, 'K': 20
+    }
+    for col, width in column_widths.items():
+        ws.column_dimensions[col].width = width
+
+    # Define Styles
+    thin_side = Side(style='thin', color='000000')
+    medium_side = Side(style='medium', color='000000')
+
+    thin_border = Border(left=thin_side, right=thin_side, top=thin_side, bottom=thin_side)
+
+    # Fonts
+    font_title = Font(name='Arial', size=13, bold=True, color='000000')
+    font_header_bold = Font(name='Arial', size=9, bold=True, color='000000')
+    font_logo = Font(name='Arial', size=14, bold=True, italic=True, color='FFFFFF')
+    font_normal = Font(name='Arial', size=9, color='000000')
+    font_normal_bold = Font(name='Arial', size=9, bold=True, color='000000')
+    font_sub_bold = Font(name='Arial', size=8, bold=True, color='000000')
+
+    # Fills
+    fill_logo = PatternFill(start_color='B91C1C', end_color='B91C1C', fill_type='solid') # Red / Dark styling
+    fill_header = PatternFill(start_color='F1F5F9', end_color='F1F5F9', fill_type='solid') # light grey
+    fill_metadata = PatternFill(start_color='F8FAFC', end_color='F8FAFC', fill_type='solid')
+
+    def style_range(ws, cell_range, font=None, fill=None, alignment=None, border=None):
+        for row in ws[cell_range]:
+            for cell in row:
+                if font: cell.font = font
+                if fill: cell.fill = fill
+                if alignment: cell.alignment = alignment
+                if border: cell.border = border
+
+    # 1. QA Logo block (A1:B3 merged)
+    ws.merge_cells("A1:B3")
+    ws["A1"] = "Qualität"
+    style_range(ws, "A1:B3", font=font_logo, fill=fill_logo, 
+                alignment=Alignment(horizontal='center', vertical='center'), border=thin_border)
+
+    # 2. Main Title (C1:I3 merged)
+    ws.merge_cells("C1:I3")
+    ws["C1"] = "INWARD MATERIAL INSPECTION REPORT"
+    style_range(ws, "C1:I3", font=font_title, 
+                alignment=Alignment(horizontal='center', vertical='center'), border=thin_border)
+
+    # 3. Document Details (J1:K1 and J2:K3 merged)
+    ws.merge_cells("J1:K1")
+    ws["J1"] = "QES/QA/14"
+    style_range(ws, "J1:K1", font=font_sub_bold, 
+                alignment=Alignment(horizontal='center', vertical='center'), border=thin_border)
+
+    ws.merge_cells("J2:K3")
+    ws["J2"] = "02/01.03.2025"
+    style_range(ws, "J2:K3", font=font_sub_bold, 
+                alignment=Alignment(horizontal='center', vertical='center'), border=thin_border)
+
+    # 4. Metadata Details (Rows 4 to 6)
+    # Row 4
+    ws.merge_cells("A4:E4")
+    ws["A4"] = "Material Recd.as per RCIA No. :"
+    style_range(ws, "A4:E4", font=font_sub_bold, fill=fill_metadata, alignment=Alignment(horizontal='left', vertical='center'), border=thin_border)
+
+    ws.merge_cells("F4:K4")
+    ws["F4"] = f"Invoice / Challan No. & Date :  {invoice_number}  /  {invoice_date}"
+    style_range(ws, "F4:K4", font=font_sub_bold, fill=fill_metadata, alignment=Alignment(horizontal='left', vertical='center'), border=thin_border)
+
+    # Row 5
+    ws.merge_cells("A5:E5")
+    ws["A5"] = f"Part No. :  {part_no}"
+    style_range(ws, "A5:E5", font=font_sub_bold, fill=fill_metadata, alignment=Alignment(horizontal='left', vertical='center'), border=thin_border)
+
+    ws.merge_cells("F5:K5")
+    ws["F5"] = f"Qty Recd:  {qty}"
+    style_range(ws, "F5:K5", font=font_sub_bold, fill=fill_metadata, alignment=Alignment(horizontal='left', vertical='center'), border=thin_border)
+
+    # Row 6
+    ws.merge_cells("A6:E6")
+    ws["A6"] = f"Description:  {item_name}"
+    style_range(ws, "A6:E6", font=font_sub_bold, fill=fill_metadata, alignment=Alignment(horizontal='left', vertical='center'), border=thin_border)
+
+    ws.merge_cells("F6:K6")
+    ws["F6"] = f"Sampling QTY:  {qty}       Date: {invoice_date}"
+    style_range(ws, "F6:K6", font=font_sub_bold, fill=fill_metadata, alignment=Alignment(horizontal='left', vertical='center'), border=thin_border)
+
+    # Make row heights comfortable
+    for r in (1, 2, 3, 4, 5, 6):
+        ws.row_dimensions[r].height = 20
+
+    # 5. Table Headers (Row 8 & Row 9)
+    ws.row_dimensions[8].height = 24
+    ws.row_dimensions[9].height = 24
+
+    # Column A: SR NO.
+    ws.merge_cells("A8:A9")
+    ws["A8"] = "SR\nNO."
+    style_range(ws, "A8:A9", font=font_header_bold, fill=fill_header, 
+                alignment=Alignment(horizontal='center', vertical='center', wrap_text=True), border=thin_border)
+
+    # Column B-E merged: SPECIFICATION FOR CRITICAL DIMENSION
+    ws.merge_cells("B8:E8")
+    ws["B8"] = "SPECIFICATION FOR CRITICAL DIMENSION"
+    style_range(ws, "B8:E8", font=font_header_bold, fill=fill_header, 
+                alignment=Alignment(horizontal='center', vertical='center'), border=thin_border)
+
+    ws["B9"] = "PARAMETER"
+    ws["C9"] = "MIN"
+    ws["D9"] = "MAX"
+    ws["E9"] = "METHOD / INSTRUMENT"
+    for cell_id in ("B9", "C9", "D9", "E9"):
+        ws[cell_id].font = font_header_bold
+        ws[cell_id].fill = fill_header
+        ws[cell_id].alignment = Alignment(horizontal='center', vertical='center', wrap_text=True)
+        ws[cell_id].border = thin_border
+
+    # Column F-J merged: OBSERVATIONS
+    ws.merge_cells("F8:J8")
+    ws["F8"] = "OBSERVATIONS"
+    style_range(ws, "F8:J8", font=font_header_bold, fill=fill_header, 
+                alignment=Alignment(horizontal='center', vertical='center'), border=thin_border)
+
+    ws["F9"] = "1"
+    ws["G9"] = "2"
+    ws["H9"] = "3"
+    ws["I9"] = "4"
+    ws["J9"] = "5"
+    for cell_id in ("F9", "G9", "H9", "I9", "J9"):
+        ws[cell_id].font = font_header_bold
+        ws[cell_id].fill = fill_header
+        ws[cell_id].alignment = Alignment(horizontal='center', vertical='center')
+        ws[cell_id].border = thin_border
+
+    # Column K: REMARKS
+    ws.merge_cells("K8:K9")
+    ws["K8"] = "REMARKS"
+    style_range(ws, "K8:K9", font=font_header_bold, fill=fill_header, 
+                alignment=Alignment(horizontal='center', vertical='center'), border=thin_border)
+
+    # 6. Data Rows
+    current_row = 10
+    display_props = properties if properties else [{'property_name': item_name, 'min_value': '', 'max_value': '', 'method': ''}]
+
+    for idx, prop in enumerate(display_props, 1):
+        ws.row_dimensions[current_row].height = 22
+        
+        ws[f"A{current_row}"] = idx
+        ws[f"B{current_row}"] = prop.get('property_name', '')
+        ws[f"C{current_row}"] = prop.get('min_value', '')
+        ws[f"D{current_row}"] = prop.get('max_value', '')
+        ws[f"E{current_row}"] = prop.get('method', '')
+        
+        # Populate observations and remarks on the first row
+        if idx == 1:
+            ws[f"F{current_row}"] = obs1
+            ws[f"G{current_row}"] = obs2
+            ws[f"H{current_row}"] = obs3
+            ws[f"I{current_row}"] = obs4
+            ws[f"J{current_row}"] = obs5
+            ws[f"K{current_row}"] = remarks
+        else:
+            ws[f"F{current_row}"] = ""
+            ws[f"G{current_row}"] = ""
+            ws[f"H{current_row}"] = ""
+            ws[f"I{current_row}"] = ""
+            ws[f"J{current_row}"] = ""
+            ws[f"K{current_row}"] = ""
+
+        # Apply standard alignments and fonts
+        ws[f"A{current_row}"].alignment = Alignment(horizontal='center', vertical='center')
+        ws[f"B{current_row}"].alignment = Alignment(horizontal='left', vertical='center')
+        ws[f"C{current_row}"].alignment = Alignment(horizontal='center', vertical='center')
+        ws[f"D{current_row}"].alignment = Alignment(horizontal='center', vertical='center')
+        ws[f"E{current_row}"].alignment = Alignment(horizontal='left', vertical='center')
+        
+        for o_col in ("F", "G", "H", "I", "J"):
+            ws[f"{o_col}{current_row}"].alignment = Alignment(horizontal='center', vertical='center')
+        
+        ws[f"K{current_row}"].alignment = Alignment(horizontal='left', vertical='center')
+
+        for col_let in ("A", "B", "C", "D", "E", "F", "G", "H", "I", "J", "K"):
+            cell = ws[f"{col_let}{current_row}"]
+            cell.font = font_normal
+            cell.border = thin_border
+
+        current_row += 1
+
+    # Add 3 empty rows at the end of the table Grid to maintain structured table length
+    for extra in range(3):
+        ws.row_dimensions[current_row].height = 22
+        ws[f"A{current_row}"] = ""
+        ws[f"B{current_row}"] = ""
+        ws[f"C{current_row}"] = ""
+        ws[f"D{current_row}"] = ""
+        ws[f"E{current_row}"] = ""
+        ws[f"F{current_row}"] = ""
+        ws[f"G{current_row}"] = ""
+        ws[f"H{current_row}"] = ""
+        ws[f"I{current_row}"] = ""
+        ws[f"J{current_row}"] = ""
+        ws[f"K{current_row}"] = ""
+
+        for col_let in ("A", "B", "C", "D", "E", "F", "G", "H", "I", "J", "K"):
+            cell = ws[f"{col_let}{current_row}"]
+            cell.border = thin_border
+        current_row += 1
+
+    # 7. Footers block
+    current_row += 1
+    # LOT ACCEPTED / REJECTED and Remarks (A(current_row):G(current_row+1) merged)
+    # Row current_row
+    ws.merge_cells(start_row=current_row, start_column=1, end_row=current_row, end_column=7)
+    normalized_status = status.strip().upper()
+    display_status = "PENDING"
+    if normalized_status in ("CONFIRMED", "CONFIRM", "OK"):
+        display_status = "ACCEPTED"
+    elif normalized_status in ("REJECTED", "REJECT", "FAIL"):
+        display_status = "REJECTED"
+    ws.cell(row=current_row, column=1, value=f"LOT ACCEPTED / REJECTED :  {display_status}")
+    style_range(ws, f"A{current_row}:G{current_row}", font=font_normal_bold, alignment=Alignment(horizontal='left', vertical='center'), border=thin_border)
+    ws.row_dimensions[current_row].height = 22
+
+    # Row current_row + 1
+    ws.merge_cells(start_row=current_row+1, start_column=1, end_row=current_row+1, end_column=7)
+    ws.cell(row=current_row+1, column=1, value=f"Remark :  {remarks}")
+    style_range(ws, f"A{current_row+1}:G{current_row+1}", font=font_normal, alignment=Alignment(horizontal='left', vertical='center'), border=thin_border)
+    ws.row_dimensions[current_row+1].height = 22
+
+    # INSPECTED BY (H(current_row):I(current_row+1) merged)
+    ws.merge_cells(start_row=current_row, start_column=8, end_row=current_row+1, end_column=9)
+    ws.cell(row=current_row, column=8, value="INSPECTED BY :")
+    style_range(ws, f"H{current_row}:I{current_row+1}", font=font_normal_bold, alignment=Alignment(horizontal='left', vertical='top'), border=thin_border)
+
+    # APPROVED BY (J(current_row):K(current_row+1) merged)
+    ws.merge_cells(start_row=current_row, start_column=10, end_row=current_row+1, end_column=11)
+    ws.cell(row=current_row, column=10, value="APPROVED BY :")
+    style_range(ws, f"J{current_row}:K{current_row+1}", font=font_normal_bold, alignment=Alignment(horizontal='left', vertical='top'), border=thin_border)
+
+    # Save to BytesIO Stream
+    out = BytesIO()
+    wb.save(out)
+    out.seek(0)
+
+    filename = f"Inward_Inspection_Report_{item_name.replace(' ', '_')}.xlsx"
+    return send_file(out, mimetype="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", 
+                     as_attachment=True, download_name=filename)
+
+
 @app.route('/api/save-qc', methods=['POST'])
 @login_required
 def api_save_qc():
@@ -1961,6 +2267,119 @@ def manage_users_emails():
     return render_template('user_management.html', users=all_users)
 
 
+# =====================================================
+# ADDED: MOBILE PHONE INVOICE SCANNING FLOW
+# =====================================================
+
+mobile_sessions = {}
+
+def async_extract_task(file_path, session_id):
+    mobile_sessions[session_id]["status"] = "processing"
+    try:
+        import gemini_extractor as ai
+        extracted = ai.extract_invoice_data(file_path)
+        result = extracted.model_dump()
+        
+        # Database lookup for supplier by GST
+        conn = get_db_connection()
+        supplier = conn.execute("""
+            SELECT id, supplier_name
+            FROM suppliers
+            WHERE gst_number = ?
+        """, (extracted.vendor_gst,)).fetchone()
+        conn.close()
+
+        if supplier:
+            result["supplier_id"] = supplier["id"]
+            result["supplier_name"] = supplier["supplier_name"]
+        else:
+            result["supplier_id"] = ""
+            result["supplier_name"] = ""
+
+        mobile_sessions[session_id]["payload"] = result
+        mobile_sessions[session_id]["status"] = "success"
+    except Exception as e:
+        mobile_sessions[session_id]["status"] = "error"
+        mobile_sessions[session_id]["error"] = str(e)
+    finally:
+        if os.path.exists(file_path):
+            try:
+                os.remove(file_path)
+            except Exception:
+                pass
+
+@app.route('/api/mobile-session/create', methods=['POST'])
+def create_mobile_session():
+    import uuid
+    import socket
+    session_id = str(uuid.uuid4())
+    mobile_sessions[session_id] = {
+        "status": "pending",
+        "payload": None,
+        "error": None
+    }
+    
+    def get_local_ip():
+        s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+        try:
+            s.connect(('10.255.255.255', 1))
+            IP = s.getsockname()[0]
+        except Exception:
+            IP = '127.0.0.1'
+        finally:
+            s.close()
+        return IP
+        
+    local_ip = get_local_ip()
+    host_parts = request.host.split(':')
+    port = host_parts[1] if len(host_parts) > 1 else '5000'
+    connect_url = f"http://{local_ip}:{port}/mobile-upload?session={session_id}"
+    
+    return jsonify({
+        "session_id": session_id,
+        "connect_url": connect_url
+    })
+
+@app.route('/mobile-upload', methods=['GET'])
+def mobile_upload_page():
+    session_id = request.args.get('session')
+    if not session_id or session_id not in mobile_sessions:
+        return "Invalid or expired session. Please scan a fresh QR code from your desktop.", 400
+    return render_template('mobile_upload.html', session_id=session_id)
+
+@app.route('/api/mobile-upload-submit', methods=['POST'])
+def mobile_upload_submit():
+    import threading
+    session_id = request.form.get('session_id')
+    if not session_id or session_id not in mobile_sessions:
+        return jsonify({"error": "Invalid or expired session"}), 400
+    
+    if 'file' not in request.files:
+        return jsonify({"error": "No file part in the request"}), 400
+    
+    file = request.files['file']
+    if file.filename == '':
+        return jsonify({"error": "No file selected"}), 400
+    
+    # Save file temporarily
+    file_path = os.path.join(app.config['UPLOAD_FOLDER'], f"mobile_{session_id}_{file.filename}")
+    file.save(file_path)
+    
+    # Trigger async processing thread
+    thread = threading.Thread(target=async_extract_task, args=(file_path, session_id))
+    thread.start()
+    
+    return jsonify({"status": "received", "message": "File received. Processing has started."})
+
+@app.route('/api/mobile-status/<session_id>', methods=['GET'])
+def get_mobile_status(session_id):
+    status_data = mobile_sessions.get(session_id)
+    if not status_data:
+        return jsonify({"error": "Invalid session ID"}), 404
+    return jsonify(status_data)
+
 
 if __name__ == '__main__':
-    app.run(debug=True, port=5000)
+    app.run(debug=True, port=5000, host='0.0.0.0')
+
+
