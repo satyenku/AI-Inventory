@@ -7,3 +7,5 @@ uploads/
 .env
 static/barcodes/*.png
 !static/barcodes/.gitkeep
+*.db-shm
+*.db-wal
