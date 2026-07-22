@@ -221,7 +221,7 @@
             {% endfor %}
           {% endif %}
         {% endwith %}
-        <form action="{{ url_for('department_management') }}" method="POST">
+        <form action="{{ url_for('department_management') }}" method="POST" id="deptForm">
           <div class="form-grid">
             <div class="form-group">
               <label>Department ID (Code)</label>
@@ -318,6 +318,29 @@
     </div>
 
     <script>
+      function showDupModal(title, detail) {
+        document.getElementById('dDupTitle').textContent = title;
+        document.getElementById('dDupDetail').innerHTML  = detail;
+        document.getElementById('dDupOverlay').style.display = 'flex';
+      }
+
+      document.getElementById('deptForm').addEventListener('submit', async function(e) {
+        e.preventDefault();
+        var deptId   = (this.querySelector('[name="dept_id"]').value   || '').trim();
+        var deptName = (this.querySelector('[name="dept_name"]').value || '').trim();
+        try {
+          var r1 = await fetch('/api/check-duplicate', {method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({type:'dept_id', value: deptId})});
+          var d1 = await r1.json();
+          if (d1.exists) { showDupModal('Department Already Exists', d1.detail); return; }
+        } catch(_) {}
+        try {
+          var r2 = await fetch('/api/check-duplicate', {method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({type:'dept_name', value: deptName})});
+          var d2 = await r2.json();
+          if (d2.exists) { showDupModal('Department Already Exists', d2.detail); return; }
+        } catch(_) {}
+        this.submit();
+      });
+
       function openEditModal(id, deptId, deptName) {
         document.getElementById('editDeptId').value = id;
         document.getElementById('editDeptCode').value = deptId;
@@ -334,7 +357,25 @@
         if (event.target == modal) {
           modal.classList.remove('active');
         }
+        const dup = document.getElementById('dDupOverlay');
+        if (event.target == dup) {
+          dup.style.display = 'none';
+        }
       }
     </script>
+
+    <!-- Duplicate validation modal -->
+    <div id="dDupOverlay" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,0.45);z-index:9999;justify-content:center;align-items:center;">
+      <div style="background:#fff;border-radius:8px;padding:28px 28px 22px;width:90%;max-width:440px;box-shadow:0 8px 32px rgba(0,0,0,0.2);">
+        <div style="display:flex;align-items:center;gap:10px;margin-bottom:14px;">
+          <span style="font-size:22px;">⚠️</span>
+          <strong id="dDupTitle" style="font-size:16px;color:#1e293b;"></strong>
+        </div>
+        <p id="dDupDetail" style="font-size:14px;color:#334155;margin:0 0 20px;line-height:1.6;"></p>
+        <div style="display:flex;justify-content:flex-end;">
+          <button onclick="document.getElementById('dDupOverlay').style.display='none'" style="padding:9px 22px;background:#e5e7eb;border:none;border-radius:5px;font-size:14px;font-weight:600;cursor:pointer;">OK — Cancel</button>
+        </div>
+      </div>
+    </div>
   </body>
 </html>

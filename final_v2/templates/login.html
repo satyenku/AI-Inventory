@@ -74,11 +74,29 @@
         color: #2563eb;
         text-decoration: underline;
       }
+/* Company Logo */
+.company-logo {
+  display: flex;
+  justify-content: center;
+  margin: 14px 0 18px;
+}
+
+.company-logo img {
+  width: 95px;
+  height: auto;
+  object-fit: contain;
+  opacity: 0.95;
+  transition: transform 0.2s ease;
+}
+
+.company-logo img:hover {
+  transform: scale(1.03);
+}
     </style>
   </head>
   <body>
     <div class="card">
-      <h2>Warehouse Login</h2>
+      <h2>Ai Inventory</h2>
       {% with messages = get_flashed_messages() %} {% if messages %} {% for
       message in messages %}
       <div class="flash">{{ message }}</div>
@@ -95,11 +113,19 @@
           required
         />
         
-        <div class="forgot-link-container">
-          <a href="{{ url_for('forgot_password') }}" class="forgot-link">Forgot Password?</a>
-        </div>
+<div class="forgot-link-container">
+  <a href="{{ url_for('forgot_password') }}" class="forgot-link">
+    Forgot Password?
+  </a>
+</div>
 
-        <button type="submit">Sign In</button>
+<div class="company-logo">
+  <img src="{{ url_for('static', filename='images/Infopie-logo.png') }}"
+       alt="Infopie Logo">
+</div>
+
+<button type="submit">Sign In</button>
+        
       </form>
     </div>
   </body>

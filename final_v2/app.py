@@ -128,6 +128,7 @@ def ensure_ledger_integrity():
         conn = get_db_connection()
         cur = conn.cursor()
         # unique index to prevent accidental duplicate ledger entries for same source
+        # (do not include movement_type here would cause ISSUE/RETURN collisions)
         cur.execute("CREATE UNIQUE INDEX IF NOT EXISTS idx_ledger_ref_unique ON stock_ledger(reference_table, reference_id, movement_type);")
 
         # trigger to remove stock_ledger entries when grn_items deleted
@@ -147,6 +148,11 @@ def ensure_ledger_integrity():
         cur.execute("SELECT name FROM sqlite_master WHERE type='trigger' AND name = ?", (trig3,))
         if not cur.fetchone():
             cur.execute(f"CREATE TRIGGER {trig3} AFTER DELETE ON inventory_return_items BEGIN DELETE FROM stock_ledger WHERE reference_table = 'inventory_return_items' AND reference_id = OLD.id; END;")
+
+        # Migration: add issue_item_id column to inventory_return_items if missing
+        existing_cols = [row[1] for row in cur.execute("PRAGMA table_info(inventory_return_items)").fetchall()]
+        if 'issue_item_id' not in existing_cols:
+            cur.execute("ALTER TABLE inventory_return_items ADD COLUMN issue_item_id INTEGER REFERENCES item_issue_items(id)")
 
         conn.commit()
     except Exception:
@@ -1481,64 +1487,202 @@ def item_issue():
         today_date=date.today().strftime('%Y-%m-%d')
     )
 
+@app.route('/api/issue-items/<int:issue_id>')
+@login_required
+def api_issue_items(issue_id):
+    """Return issued items for a given issue slip, including barcode, already-returned qty, and supplier info."""
+    conn = get_db_connection()
+    try:
+        rows = conn.execute("""
+            SELECT
+                iii.id          AS issue_item_id,
+                iii.product_id,
+                iii.quantity    AS issued_qty,
+                iii.unit,
+                p.item_code,
+                p.item_name,
+                p.barcode,
+                COALESCE(
+                    (SELECT SUM(r.quantity)
+                     FROM inventory_return_items r
+                     WHERE r.issue_item_id = iii.id),
+                0) AS already_returned
+            FROM item_issue_items iii
+            JOIN products p ON iii.product_id = p.id
+            WHERE iii.issue_id = ?
+            ORDER BY p.item_code ASC
+        """, (issue_id,)).fetchall()
+
+        items = []
+        for row in rows:
+            issued    = float(row['issued_qty'] or 0)
+            returned  = float(row['already_returned'] or 0)
+            remaining = round(issued - returned, 6)
+
+            # Fetch supplier info via the most recent GRN that received this product
+            sup = conn.execute("""
+                SELECT
+                    s.supplier_name,
+                    s.contact_person,
+                    s.phone,
+                    s.email,
+                    s.address,
+                    inv.invoice_number,
+                    inv.invoice_date
+                FROM grn_items gi
+                JOIN grn        g   ON gi.grn_id     = g.id
+                JOIN invoices   inv ON g.invoice_id  = inv.id
+                LEFT JOIN suppliers s ON inv.supplier_id = s.id
+                WHERE gi.product_id = ?
+                ORDER BY g.id DESC
+                LIMIT 1
+            """, (row['product_id'],)).fetchone()
+
+            items.append({
+                'issue_item_id':    row['issue_item_id'],
+                'product_id':       row['product_id'],
+                'item_code':        row['item_code'],
+                'item_name':        row['item_name'],
+                'barcode':          row['barcode'] or '',
+                'unit':             row['unit'] or 'Nos',
+                'issued_qty':       issued,
+                'already_returned': returned,
+                'remaining_qty':    remaining,
+                'supplier_name':    sup['supplier_name']  if sup else '',
+                'contact_person':   sup['contact_person'] if sup else '',
+                'phone':            sup['phone']          if sup else '',
+                'email':            sup['email']          if sup else '',
+                'address':          sup['address']        if sup else '',
+                'invoice_number':   sup['invoice_number'] if sup else '',
+                'invoice_date':     sup['invoice_date']   if sup else '',
+            })
+    finally:
+        conn.close()
+
+    return jsonify({'items': items})
+
+
 @app.route('/inventory-return', methods=['GET', 'POST'])
 @login_required
 def inventory_return():
     if request.method == 'POST':
-        return_id = request.form.get('return_id')
+        return_id   = request.form.get('return_id')
         return_date = request.form.get('return_date')
         returned_by = request.form.get('returned_by')
-        dept = request.form.get('department')
-        reason = request.form.get('reason')
-        
-        product_ids = request.form.getlist('product_id[]')
-        qtys = request.form.getlist('qty[]')
-        conditions = request.form.getlist('condition[]')
-        
-        if not return_id or not return_date or not product_ids:
+        dept        = request.form.get('department')
+        reason      = request.form.get('reason')
+        issue_id    = request.form.get('issue_id')
+
+        issue_item_ids = request.form.getlist('issue_item_id[]')
+        product_ids    = request.form.getlist('product_id[]')
+        qtys           = request.form.getlist('qty[]')
+        conditions     = request.form.getlist('condition[]')
+
+        if not return_id or not return_date or not issue_id or not issue_item_ids:
             flash("Missing required fields.", "error")
             return redirect(url_for('inventory_return'))
-        
+
         try:
             with get_db_connection() as conn:
                 cursor = conn.cursor()
+
+                # ── Backend validation: check remaining qty for every row ──
+                for i, iii_id_str in enumerate(issue_item_ids):
+                    if not iii_id_str:
+                        continue
+                    iii_id = int(iii_id_str)
+                    q = float(qtys[i]) if i < len(qtys) and qtys[i] else 0
+                    if q <= 0:
+                        continue
+
+                    row = cursor.execute("""
+                        SELECT iii.quantity AS issued_qty,
+                               COALESCE(
+                                   (SELECT SUM(r.quantity)
+                                    FROM inventory_return_items r
+                                    WHERE r.issue_item_id = ?),
+                               0) AS already_returned
+                        FROM item_issue_items iii
+                        WHERE iii.id = ?
+                    """, (iii_id, iii_id)).fetchone()
+
+                    if not row:
+                        raise ValueError(f"Issue item ID {iii_id} not found.")
+
+                    issued    = float(row['issued_qty'] or 0)
+                    returned  = float(row['already_returned'] or 0)
+                    remaining = issued - returned
+
+                    if q > remaining:
+                        prod_row = cursor.execute(
+                            "SELECT item_name FROM products WHERE id = ?",
+                            (int(product_ids[i]),)
+                        ).fetchone()
+                        pname = prod_row['item_name'] if prod_row else f"product_id={product_ids[i]}"
+                        raise ValueError(
+                            f"Return qty {q} exceeds remaining qty {remaining} for '{pname}'."
+                        )
+
+                # ── Insert return header ──
                 cursor.execute("""
-                    INSERT INTO inventory_returns (return_id, return_date, returned_by, department, reason, approved_by)
+                    INSERT INTO inventory_returns
+                        (return_id, return_date, returned_by, department, reason, approved_by)
                     VALUES (?, ?, ?, ?, ?, ?)
                 """, (return_id, return_date, returned_by, dept, reason, session.get('user_id')))
                 ret_id = cursor.lastrowid
-                
+
+                # ── Insert return items and update stock ──
                 total_items = 0
-                for i in range(len(product_ids)):
-                    pid = product_ids[i]
-                    q = float(qtys[i]) if i < len(qtys) and qtys[i] else 0
-                    cond = conditions[i] if i < len(conditions) else 'Good'
-                    
+                for i, iii_id_str in enumerate(issue_item_ids):
+                    if not iii_id_str:
+                        continue
+                    iii_id = int(iii_id_str)
+                    pid    = int(product_ids[i]) if i < len(product_ids) and product_ids[i] else None
+                    q      = float(qtys[i]) if i < len(qtys) and qtys[i] else 0
+                    cond   = conditions[i] if i < len(conditions) else 'Good'
+
                     if not pid or q <= 0:
                         continue
-                    
+
+                    unit_row = cursor.execute(
+                        "SELECT unit FROM item_issue_items WHERE id = ?", (iii_id,)
+                    ).fetchone()
+                    unit = unit_row['unit'] if unit_row else 'Nos'
+
                     cursor.execute("""
-                        INSERT INTO inventory_return_items (return_id, product_id, quantity, unit, condition)
-                        VALUES (?, ?, ?, 'Nos', ?)
-                    """, (ret_id, int(pid), q, cond))
+                        INSERT INTO inventory_return_items
+                            (return_id, product_id, quantity, unit, condition, issue_item_id)
+                        VALUES (?, ?, ?, ?, ?, ?)
+                    """, (ret_id, pid, q, unit, cond, iii_id))
                     ret_item_id = cursor.lastrowid
-                    
-                    # Returns increase stock back
-                    log_stock_movement(cursor, int(pid), "RETURN", "inventory_return_items", ret_item_id, q)
+
+                    log_stock_movement(cursor, pid, "RETURN", "inventory_return_items", ret_item_id, q)
                     total_items += 1
-                
+
                 conn.commit()
                 flash(f"Return entry logged successfully. {total_items} item(s) returned.", "success")
+
         except sqlite3.IntegrityError:
             flash("Return ID already exists in database record.", "error")
+        except ValueError as ve:
+            flash(str(ve), "error")
         except Exception as e:
             flash(f"Error handling entry transaction: {e}", "error")
+
         return redirect(url_for('inventory_return'))
-        
+
+    # ── GET ──
     with get_db_connection() as conn:
-        products = conn.execute("SELECT id, item_code, item_name, barcode FROM products ORDER BY item_code ASC").fetchall()
-        departments = conn.execute("SELECT dept_id, dept_name FROM departments ORDER BY dept_name ASC").fetchall()
-    return render_template('inventory_return.html', products=products, departments=departments)
+        issues = conn.execute("""
+            SELECT id, issue_slip_no, issue_date, issued_to
+            FROM item_issues
+            ORDER BY id DESC
+        """).fetchall()
+        departments = conn.execute(
+            "SELECT dept_id, dept_name FROM departments ORDER BY dept_name ASC"
+        ).fetchall()
+
+    return render_template('inventory_return.html', issues=issues, departments=departments)
 
 @app.route('/inventory-status')
 @login_required
@@ -2920,6 +3064,159 @@ def get_mobile_status(session_id):
     if not status_data:
         return jsonify({"error": "Invalid session ID"}), 404
     return jsonify(status_data)
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# DUPLICATE CHECK API  –  used by frontend validation before form submission
+# ─────────────────────────────────────────────────────────────────────────────
+@app.route('/api/check-duplicate', methods=['POST'])
+@login_required
+def api_check_duplicate():
+    """
+    Generic duplicate-check endpoint.
+    Body JSON: { "type": "<check_type>", "value": "<value>", [extra fields] }
+
+    Supported types:
+      product_code    – check products.item_code
+      product_name    – check products.item_name
+      gst_number      – check suppliers.gst_number
+      dept_id         – check departments.dept_id
+      dept_name       – check departments.dept_name
+      username        – check users.username
+      invoice_number  – check invoices.invoice_number
+    """
+    data  = request.get_json(force=True) or {}
+    dtype = (data.get('type') or '').strip()
+    value = (data.get('value') or '').strip()
+
+    if not dtype or not value:
+        return jsonify({'exists': False, 'message': ''}), 200
+
+    conn = get_db_connection()
+    try:
+        exists = False
+        detail = ''
+
+        if dtype == 'product_code':
+            row = conn.execute(
+                "SELECT item_code, item_name FROM products WHERE LOWER(item_code) = LOWER(?) LIMIT 1",
+                (value,)
+            ).fetchone()
+            if row:
+                exists = True
+                detail = f"Item Code <strong>{row['item_code']}</strong> is already registered as <em>{row['item_name']}</em>."
+
+        elif dtype == 'product_name':
+            row = conn.execute(
+                "SELECT item_code, item_name FROM products WHERE LOWER(item_name) = LOWER(?) LIMIT 1",
+                (value,)
+            ).fetchone()
+            if row:
+                exists = True
+                detail = f"Product Name <strong>{row['item_name']}</strong> already exists under code <em>{row['item_code']}</em>."
+
+        elif dtype == 'gst_number':
+            row = conn.execute(
+                "SELECT supplier_name, gst_number FROM suppliers WHERE UPPER(gst_number) = UPPER(?) LIMIT 1",
+                (value,)
+            ).fetchone()
+            if row:
+                exists = True
+                detail = f"GST Number <strong>{row['gst_number']}</strong> already belongs to supplier <em>{row['supplier_name']}</em>."
+
+        elif dtype == 'dept_id':
+            row = conn.execute(
+                "SELECT dept_id, dept_name FROM departments WHERE LOWER(dept_id) = LOWER(?) LIMIT 1",
+                (value,)
+            ).fetchone()
+            if row:
+                exists = True
+                detail = f"Department ID <strong>{row['dept_id']}</strong> is already in use by <em>{row['dept_name']}</em>."
+
+        elif dtype == 'dept_name':
+            row = conn.execute(
+                "SELECT dept_id, dept_name FROM departments WHERE LOWER(dept_name) = LOWER(?) LIMIT 1",
+                (value,)
+            ).fetchone()
+            if row:
+                exists = True
+                detail = f"Department Name <strong>{row['dept_name']}</strong> already exists with ID <em>{row['dept_id']}</em>."
+
+        elif dtype == 'username':
+            row = conn.execute(
+                "SELECT username FROM users WHERE LOWER(username) = LOWER(?) LIMIT 1",
+                (value,)
+            ).fetchone()
+            if row:
+                exists = True
+                detail = f"Username <strong>{row['username']}</strong> is already taken."
+
+        elif dtype == 'invoice_number':
+            row = conn.execute(
+                "SELECT invoice_number, invoice_date, vendor_name FROM invoices WHERE LOWER(invoice_number) = LOWER(?) LIMIT 1",
+                (value,)
+            ).fetchone()
+            if row:
+                exists = True
+                detail = (
+                    f"Invoice <strong>{row['invoice_number']}</strong> was already posted"
+                    + (f" on {row['invoice_date']}" if row['invoice_date'] else '')
+                    + (f" from <em>{row['vendor_name']}</em>" if row['vendor_name'] else '')
+                    + ". Posting again will create <strong>duplicate inventory records</strong>."
+                )
+
+        else:
+            return jsonify({'exists': False, 'message': 'Unknown check type'}), 200
+
+        return jsonify({'exists': exists, 'detail': detail})
+
+    finally:
+        conn.close()
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# STOCK CHECK API  –  validate available qty before item issue
+# ─────────────────────────────────────────────────────────────────────────────
+@app.route('/api/check-stock', methods=['POST'])
+@login_required
+def api_check_stock():
+    """
+    Check whether requested qty is available for each product.
+    Body JSON: { "items": [ { "product_id": int, "qty": float }, ... ] }
+    Returns: { "ok": bool, "errors": [ { "item_code", "item_name", "available", "requested" }, ... ] }
+    """
+    data  = request.get_json(force=True) or {}
+    items = data.get('items') or []
+
+    if not items:
+        return jsonify({'ok': True, 'errors': []}), 200
+
+    conn = get_db_connection()
+    errors = []
+    try:
+        for item in items:
+            pid = item.get('product_id')
+            req = float(item.get('qty') or 0)
+            if not pid or req <= 0:
+                continue
+            row = conn.execute(
+                "SELECT item_code, item_name, COALESCE(current_stock,0) AS current_stock FROM products WHERE id = ?",
+                (int(pid),)
+            ).fetchone()
+            if not row:
+                continue
+            avail = float(row['current_stock'])
+            if req > avail:
+                errors.append({
+                    'item_code':  row['item_code'],
+                    'item_name':  row['item_name'],
+                    'available':  avail,
+                    'requested':  req,
+                })
+    finally:
+        conn.close()
+
+    return jsonify({'ok': len(errors) == 0, 'errors': errors})
 
 
 if __name__ == '__main__':

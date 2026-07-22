@@ -113,7 +113,16 @@
     <div class="main">
       <div class="container">
         <h2>Register New Supplier Partner</h2>
-        <form action="{{ url_for('supplier_management') }}" method="POST">
+        {% with messages = get_flashed_messages(with_categories=true) %}
+          {% if messages %}
+            {% for category, message in messages %}
+              <p style="color: {% if category=='error' %}#dc2626{% else %}#16a34a{% endif %}; font-weight:bold; font-size:14px; background: {% if category=='error' %}#fee2e2{% else %}#dcfce7{% endif %}; padding:10px 12px; border-radius:4px; margin-bottom:14px;">
+                {{ message }}
+              </p>
+            {% endfor %}
+          {% endif %}
+        {% endwith %}
+        <form action="{{ url_for('supplier_management') }}" method="POST" id="supplierForm">
           <div class="form-grid">
             <div class="form-group">
               <label>Supplier Company Name</label>
@@ -201,3 +210,38 @@
     </div>
   </body>
 </html>
+<!-- Supplier duplicate validation -->
+<script>
+  function showDupModal(title, detail) {
+    document.getElementById('sDupTitle').textContent = title;
+    document.getElementById('sDupDetail').innerHTML  = detail;
+    document.getElementById('sDupOverlay').style.display = 'flex';
+  }
+  document.getElementById('supplierForm').addEventListener('submit', async function(e) {
+    e.preventDefault();
+    var gst = (this.querySelector('[name="gst_number"]').value || '').trim();
+    if (!gst) { this.submit(); return; }
+    try {
+      var r = await fetch('/api/check-duplicate', {
+        method: 'POST',
+        headers: {'Content-Type':'application/json'},
+        body: JSON.stringify({type:'gst_number', value: gst})
+      });
+      var d = await r.json();
+      if (d.exists) { showDupModal('Supplier Already Exists', d.detail); return; }
+    } catch(_) {}
+    this.submit();
+  });
+</script>
+<div id="sDupOverlay" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,0.45);z-index:9999;justify-content:center;align-items:center;">
+  <div style="background:#fff;border-radius:8px;padding:28px 28px 22px;width:90%;max-width:440px;box-shadow:0 8px 32px rgba(0,0,0,0.2);">
+    <div style="display:flex;align-items:center;gap:10px;margin-bottom:14px;">
+      <span style="font-size:22px;">⚠️</span>
+      <strong id="sDupTitle" style="font-size:16px;color:#1e293b;"></strong>
+    </div>
+    <p id="sDupDetail" style="font-size:14px;color:#334155;margin:0 0 20px;line-height:1.6;"></p>
+    <div style="display:flex;justify-content:flex-end;">
+      <button onclick="document.getElementById('sDupOverlay').style.display='none'" style="padding:9px 22px;background:#e5e7eb;border:none;border-radius:5px;font-size:14px;font-weight:600;cursor:pointer;">OK — Cancel</button>
+    </div>
+  </div>
+</div>

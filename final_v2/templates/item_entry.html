@@ -196,6 +196,7 @@
 </div>
 
         </div>
+</div>
         <div class="form-row">
           <div>
             <label>Invoice Number</label>
@@ -226,6 +227,7 @@
               {% endfor %}
             </select>
           </div>
+
         </div>
         <hr style="border: 0; border-top: 1px solid #cbd5e1; margin: 20px 0" />
         <h2>Line Items Inventory Register</h2>
@@ -281,12 +283,12 @@
           ></div>
           <div style="margin-top: 16px">
             <button
-              class="btn btn-add"
-              onclick="window.print()"
-              style="background: #0f172a"
-            >
-              🖨 Print QR Codes
-            </button>
+  class="btn btn-add"
+  onclick="printQRCodes()"
+  style="background: #0f172a"
+>
+  🖨 Print QR Codes
+</button>
           </div>
         </div>
       </div>
@@ -489,6 +491,29 @@ if (!extractedPayload) {
         );
         extractedPayload.supplier_id = parseInt(supplierId);
 
+        // ── Invoice duplicate check ──
+        const invoiceNum = extractedPayload.invoice_number || '';
+        if (invoiceNum) {
+          fetch('/api/check-duplicate', {
+            method: 'POST',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify({type: 'invoice_number', value: invoiceNum})
+          })
+          .then(r => r.json())
+          .then(d => {
+            if (d.exists) {
+              showEntryDupModal('Invoice Already Posted', d.detail);
+            } else {
+              _doSaveInvoice();
+            }
+          })
+          .catch(() => _doSaveInvoice());
+        } else {
+          _doSaveInvoice();
+        }
+      }
+
+      function _doSaveInvoice() {
         fetch("/api/save", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
@@ -863,6 +888,18 @@ if (!extractedPayload) {
         localStorage.removeItem('ai_inventory_qc_map');
       });
 
+  function recalcTotal() {
+    var total = 0;
+    document.querySelectorAll('#lineItemsBody tr').forEach(function(row) {
+      var amountCell = row.querySelector('.manual-amount');
+      if (amountCell) {
+        total += parseFloat(amountCell.textContent) || 0;
+      }
+    });
+    var totalField = document.getElementById('total_amount');
+    if (totalField) totalField.value = total.toFixed(2);
+  }
+
   function addManualItem() {
 
     const body = document.getElementById("lineItemsBody");
@@ -916,6 +953,7 @@ if (!extractedPayload) {
         const price = parseFloat(priceInput.value) || 0;
 
         amountCell.textContent = (qty * price).toFixed(2);
+        recalcTotal();
     }
 
     qtyInput.addEventListener("input", updateAmount);
@@ -1072,7 +1110,213 @@ if (!extractedPayload) {
         }
         document.getElementById("phoneUploadModalOverlay").style.display = "none";
       }
+
+      /* ── Invoice duplicate popup ── */
+      function showEntryDupModal(title, detail) {
+        document.getElementById('entryDupTitle').textContent = title;
+        document.getElementById('entryDupDetail').innerHTML  = detail;
+        document.getElementById('entryDupOverlay').style.display = 'flex';
+      }
+
+ function printQRCodes() {
+
+    // Fetch GRN Details
+    const invoiceNo = document.getElementById("invoice_number").value;
+    const invoiceDate = document.getElementById("invoice_date").value;
+    const vendor = document.getElementById("vendor_name").value;
+    const totalAmount = document.getElementById("total_amount").value;
+
+    const supplierSelect = document.getElementById("supplier_id");
+    const supplier =
+        supplierSelect.selectedIndex > 0
+            ? supplierSelect.options[supplierSelect.selectedIndex].text
+            : "-";
+
+    const grnInfo = document.getElementById("grnInfoContent").innerHTML;
+
+    // Fetch QR Cards
+    const qrCards = document.getElementById("barcodeCards").innerHTML;
+
+    // Open New Print Window
+    const printWindow = window.open("", "_blank", "width=1000,height=800");
+
+    printWindow.document.write(`
+    <html>
+    <head>
+
+        <title>Goods Receipt Note</title>
+
+        <style>
+
+            body{
+                font-family:Arial,sans-serif;
+                margin:25px;
+                color:#222;
+            }
+
+            h1{
+                text-align:center;
+                margin-bottom:5px;
+                font-size:26px;
+            }
+
+            h3{
+                text-align:center;
+                margin-top:0;
+                color:#555;
+                font-weight:normal;
+            }
+
+            table{
+                width:100%;
+                border-collapse:collapse;
+                margin-top:20px;
+                margin-bottom:20px;
+            }
+
+            table td{
+                border:1px solid #ddd;
+                padding:10px;
+                font-size:14px;
+            }
+
+            .label{
+                font-weight:bold;
+                background:#f4f4f4;
+                width:220px;
+            }
+
+            hr{
+                margin:25px 0;
+            }
+
+            h2{
+                text-align:center;
+                margin-bottom:15px;
+            }
+
+            #barcodeCards{
+                display:flex;
+                flex-wrap:wrap;
+                gap:18px;
+                justify-content:flex-start;
+            }
+
+            #barcodeCards > div{
+
+                width:180px;
+
+                border:1px solid #aaa;
+
+                border-radius:8px;
+
+                padding:12px;
+
+                text-align:center;
+
+                page-break-inside:avoid;
+
+            }
+
+            img{
+                max-width:120px;
+            }
+
+            button{
+                display:none;
+            }
+
+            @page{
+                margin:12mm;
+            }
+
+        </style>
+
+    </head>
+
+    <body>
+
+        <h1>Goods Receipt Note (GRN)</h1>
+
+        <h3>Inventory Management System</h3>
+
+        <table>
+
+            <tr>
+                <td class="label">Supplier</td>
+                <td>${supplier}</td>
+            </tr>
+
+            <tr>
+                <td class="label">Invoice Number</td>
+                <td>${invoiceNo}</td>
+            </tr>
+
+            <tr>
+                <td class="label">Invoice Billing Date</td>
+                <td>${invoiceDate}</td>
+            </tr>
+
+            <tr>
+                <td class="label">Detected Vendor</td>
+                <td>${vendor}</td>
+            </tr>
+
+            <tr>
+                <td class="label">Total Invoice Value</td>
+                <td>₹ ${totalAmount}</td>
+            </tr>
+
+        </table>
+
+        <div style="margin-bottom:20px;">
+            ${grnInfo}
+        </div>
+
+        <hr>
+
+        <h2>GRN QR Labels</h2>
+
+        <div id="barcodeCards">
+
+            ${qrCards}
+
+        </div>
+
+    </body>
+
+    </html>
+    `);
+
+    printWindow.document.close();
+
+    printWindow.focus();
+
+    setTimeout(function(){
+
+        printWindow.print();
+
+        printWindow.close();
+
+    },500);
+
+}
       
     </script>
+
+  <!-- Invoice duplicate modal -->
+  <div id="entryDupOverlay" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,0.5);z-index:99999;justify-content:center;align-items:center;">
+    <div style="background:#fff;border-radius:8px;padding:28px 28px 22px;width:90%;max-width:480px;box-shadow:0 8px 32px rgba(0,0,0,0.25);">
+      <div style="display:flex;align-items:center;gap:12px;margin-bottom:14px;">
+        <span style="font-size:28px;">🚫</span>
+        <strong id="entryDupTitle" style="font-size:17px;color:#1e293b;"></strong>
+      </div>
+      <p id="entryDupDetail" style="font-size:14px;color:#334155;margin:0 0 8px;line-height:1.7;"></p>
+      <p style="font-size:13px;color:#64748b;margin:0 0 20px;">To proceed, change the Invoice Number or verify the existing record first.</p>
+      <div style="display:flex;justify-content:flex-end;">
+        <button onclick="document.getElementById('entryDupOverlay').style.display='none'" style="padding:9px 24px;background:#dc2626;color:#fff;border:none;border-radius:5px;font-size:14px;font-weight:600;cursor:pointer;">OK — Cancel</button>
+      </div>
+    </div>
+  </div>
   </body>
 </html>

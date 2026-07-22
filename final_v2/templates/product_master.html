@@ -134,7 +134,7 @@
           {{ message }}
         </p>
         {% endfor %} {% endif %} {% endwith %}
-        <form action="{{ url_for('product_master') }}" method="POST">
+        <form action="{{ url_for('product_master') }}" method="POST" id="productForm">
           <div class="form-grid">
             <div class="form-group">
               <label>Item Code (SKU)</label>
@@ -316,6 +316,17 @@
       </div>
     </div>
     <script>
+      /* ── Shared validation modal ── */
+      function showDupModal(title, detail, onCancel) {
+        document.getElementById('dupModalTitle').textContent  = title;
+        document.getElementById('dupModalDetail').innerHTML   = detail;
+        document.getElementById('dupModalOverlay').style.display = 'flex';
+        document.getElementById('dupModalCancel').onclick = function() {
+          document.getElementById('dupModalOverlay').style.display = 'none';
+          if (typeof onCancel === 'function') onCancel();
+        };
+      }
+
       function addPropertyRow() {
         const tbody = document.getElementById("properties-body");
         const tr = document.createElement("tr");
@@ -333,6 +344,58 @@
         const tr = btn.closest("tr");
         if (tr) tr.remove();
       }
+
+      /* ── Duplicate validation on submit ── */
+      document.getElementById('productForm').addEventListener('submit', async function(e) {
+        e.preventDefault();
+        const form      = this;
+        const itemCode  = (form.querySelector('[name="item_code"]').value  || '').trim();
+        const itemName  = (form.querySelector('[name="item_name"]').value  || '').trim();
+
+        // Check Item Code
+        try {
+          const r1 = await fetch('/api/check-duplicate', {
+            method: 'POST',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify({type: 'product_code', value: itemCode})
+          });
+          const d1 = await r1.json();
+          if (d1.exists) {
+            showDupModal('Product Already Exists', d1.detail);
+            return;
+          }
+        } catch(_) {}
+
+        // Check Item Name
+        try {
+          const r2 = await fetch('/api/check-duplicate', {
+            method: 'POST',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify({type: 'product_name', value: itemName})
+          });
+          const d2 = await r2.json();
+          if (d2.exists) {
+            showDupModal('Product Already Exists', d2.detail);
+            return;
+          }
+        } catch(_) {}
+
+        form.submit();
+      });
     </script>
+
+    <!-- Duplicate validation modal -->
+    <div id="dupModalOverlay" style="display:none; position:fixed; inset:0; background:rgba(0,0,0,0.45); z-index:9999; justify-content:center; align-items:center;">
+      <div style="background:#fff; border-radius:8px; padding:28px 28px 22px; width:90%; max-width:440px; box-shadow:0 8px 32px rgba(0,0,0,0.2);">
+        <div style="display:flex; align-items:center; gap:10px; margin-bottom:14px;">
+          <span style="font-size:22px;">⚠️</span>
+          <strong id="dupModalTitle" style="font-size:16px; color:#1e293b;"></strong>
+        </div>
+        <p id="dupModalDetail" style="font-size:14px; color:#334155; margin:0 0 20px; line-height:1.6;"></p>
+        <div style="display:flex; justify-content:flex-end;">
+          <button id="dupModalCancel" style="padding:9px 22px; background:#e5e7eb; border:none; border-radius:5px; font-size:14px; font-weight:600; cursor:pointer;">OK — Cancel</button>
+        </div>
+      </div>
+    </div>
   </body>
 </html>

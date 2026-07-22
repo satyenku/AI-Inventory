@@ -665,7 +665,85 @@
           }
         });
 
+        // ── Stock quantity validation before dispatch ──────────────────
+        const issueForm = document.querySelector('form[action*="item-issue"]');
+        if (issueForm) {
+          issueForm.addEventListener('submit', async function(e) {
+            e.preventDefault();
+            const form = this;
+
+            const selects = form.querySelectorAll('.product-select');
+            const qtyInputs = form.querySelectorAll('input[name="qty[]"]');
+            const items = [];
+
+            selects.forEach(function(sel, i) {
+              const pid = sel.value;
+              const qty = parseFloat((qtyInputs[i] ? qtyInputs[i].value : 0)) || 0;
+              if (pid && qty > 0) {
+                items.push({ product_id: parseInt(pid), qty: qty });
+              }
+            });
+
+            if (!items.length) { form.submit(); return; }
+
+            try {
+              const res = await fetch('/api/check-stock', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ items: items })
+              });
+              const data = await res.json();
+              if (!data.ok && data.errors && data.errors.length) {
+                showStockModal(data.errors);
+                return;
+              }
+            } catch(_) {}
+
+            form.submit();
+          });
+        }
+
       });
+
+      /* ── Stock shortage popup ── */
+      function showStockModal(errors) {
+        var rows = errors.map(function(err) {
+          return '<tr>' +
+            '<td style="padding:8px 10px;border-bottom:1px solid #e5e7eb;font-weight:600;color:#1e293b;">' + escHtmlIssue(err.item_code) + ' — ' + escHtmlIssue(err.item_name) + '</td>' +
+            '<td style="padding:8px 10px;border-bottom:1px solid #e5e7eb;text-align:center;color:#16a34a;font-weight:700;">' + err.available + '</td>' +
+            '<td style="padding:8px 10px;border-bottom:1px solid #e5e7eb;text-align:center;color:#dc2626;font-weight:700;">' + err.requested + '</td>' +
+          '</tr>';
+        }).join('');
+
+        document.getElementById('stockModalBody').innerHTML =
+          '<table style="width:100%;border-collapse:collapse;font-size:13px;">' +
+          '<thead><tr>' +
+            '<th style="padding:8px 10px;background:#f8fafc;text-align:left;border-bottom:2px solid #e5e7eb;">Product</th>' +
+            '<th style="padding:8px 10px;background:#f8fafc;text-align:center;border-bottom:2px solid #e5e7eb;">Available Qty</th>' +
+            '<th style="padding:8px 10px;background:#f8fafc;text-align:center;border-bottom:2px solid #e5e7eb;">Requested Qty</th>' +
+          '</tr></thead><tbody>' + rows + '</tbody></table>';
+
+        document.getElementById('stockModalOverlay').style.display = 'flex';
+      }
+
+      function escHtmlIssue(s) {
+        return String(s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+      }
     </script>
+
+    <!-- Stock shortage modal -->
+    <div id="stockModalOverlay" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,0.5);z-index:9999;justify-content:center;align-items:center;">
+      <div style="background:#fff;border-radius:8px;padding:28px 28px 22px;width:90%;max-width:520px;box-shadow:0 8px 32px rgba(0,0,0,0.25);">
+        <div style="display:flex;align-items:center;gap:12px;margin-bottom:12px;">
+          <span style="font-size:26px;">⚠️</span>
+          <strong style="font-size:16px;color:#1e293b;">Insufficient Stock</strong>
+        </div>
+        <p style="font-size:13px;color:#475569;margin:0 0 14px;">The following items do not have enough stock to fulfil this dispatch. Please reduce the quantities or remove the items.</p>
+        <div id="stockModalBody"></div>
+        <div style="display:flex;justify-content:flex-end;margin-top:18px;">
+          <button onclick="document.getElementById('stockModalOverlay').style.display='none'" style="padding:9px 24px;background:#e5e7eb;border:none;border-radius:5px;font-size:14px;font-weight:600;cursor:pointer;">OK — Go Back</button>
+        </div>
+      </div>
+    </div>
   </body>
 </html>

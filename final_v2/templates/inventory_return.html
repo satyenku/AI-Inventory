@@ -2,229 +2,107 @@
 <html lang="en">
   <head>
     <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>Stock Return Entry</title>
+    <script src="https://unpkg.com/html5-qrcode@2.3.8/html5-qrcode.min.js"></script>
     <style>
-      body { margin: 0; font-family: Arial, sans-serif; background: #f1f5f9; display: flex; }
-      .sidebar { width: 240px; background: #0f172a; color: #fff; min-height: 100vh; padding-top: 20px; }
+      * { box-sizing: border-box; margin: 0; padding: 0; }
+      body { font-family: Arial, sans-serif; background: #f1f5f9; display: flex; min-height: 100vh; }
+
+      /* Sidebar */
+      .sidebar { width: 240px; background: #0f172a; color: #fff; min-height: 100vh; padding-top: 20px; flex-shrink: 0; }
       .sidebar h2 { text-align: center; margin-bottom: 20px; font-size: 20px; }
       .sidebar a { display: block; padding: 12px 20px; color: #cbd5e1; text-decoration: none; font-size: 15px; }
       .sidebar a:hover { background: #1e293b; color: #fff; }
-      .main { flex: 1; padding: 25px; }
-      .container { background: white; padding: 25px; border-radius: 6px; box-shadow: 0 2px 6px rgba(0,0,0,0.08); }
-      h2 { margin-top: 0; color: #1e293b; }
-      .form-row { display: grid; grid-template-columns: repeat(4, 1fr); gap: 15px; margin-bottom: 15px; }
-      label { font-size: 13px; color: #334155; }
-      input, select { padding: 8px 10px; border: 1px solid #cbd5e1; border-radius: 4px; font-size: 14px; width: 100%; box-sizing: border-box; }
-      button { padding: 10px 16px; background: #16a34a; color: white; border: none; border-radius: 4px; cursor: pointer; font-size: 14px; font-weight: bold; }
-      button:hover { background: #15803d; }
-      
-      /* Camera Scanner UI */
-      .scanner-overlay {
-        display: none; position: fixed; top: 0; left: 0; right: 0; bottom: 0;
-        background: rgba(0,0,0,0.8); z-index: 1000;
-        justify-content: center; align-items: center; flex-direction: column;
-      }
-      .scanner-overlay.active { display: flex; }
-      .scanner-box {
-        background: white; padding: 20px; border-radius: 8px;
-        width: 100%; max-width: 500px; text-align: center;
-      }
-      .scanner-close-btn { background: #ef4444; width: 100%; margin-top: 15px; }
-      .scanner-close-btn:hover { background: #dc2626; }
+
+      /* Main */
+      .main { flex: 1; padding: 28px; overflow-x: auto; }
+      .page-title { font-size: 22px; font-weight: 700; color: #1e293b; margin-bottom: 22px; }
+
+      /* Flash */
+      .flash-success { background: #f0fdf4; border: 1px solid #86efac; color: #166534; padding: 12px 16px; border-radius: 6px; font-size: 14px; margin-bottom: 18px; }
+      .flash-error   { background: #fef2f2; border: 1px solid #fca5a5; color: #991b1b;  padding: 12px 16px; border-radius: 6px; font-size: 14px; margin-bottom: 18px; }
+
+      /* Card */
+      .card { background: #fff; border-radius: 8px; box-shadow: 0 2px 8px rgba(0,0,0,0.08); padding: 24px; margin-bottom: 24px; }
+      .card-title { font-size: 15px; font-weight: 700; color: #1e293b; margin-bottom: 18px; padding-bottom: 10px; border-bottom: 1px solid #e2e8f0; }
+
+      /* Form */
+      .form-grid { display: grid; grid-template-columns: repeat(4,1fr); gap: 16px; margin-bottom: 16px; }
+      .slip-row  { display: grid; grid-template-columns: 2fr 1fr 1fr; gap: 16px; }
+      .field label { display: block; font-size: 12px; font-weight: 600; color: #475569; text-transform: uppercase; letter-spacing: 0.4px; margin-bottom: 6px; }
+      .field input, .field select { width: 100%; padding: 9px 11px; border: 1px solid #cbd5e1; border-radius: 5px; font-size: 14px; color: #1e293b; background: #fff; }
+      .field input[readonly] { background: #f8fafc; color: #475569; cursor: default; }
+      .field input:focus, .field select:focus { outline: none; border-color: #3b82f6; box-shadow: 0 0 0 3px rgba(59,130,246,0.1); }
+
+      /* Placeholder */
+      .placeholder-msg { text-align: center; padding: 40px 20px; color: #94a3b8; font-size: 14px; background: #f8fafc; border: 1px dashed #cbd5e1; border-radius: 6px; }
+
+      /* Table */
+      .table-wrap { overflow-x: auto; }
+      table.items-table { width: 100%; border-collapse: collapse; font-size: 13px; min-width: 1100px; }
+      table.items-table thead tr { background: #1e293b; color: #fff; }
+      table.items-table th { padding: 11px 12px; text-align: left; font-weight: 600; font-size: 12px; text-transform: uppercase; letter-spacing: 0.4px; white-space: nowrap; }
+      table.items-table td { padding: 10px 12px; border-bottom: 1px solid #e5e7eb; vertical-align: middle; color: #334155; }
+      table.items-table tbody tr:hover td { background: #f8fafc; }
+      table.items-table tbody tr.fully-returned td { background: #f8fafc; color: #94a3b8; }
+
+      .col-product  { min-width: 170px; }
+      .col-barcode  { min-width: 85px; }
+      .col-num      { min-width: 80px; text-align: right !important; }
+      .col-qty-in   { min-width: 95px; }
+      .col-cond     { min-width: 140px; }
+      .col-supplier { min-width: 220px; }
+
+      .product-code { font-weight: 700; color: #1e293b; }
+      .product-name { font-size: 12px; color: #64748b; margin-top: 2px; }
+      .barcode-val  { font-family: 'Courier New', monospace; font-size: 12px; color: #475569; background: #f1f5f9; padding: 2px 6px; border-radius: 4px; display: inline-block; }
+      .badge-fully  { font-size: 11px; font-weight: 600; background: #e5e7eb; color: #6b7280; padding: 3px 8px; border-radius: 10px; white-space: nowrap; }
+
+      .qty-input { width: 78px; padding: 7px 8px; border: 1px solid #cbd5e1; border-radius: 4px; font-size: 13px; text-align: right; }
+      .qty-input:focus { outline: none; border-color: #3b82f6; box-shadow: 0 0 0 3px rgba(59,130,246,0.1); }
+      .qty-input.over { border-color: #ef4444; background: #fef2f2; }
+      .cond-select { width: 100%; padding: 7px 8px; border: 1px solid #cbd5e1; border-radius: 4px; font-size: 12px; }
+
+      /* Supplier scan cell */
+      .sup-scan-wrap { display: flex; flex-direction: column; gap: 6px; }
+      .sup-scan-input-row { display: flex; gap: 5px; align-items: center; }
+      .sup-scan-input { flex: 1; padding: 6px 8px; border: 1px solid #cbd5e1; border-radius: 4px; font-size: 12px; min-width: 0; }
+      .sup-scan-input:focus { outline: none; border-color: #3b82f6; }
+      .btn-scan-grn { padding: 6px 10px; background: #0f172a; color: #fff; border: none; border-radius: 4px; font-size: 11px; font-weight: 600; cursor: pointer; white-space: nowrap; }
+      .btn-scan-grn:hover { background: #1e293b; }
+      .btn-lookup-grn { padding: 6px 10px; background: #2563eb; color: #fff; border: none; border-radius: 4px; font-size: 11px; font-weight: 600; cursor: pointer; white-space: nowrap; }
+      .btn-lookup-grn:hover { background: #1d4ed8; }
+
+      /* Supplier info display */
+      .sup-info { font-size: 12px; line-height: 1.6; }
+      .sup-info .sup-name { font-weight: 700; color: #1e293b; }
+      .sup-info .sup-row  { color: #64748b; }
+      .sup-info .sup-row span { color: #334155; font-weight: 500; }
+      .sup-none { color: #94a3b8; font-size: 11px; font-style: italic; }
+      .sup-error { color: #dc2626; font-size: 11px; }
+      .sup-loading { color: #3b82f6; font-size: 11px; }
+
+      .rem-positive { color: #16a34a; font-weight: 700; }
+      .rem-zero     { color: #94a3b8; font-weight: 600; }
+
+      /* Submit */
+      .btn-submit { padding: 11px 28px; background: #16a34a; color: #fff; border: none; border-radius: 6px; font-size: 14px; font-weight: 700; cursor: pointer; }
+      .btn-submit:hover { background: #15803d; }
+      .footer-note { font-size: 12px; color: #94a3b8; margin-top: 10px; }
+
+      /* Camera modal */
+      .cam-overlay { display: none; position: fixed; inset: 0; background: rgba(0,0,0,0.75); z-index: 1000; justify-content: center; align-items: center; }
+      .cam-overlay.active { display: flex; }
+      .cam-box { background: #fff; padding: 20px; border-radius: 8px; width: 100%; max-width: 480px; text-align: center; }
+      .cam-box h3 { margin-bottom: 12px; font-size: 16px; color: #1e293b; }
+      .cam-status { font-size: 13px; font-weight: 600; color: #334155; margin-top: 10px; min-height: 20px; }
+      .btn-cam-close { margin-top: 14px; width: 100%; padding: 10px; background: #ef4444; color: #fff; border: none; border-radius: 6px; font-size: 14px; font-weight: 700; cursor: pointer; }
+      .btn-cam-close:hover { background: #dc2626; }
     </style>
-    
-    <script src="https://unpkg.com/html5-qrcode"></script>
-    <script>
-      // ── Barcode lookup ──────────────────────────────────────────────────────
-      function lookupBarcode() {
-        const val = document.getElementById('barcodeSearch').value.trim();
-        const errEl  = document.getElementById('lookupError');
-        const cardEl = document.getElementById('supplierCard');
-
-        if (!val) {
-          errEl.textContent = 'Please enter or scan a barcode first.';
-          errEl.style.display = 'block';
-          return;
-        }
-
-        errEl.style.display = 'none';
-
-        fetch('/api/barcode-lookup?barcode=' + encodeURIComponent(val))
-          .then(r => {
-            if (!r.ok && r.status !== 404) {
-              throw new Error('Server returned ' + r.status);
-            }
-            return r.json();
-          })
-          .then(data => {
-            if (data.error) {
-              errEl.textContent = data.error;
-              errEl.style.display = 'block';
-              cardEl.style.display = 'none';
-              return;
-            }
-
-            // Show supplier card
-            cardEl.style.display = 'block';
-            document.getElementById('si_name').textContent    = data.supplier_name    || '—';
-            document.getElementById('si_contact').textContent = data.contact_person   || '—';
-            document.getElementById('si_phone').textContent   = data.phone            || '—';
-            document.getElementById('si_email').textContent   = data.email            || '—';
-            document.getElementById('si_invoice').textContent = data.invoice_number   || '—';
-            document.getElementById('si_date').textContent    = data.invoice_date     || '—';
-            document.getElementById('si_address').textContent = data.address          || '—';
-
-            // Warn if no supplier was linked to this invoice
-            const noSupWarn = document.getElementById('noSupplierWarn');
-            if (noSupWarn) noSupWarn.style.display = data.supplier_id ? 'none' : 'block';
-
-            // Auto-select the correct product logically
-            if (data.product_id) {
-              const container = document.getElementById('returnItemsContainer');
-              if (container) {
-                const rows = container.querySelectorAll('.return-item-row');
-                let targetSelect = null;
-
-                for (let row of rows) {
-                  const sel = row.querySelector('.returnProductSelect');
-                  if (sel && sel.value === "") {
-                    targetSelect = sel;
-                    break;
-                  }
-                }
-
-                if (!targetSelect) {
-                  addReturnItem();
-                  const newRows = container.querySelectorAll('.return-item-row');
-                  targetSelect = newRows[newRows.length - 1].querySelector('.returnProductSelect');
-                }
-
-                if (targetSelect) {
-                  for (let opt of targetSelect.options) {
-                    if (parseInt(opt.value) === data.product_id) {
-                      targetSelect.value = opt.value;
-                      
-                      // Auto-fill quantity
-                      const row = targetSelect.closest('.return-item-row');
-                      if (row) {
-                        const qtyInput = row.querySelector('input[name="qty[]"]');
-                        if (qtyInput && data.original_qty) {
-                           qtyInput.value = data.original_qty;
-                        }
-                      }
-                      break;
-                    }
-                  }
-                }
-              }
-            }
-
-            // Auto-generate a return ID suggestion
-            const retField = document.getElementById('return_id_field');
-            if (retField && !retField.value) {
-              const ts = Date.now().toString().slice(-5);
-              retField.value = 'RET-' + (data.invoice_number || 'UNKNOWN') + '-' + ts;
-            }
-
-            cardEl.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
-
-            const searchBox = document.getElementById('barcodeSearch');
-            if(searchBox) {
-                searchBox.value = '';
-                searchBox.focus();
-            }
-          })
-          .catch((err) => {
-            errEl.textContent = 'Lookup request failed: ' + err.message;
-            errEl.style.display = 'block';
-          });
-      }
-
-      // ── Add / Remove return item rows ──────────────────────────────────
-      function addReturnItem() {
-        const container = document.getElementById('returnItemsContainer');
-        const firstRow = container.querySelector('.return-item-row');
-        const newRow = firstRow.cloneNode(true);
-        newRow.querySelector('select[name="product_id[]"]').value = '';   // ensure blank
-        newRow.querySelector('input[name="qty[]"]').value = '';
-        newRow.querySelector('select[name="condition[]"]').selectedIndex = 0;
-        container.appendChild(newRow);
-        document.getElementById('barcodeSearch').focus();
-      }
-
-      function removeReturnItem(btn) {
-        const container = document.getElementById('returnItemsContainer');
-        const rows = container.querySelectorAll('.return-item-row');
-        if (rows.length <= 1) {
-          alert("At least one return item row is required.");
-          return;
-        }
-        btn.closest('.return-item-row').remove();
-      }
-
-      // ── Camera Scanner Logic ──────────────────────────────────
-      let html5QrcodeScannerObj = null;
-
-      function openCameraScanner() {
-        const overlay = document.getElementById('scannerOverlay');
-        const status = document.getElementById('scannerStatus');
-        overlay.classList.add('active');
-        status.textContent = 'Starting camera...';
-        document.getElementById('reader').innerHTML = '';
-
-        const config = {
-          fps: 10,
-          qrbox: { width: 250, height: 250 },
-          aspectRatio: 1.0
-        };
-
-        try {
-          html5QrcodeScannerObj = new Html5Qrcode("reader");
-          html5QrcodeScannerObj.start({ facingMode: "environment" }, config, onCameraScanSuccess, onCameraScanFailure)
-            .then(() => { status.textContent = 'Scanning... Position QR code inside the box.'; })
-            .catch((err) => {
-              status.textContent = 'Error starting camera. Please grant permissions.';
-              console.error(err);
-            });
-        } catch (e) {
-          status.textContent = 'Camera initialization failed.';
-        }
-      }
-
-      function closeCameraScanner() {
-        const overlay = document.getElementById('scannerOverlay');
-        overlay.classList.remove('active');
-        if (html5QrcodeScannerObj) {
-          try { html5QrcodeScannerObj.stop().catch(e => console.error(e)); } catch(e){}
-        }
-        document.getElementById('barcodeSearch').focus();
-      }
-
-      function onCameraScanSuccess(decodedText) {
-        if (html5QrcodeScannerObj) {
-           try { html5QrcodeScannerObj.pause(); } catch(e){}
-        }
-        document.getElementById('scannerStatus').textContent = 'Found: ' + decodedText;
-
-        const searchBox = document.getElementById('barcodeSearch');
-        searchBox.value = decodedText;
-        closeCameraScanner();
-        lookupBarcode();
-      }
-
-      function onCameraScanFailure() {}
-      
-      document.addEventListener('DOMContentLoaded', function() {
-        const searchBoxEl = document.getElementById('barcodeSearch');
-        if(searchBoxEl) {
-          searchBoxEl.addEventListener('keydown', function(e) {
-            if (e.key === 'Enter') { e.preventDefault(); lookupBarcode(); }
-          });
-        }
-      });
-    </script>
   </head>
   <body>
+    <!-- Sidebar -->
     <div class="sidebar">
       <h2>Inventory</h2>
       <a href="{{ url_for('dashboard') }}">📊 Dashboard</a>
@@ -232,185 +110,462 @@
       <a href="{{ url_for('item_issue') }}">🧾 Item Issue</a>
       <a href="{{ url_for('item_entry') }}">🧾 Item Entry</a>
       <a href="{{ url_for('inventory_status') }}">📈 Inventory Status</a>
-      <a href="{{ url_for('inventory_return') }}">📈 Return Inventory</a>
+      <a href="{{ url_for('inventory_return') }}" style="background:#1e293b;color:#fff;">↩ Return Inventory</a>
       <a href="{{ url_for('supplier_management') }}">👥 Suppliers</a>
       <a href="{{ url_for('department_management') }}">🏢 Departments</a>
       <a href="{{ url_for('user_management') }}">👤 Users</a>
-      <a href="{{ url_for('logout') }}" style="color: #ef4444">🚪 Sign Out</a>
+      <a href="{{ url_for('logout') }}" style="color:#ef4444">🚪 Sign Out</a>
     </div>
+
     <div class="main">
-      <div class="container">
-        <h2>Record Store Return Inwards</h2>
-        {% with messages = get_flashed_messages(with_categories=true) %}
-          {% if messages %}
-            {% for category, message in messages %}
-            <p style="color: {% if category=='error' %}#dc2626{% else %}#16a34a{% endif %}; font-weight: bold; font-size: 14px;">
-              {{ message }}
-            </p>
-            {% endfor %}
-          {% endif %}
-        {% endwith %}
+      <div class="page-title">↩ Record Stock Return</div>
 
-        <!-- ── Barcode lookup strip ── -->
-        <div style="margin-bottom:20px; background:#f8fafc; padding:15px; border-radius:6px; border:1px dashed #cbd5e1;">
-          <label style="font-weight:bold; display:block; margin-bottom:8px; font-size:13px;">
-            🔍 Scan GRN QR Code to Auto-Fill Return Details
-          </label>
-          <p style="font-size:12px; color:#64748b; margin:0 0 10px;">
-            Scan the QR code printed/attached to the physical item at the time of receipt.
-            The system will look up which supplier it came from automatically.
-          </p>
-          <div style="display:flex; gap:10px;">
-            <input type="text" id="barcodeSearch"
-                   placeholder="Scan or type GRN QR Code  e.g. INV-2024-001-1-12345"
-                   style="flex:1;">
-            
-            <button type="button"
-                    style="background:#16a34a; white-space:nowrap; display:flex; align-items:center; gap:6px;"
-                    onclick="openCameraScanner()">
-              Scan
-            </button>
-            <button type="button"
-                    style="background:#0f172a; white-space:nowrap;"
-                    onclick="lookupBarcode()">
-              🔍 Lookup
-            </button>
+      {% with messages = get_flashed_messages(with_categories=true) %}
+        {% if messages %}{% for category, message in messages %}
+          <div class="flash-{{ 'success' if category=='success' else 'error' }}">{{ message }}</div>
+        {% endfor %}{% endif %}
+      {% endwith %}
+
+      <!-- Step 1: Select Issue Slip -->
+      <div class="card">
+        <div class="card-title">Step 1 — Select Issue Slip</div>
+        <div class="slip-row">
+          <div class="field">
+            <label>Issue Slip <span style="color:#ef4444">*</span></label>
+            <select id="issueSelect">
+              <option value="">— Select Issue Slip —</option>
+              {% for issue in issues %}
+              <option value="{{ issue.id }}"
+                      data-dept="{{ issue.issued_to or '' }}"
+                      data-date="{{ issue.issue_date or '' }}"
+                      data-slip="{{ issue.issue_slip_no }}">
+                {{ issue.issue_slip_no }}{% if issue.issued_to %} — {{ issue.issued_to }}{% endif %} ({{ issue.issue_date }})
+              </option>
+              {% endfor %}
+            </select>
           </div>
-          <div id="lookupError"
-               style="display:none; color:#dc2626; font-size:13px; margin-top:8px; font-weight:bold;">
+          <div class="field">
+            <label>Issue Date</label>
+            <input type="text" id="issueDate" readonly placeholder="Auto-filled" />
+          </div>
+          <div class="field">
+            <label>Department</label>
+            <input type="text" id="deptDisplay" readonly placeholder="Auto-filled from slip" />
           </div>
         </div>
+      </div>
 
-        <!-- ── Supplier info card (shown after successful lookup) ── -->
-        <div id="supplierCard"
-             style="display:none; margin-bottom:20px; background:#eff6ff;
-                    border:1px solid #bfdbfe; border-radius:6px; padding:16px;">
-          <div style="font-weight:bold; font-size:14px; color:#1e40af; margin-bottom:12px;">
-            📦 Return To Supplier
-          </div>
-          <div style="display:grid; grid-template-columns:repeat(3,1fr); gap:12px; font-size:13px;">
-            <div>
-              <span style="color:#475569; font-size:11px; text-transform:uppercase;">Supplier</span><br>
-              <strong id="si_name">—</strong>
-            </div>
-            <div>
-              <span style="color:#475569; font-size:11px; text-transform:uppercase;">Contact Person</span><br>
-              <strong id="si_contact">—</strong>
-            </div>
-            <div>
-              <span style="color:#475569; font-size:11px; text-transform:uppercase;">Phone</span><br>
-              <strong id="si_phone">—</strong>
-            </div>
-            <div>
-              <span style="color:#475569; font-size:11px; text-transform:uppercase;">Email</span><br>
-              <strong id="si_email">—</strong>
-            </div>
-            <div>
-              <span style="color:#475569; font-size:11px; text-transform:uppercase;">Original Invoice</span><br>
-              <strong id="si_invoice">—</strong>
-            </div>
-            <div>
-              <span style="color:#475569; font-size:11px; text-transform:uppercase;">Invoice Date</span><br>
-              <strong id="si_date">—</strong>
-            </div>
-          </div>
-          <div style="margin-top:10px; font-size:12px; color:#475569; border-top:1px solid #bfdbfe; padding-top:10px;">
-            <strong>Address:</strong> <span id="si_address">—</span>
-          </div>
-          <div id="noSupplierWarn"
-               style="display:none; margin-top:10px; background:#fef3c7;
-                      border:1px solid #fcd34d; border-radius:4px; padding:8px;
-                      font-size:12px; color:#92400e;">
-            ⚠ No supplier is linked to this invoice. Check the invoice record and
-            link it to a supplier manually via the Suppliers page.
-          </div>
+      <!-- Step 2: Products Table -->
+      <div class="card">
+        <div class="card-title">Step 2 — Products Issued Under This Slip</div>
+        <div id="placeholderMsg" class="placeholder-msg">Select an Issue Slip above to load its products.</div>
+        <div id="tableWrap" class="table-wrap" style="display:none;">
+          <table class="items-table">
+            <thead>
+              <tr>
+                <th class="col-product">Product</th>
+                <th class="col-barcode">Barcode</th>
+                <th class="col-num">Issued Qty</th>
+                <th class="col-num">Returned Qty</th>
+                <th class="col-num">Remaining Qty</th>
+                <th class="col-qty-in">Return Qty</th>
+                <th class="col-cond">Condition</th>
+                <th class="col-supplier">Supplier (Scan GRN to fill)</th>
+              </tr>
+            </thead>
+            <tbody id="itemsTbody"></tbody>
+          </table>
+          <p class="footer-note">Greyed rows are fully returned. Scan the GRN QR code on the physical item to load accurate supplier info.</p>
         </div>
+      </div>
 
-        <!-- ── Return form ── -->
-        <form action="{{ url_for('inventory_return') }}" method="POST">
-          <div class="form-row">
-            <div>
-              <label>Return Document ID</label>
-              <input type="text" name="return_id" id="return_id_field"
-                     placeholder="e.g. RET-5512" required />
+      <!-- Step 3: Submit -->
+      <div class="card" id="submitCard" style="display:none;">
+        <div class="card-title">Step 3 — Return Details</div>
+        <form id="returnForm" action="{{ url_for('inventory_return') }}" method="POST">
+          <input type="hidden" name="issue_id"   id="hiddenIssueId" />
+          <input type="hidden" name="department" id="hiddenDept" />
+          <div class="form-grid">
+            <div class="field">
+              <label>Return Document ID <span style="color:#ef4444">*</span></label>
+              <input type="text" name="return_id" id="returnIdField" placeholder="e.g. RET-5512" required />
             </div>
-            <div>
-              <label>Return Date</label>
-              <input type="date" name="return_date" required />
+            <div class="field">
+              <label>Return Date <span style="color:#ef4444">*</span></label>
+              <input type="date" name="return_date" id="returnDate" required />
             </div>
-            <div>
-              <label>Returned By (Staff)</label>
-              <input type="text" name="returned_by"
-                     placeholder="Staff Full Name" required />
+            <div class="field">
+              <label>Returned By (Staff) <span style="color:#ef4444">*</span></label>
+              <input type="text" name="returned_by" placeholder="Staff Full Name" required />
             </div>
-            <div>
-              <label>Source Department</label>
-              <select name="department" required>
-                <option value="" disabled selected>Select Department</option>
-                {% for dept in departments %}
-                <option value="{{ dept.dept_name }}">
-                  {{ dept.dept_name }} ({{ dept.dept_id }})
-                </option>
-                {% endfor %}
-              </select>
+            <div class="field">
+              <label>Reason for Return</label>
+              <input type="text" name="reason" placeholder="e.g. Excess material / Damaged" />
             </div>
           </div>
-          <hr style="border: 0; border-top: 1px solid #cbd5e1; margin: 20px 0" />
-          
-          <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:10px;">
-              <h3 style="margin:0; font-size:16px; color:#1e293b;">Return Items</h3>
-              <button type="button" onclick="addReturnItem()" style="background:#2563eb; padding:6px 12px; font-size:12px;">+ Add Item</button>
-          </div>
-
-          <div id="returnItemsContainer">
-              <div class="form-row return-item-row" style="background:#f8fafc; padding:15px; border-radius:6px; position:relative; margin-bottom:10px; border:1px solid #e2e8f0;">
-                <div style="grid-column: span 2">
-                  <label>Select Product</label>
-                  <select name="product_id[]" class="returnProductSelect" required>
-                    <option value="">-- Select Product --</option>
-                    {% for p in products %}
-                    <option value="{{ p.id }}" data-barcode="{{ p.barcode or '' }}">
-                      {{ p.item_code }} - {{ p.item_name }}
-                    </option>
-                    {% endfor %}
-                  </select>
-                </div>
-                <div>
-                  <label>Returned Quantity</label>
-                  <input type="number" name="qty[]" placeholder="e.g. 5" required />
-                </div>
-                <div>
-                  <label>Physical Condition</label>
-                  <select name="condition[]">
-                    <option value="Good">Good (Restock immediately)</option>
-                    <option value="Damaged">Damaged / Defective</option>
-                  </select>
-                </div>
-                <!-- Remove Button -->
-                <button type="button" onclick="removeReturnItem(this)" style="position:absolute; top:8px; right:8px; background:#ef4444; color:white; border:none; padding:4px 8px; border-radius:4px; font-size:12px; cursor:pointer;">Remove</button>
-              </div>
-          </div>
-
-          <div class="form-row" style="margin-top:20px;">
-            <div style="grid-column: span 3">
-              <label>Reason for Inward Return</label>
-              <input type="text" name="reason" placeholder="Explain reason for return" />
-            </div>
-            <div style="align-self: end; text-align: right">
-              <button type="submit">Submit Return Inward</button>
-            </div>
+          <div id="hiddenItemsContainer"></div>
+          <div style="margin-top:8px;">
+            <button type="submit" class="btn-submit">✔ Submit Return</button>
           </div>
         </form>
       </div>
+    </div><!-- /.main -->
+
+    <!-- Camera Scanner Modal -->
+    <div class="cam-overlay" id="camOverlay">
+      <div class="cam-box">
+        <h3>📷 Scan GRN QR Code</h3>
+        <div id="camReader" style="width:100%;border-radius:6px;overflow:hidden;background:#000;"></div>
+        <p class="cam-status" id="camStatus">Starting camera…</p>
+        <button class="btn-cam-close" onclick="closeCamera()">✕ Close</button>
+      </div>
     </div>
 
-    <!-- Camera Scanner Modal Overlay -->
-    <div class="scanner-overlay" id="scannerOverlay">
-      <div class="scanner-box">
-        <h3>Camera Scanner</h3>
-        <div id="reader" style="width: 100%; border-radius: 6px; overflow: hidden; background: #000;"></div>
-        <p id="scannerStatus" style="font-weight:bold; color:#334155; margin-top:10px;"></p>
-        <button type="button" class="scanner-close-btn" onclick="closeCameraScanner()">Close</button>
+    <script>
+    // ── Utility ──────────────────────────────────────────────────────
+    function esc(s) {
+      return String(s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+    }
+    function today() { return new Date().toISOString().split('T')[0]; }
+
+    // ── Issue Slip change ─────────────────────────────────────────────
+    document.getElementById('issueSelect').addEventListener('change', function () {
+      var id  = this.value;
+      var opt = this.options[this.selectedIndex];
+      document.getElementById('issueDate').value    = opt.dataset.date || '';
+      document.getElementById('deptDisplay').value  = opt.dataset.dept || '';
+      document.getElementById('hiddenIssueId').value = id;
+      document.getElementById('hiddenDept').value    = opt.dataset.dept || '';
+      if (!id) { resetView(); return; }
+      loadItems(id);
+    });
+
+    function resetView() {
+      document.getElementById('placeholderMsg').style.display = 'block';
+      document.getElementById('tableWrap').style.display      = 'none';
+      document.getElementById('submitCard').style.display     = 'none';
+      document.getElementById('itemsTbody').innerHTML         = '';
+    }
+
+    // ── Load items via API ────────────────────────────────────────────
+    function loadItems(issueId) {
+      var pm = document.getElementById('placeholderMsg');
+      pm.style.display = 'block';
+      pm.textContent   = 'Loading…';
+      document.getElementById('tableWrap').style.display = 'none';
+
+      fetch('/api/issue-items/' + encodeURIComponent(issueId))
+        .then(function(r){ return r.json(); })
+        .then(function(data){
+          var items = data.items || [];
+          if (!items.length) {
+            pm.textContent = 'No items found for this issue slip.';
+            document.getElementById('submitCard').style.display = 'none';
+            return;
+          }
+
+          // Check if ALL items are fully returned
+          var allFullyReturned = items.every(function(it){ return it.remaining_qty <= 0; });
+          if (allFullyReturned) {
+            pm.style.display = 'block';
+            pm.textContent   = '';
+            document.getElementById('tableWrap').style.display = 'none';
+            document.getElementById('submitCard').style.display = 'none';
+            showReturnModal(
+              'Issue Slip Fully Returned',
+              'This Issue Slip has already been <strong>fully returned</strong>. All items have been returned completely and no further returns are possible for this slip.',
+              '#f59e0b'
+            );
+            return;
+          }
+
+          renderTable(items);
+        })
+        .catch(function(e){ pm.textContent = 'Error: ' + e.message; });
+    }
+
+    // ── Render table ──────────────────────────────────────────────────
+    function renderTable(items) {
+      var tbody = document.getElementById('itemsTbody');
+      tbody.innerHTML = '';
+
+      items.forEach(function(item, idx) {
+        var fully = (item.remaining_qty <= 0);
+        var tr = document.createElement('tr');
+        if (fully) tr.className = 'fully-returned';
+        var rowId = 'row-' + idx;
+        tr.dataset.rowId = rowId;
+
+        // Product
+        var tdProduct =
+          '<td class="col-product">' +
+            '<div class="product-code">' + esc(item.item_code) + '</div>' +
+            '<div class="product-name">' + esc(item.item_name) + '</div>' +
+          '</td>';
+
+        // Barcode
+        var tdBarcode =
+          '<td class="col-barcode">' +
+            (item.barcode ? '<span class="barcode-val">' + esc(item.barcode) + '</span>' : '<span style="color:#94a3b8">—</span>') +
+          '</td>';
+
+        // Qty numbers
+        var tdNums =
+          '<td class="col-num">' + item.issued_qty    + '</td>' +
+          '<td class="col-num">' + item.already_returned + '</td>' +
+          '<td class="col-num"><span class="' + (fully ? 'rem-zero' : 'rem-positive') + '">' + item.remaining_qty + '</span></td>';
+
+        // Return qty + condition
+        var tdInputs;
+        if (fully) {
+          tdInputs =
+            '<td class="col-qty-in"><span class="badge-fully">Fully Returned</span></td>' +
+            '<td class="col-cond">—</td>';
+        } else {
+          tdInputs =
+            '<td class="col-qty-in">' +
+              '<input type="number" class="qty-input"' +
+                ' data-issue-item-id="' + item.issue_item_id + '"' +
+                ' data-product-id="'   + item.product_id    + '"' +
+                ' data-remaining="'    + item.remaining_qty + '"' +
+                ' min="0" max="'       + item.remaining_qty + '" step="any" value="0"' +
+                ' oninput="validateQty(this)">' +
+            '</td>' +
+            '<td class="col-cond">' +
+              '<select class="cond-select" data-issue-item-id="' + item.issue_item_id + '">' +
+                '<option value="Good">Good (Restock)</option>' +
+                '<option value="Damaged">Damaged / Defective</option>' +
+              '</select>' +
+            '</td>';
+        }
+
+        // Supplier cell — scan input + info display
+        var tdSupplier =
+          '<td class="col-supplier">' +
+            '<div class="sup-scan-wrap">' +
+              '<div class="sup-scan-input-row">' +
+                '<input type="text" class="sup-scan-input" id="grn-input-' + rowId + '"' +
+                  ' placeholder="Enter or scan GRN code" />' +
+                '<button type="button" class="btn-lookup-grn" onclick="lookupGRN(\'' + rowId + '\')">🔍</button>' +
+                '<button type="button" class="btn-scan-grn"  onclick="openCamera(\'' + rowId + '\')">📷</button>' +
+              '</div>' +
+              '<div id="sup-info-' + rowId + '" class="sup-none">Scan GRN QR code to load supplier info</div>' +
+            '</div>' +
+          '</td>';
+
+        tr.innerHTML = tdProduct + tdBarcode + tdNums + tdInputs + tdSupplier;
+        tbody.appendChild(tr);
+
+        // If API already returned a supplier from latest GRN, show it as a hint (faded)
+        if (item.supplier_name) {
+          var infoEl = document.getElementById('sup-info-' + rowId);
+          infoEl.className = 'sup-info';
+          infoEl.style.opacity = '0.5';
+          infoEl.title = 'Based on latest GRN — scan actual QR for accuracy';
+          infoEl.innerHTML = buildSupHtml(item) + '<div style="font-size:10px;color:#f59e0b;margin-top:2px;">⚠ Latest GRN estimate — scan to confirm</div>';
+        }
+      });
+
+      document.getElementById('placeholderMsg').style.display = 'none';
+      document.getElementById('tableWrap').style.display      = 'block';
+      var sc = document.getElementById('submitCard');
+      sc.style.display = 'block';
+      var rd = document.getElementById('returnDate');
+      if (!rd.value) rd.value = today();
+      var rf = document.getElementById('returnIdField');
+      if (!rf.value) {
+        var slip = document.getElementById('issueSelect').options[document.getElementById('issueSelect').selectedIndex].dataset.slip || 'RET';
+        rf.value = 'RET-' + slip + '-' + Date.now().toString().slice(-4);
+      }
+    }
+
+    // ── Build supplier HTML from a data object ────────────────────────
+    function buildSupHtml(d) {
+      var h = '<div class="sup-name">' + esc(d.supplier_name) + '</div>';
+      if (d.invoice_number) h += '<div class="sup-row">Invoice: <span>' + esc(d.invoice_number) + (d.invoice_date ? ' / ' + esc(d.invoice_date) : '') + '</span></div>';
+      if (d.contact_person) h += '<div class="sup-row">Contact: <span>' + esc(d.contact_person) + '</span></div>';
+      if (d.phone)          h += '<div class="sup-row">Phone: <span>'   + esc(d.phone)          + '</span></div>';
+      if (d.email)          h += '<div class="sup-row">Email: <span>'   + esc(d.email)          + '</span></div>';
+      if (d.address)        h += '<div class="sup-row">Addr: <span>'    + esc(d.address)        + '</span></div>';
+      return h;
+    }
+
+    // ── GRN Lookup per row ────────────────────────────────────────────
+    function lookupGRN(rowId) {
+      var input   = document.getElementById('grn-input-' + rowId);
+      var infoEl  = document.getElementById('sup-info-'  + rowId);
+      var barcode = (input ? input.value.trim() : '');
+      if (!barcode) { infoEl.className = 'sup-error'; infoEl.textContent = 'Please enter a GRN code.'; return; }
+
+      infoEl.className = 'sup-loading';
+      infoEl.textContent = 'Looking up…';
+
+      fetch('/api/barcode-lookup?barcode=' + encodeURIComponent(barcode))
+        .then(function(r){ return r.json(); })
+        .then(function(data){
+          if (data.error) {
+            infoEl.className   = 'sup-error';
+            infoEl.textContent = '✕ ' + data.error;
+            return;
+          }
+          infoEl.className   = 'sup-info';
+          infoEl.style.opacity = '1';
+          infoEl.title       = '';
+          infoEl.innerHTML   = buildSupHtml(data);
+          if (input) input.value = '';
+        })
+        .catch(function(e){
+          infoEl.className   = 'sup-error';
+          infoEl.textContent = 'Request failed: ' + e.message;
+        });
+    }
+
+    // ── Camera scanner ────────────────────────────────────────────────
+    var _camScanner   = null;
+    var _activeScanRow = null;
+
+    function openCamera(rowId) {
+      _activeScanRow = rowId;
+      var overlay = document.getElementById('camOverlay');
+      overlay.classList.add('active');
+      document.getElementById('camStatus').textContent = 'Starting camera…';
+      document.getElementById('camReader').innerHTML   = '';
+      try {
+        _camScanner = new Html5Qrcode('camReader');
+        _camScanner.start(
+          { facingMode: 'environment' },
+          { fps: 10, qrbox: { width: 240, height: 240 } },
+          function(decoded) {
+            var input = document.getElementById('grn-input-' + _activeScanRow);
+            if (input) input.value = decoded;
+            closeCamera();
+            lookupGRN(_activeScanRow);
+          },
+          function() {}
+        ).then(function(){ document.getElementById('camStatus').textContent = 'Scanning… point at GRN QR code.'; })
+         .catch(function(e){ document.getElementById('camStatus').textContent = 'Camera error: ' + e; });
+      } catch(e) {
+        document.getElementById('camStatus').textContent = 'Camera init failed.';
+      }
+    }
+
+    function closeCamera() {
+      document.getElementById('camOverlay').classList.remove('active');
+      if (_camScanner) {
+        try { _camScanner.stop().catch(function(){}); } catch(e) {}
+        _camScanner = null;
+      }
+    }
+
+    // ── Qty validation ────────────────────────────────────────────────
+    function validateQty(input) {
+      var rem = parseFloat(input.dataset.remaining) || 0;
+      var val = parseFloat(input.value) || 0;
+      if (val > rem) { input.classList.add('over'); input.setCustomValidity('Cannot exceed remaining qty of ' + rem); }
+      else           { input.classList.remove('over'); input.setCustomValidity(''); }
+    }
+
+    // ── Form submit ───────────────────────────────────────────────────
+    document.getElementById('returnForm').addEventListener('submit', function(e) {
+      if (!document.getElementById('issueSelect').value) {
+        e.preventDefault();
+        showReturnModal('No Issue Slip Selected', 'Please select an Issue Slip before submitting the return.', '#dc2626');
+        return;
+      }
+      var qtyInputs = document.querySelectorAll('.qty-input');
+      var condInputs = document.querySelectorAll('.cond-select');
+      var anyPositive = false;
+      var overErrors = [];
+
+      qtyInputs.forEach(function(inp) {
+        var v = parseFloat(inp.value) || 0;
+        var r = parseFloat(inp.dataset.remaining) || 0;
+        if (v > 0) anyPositive = true;
+        if (v > r) {
+          // Find product name from the same row
+          var tr = inp.closest('tr');
+          var code = tr ? (tr.querySelector('.product-code') ? tr.querySelector('.product-code').textContent.trim() : '') : '';
+          var name = tr ? (tr.querySelector('.product-name') ? tr.querySelector('.product-name').textContent.trim() : '') : '';
+          var issued = tr ? parseFloat(tr.querySelectorAll('.col-num')[0] ? tr.querySelectorAll('.col-num')[0].textContent : 0) || 0 : 0;
+          var returned = tr ? parseFloat(tr.querySelectorAll('.col-num')[1] ? tr.querySelectorAll('.col-num')[1].textContent : 0) || 0 : 0;
+          overErrors.push({ code: code, name: name, issued: issued, returned: returned, remaining: r, requested: v });
+        }
+      });
+
+      if (overErrors.length) {
+        e.preventDefault();
+        var rows = overErrors.map(function(err) {
+          return '<tr>' +
+            '<td style="padding:8px 10px;border-bottom:1px solid #e5e7eb;font-weight:600;color:#1e293b;">' + esc(err.code) + (err.name ? ' — ' + esc(err.name) : '') + '</td>' +
+            '<td style="padding:8px 10px;border-bottom:1px solid #e5e7eb;text-align:center;">' + err.issued + '</td>' +
+            '<td style="padding:8px 10px;border-bottom:1px solid #e5e7eb;text-align:center;">' + err.returned + '</td>' +
+            '<td style="padding:8px 10px;border-bottom:1px solid #e5e7eb;text-align:center;color:#16a34a;font-weight:700;">' + err.remaining + '</td>' +
+            '<td style="padding:8px 10px;border-bottom:1px solid #e5e7eb;text-align:center;color:#dc2626;font-weight:700;">' + err.requested + '</td>' +
+          '</tr>';
+        }).join('');
+        var table =
+          '<table style="width:100%;border-collapse:collapse;font-size:13px;">' +
+          '<thead><tr>' +
+            '<th style="padding:8px 10px;background:#f8fafc;text-align:left;border-bottom:2px solid #e5e7eb;">Product</th>' +
+            '<th style="padding:8px 10px;background:#f8fafc;text-align:center;border-bottom:2px solid #e5e7eb;">Issued</th>' +
+            '<th style="padding:8px 10px;background:#f8fafc;text-align:center;border-bottom:2px solid #e5e7eb;">Returned</th>' +
+            '<th style="padding:8px 10px;background:#f8fafc;text-align:center;border-bottom:2px solid #e5e7eb;">Remaining</th>' +
+            '<th style="padding:8px 10px;background:#f8fafc;text-align:center;border-bottom:2px solid #e5e7eb;">Requested</th>' +
+          '</tr></thead><tbody>' + rows + '</tbody></table>';
+        showReturnModal('Return Quantity Exceeds Remaining', table, '#dc2626');
+        return;
+      }
+
+      if (!anyPositive) {
+        e.preventDefault();
+        showReturnModal('No Return Quantity Entered', 'Please enter a return quantity greater than 0 for at least one item.', '#f59e0b');
+        return;
+      }
+
+      var container = document.getElementById('hiddenItemsContainer');
+      container.innerHTML = '';
+      var condMap = {};
+      condInputs.forEach(function(s){ condMap[s.dataset.issueItemId] = s.value; });
+      qtyInputs.forEach(function(inp){
+        var val = parseFloat(inp.value)||0;
+        if (val <= 0) return;
+        var iii = inp.dataset.issueItemId, pid = inp.dataset.productId;
+        [['issue_item_id[]',iii],['product_id[]',pid],['qty[]',val],['condition[]',condMap[iii]||'Good']].forEach(function(pair){
+          var f = document.createElement('input'); f.type='hidden'; f.name=pair[0]; f.value=pair[1]; container.appendChild(f);
+        });
+      });
+    });
+
+    // Allow pressing Enter on a GRN input to trigger lookup
+    document.addEventListener('keydown', function(e) {
+      if (e.key === 'Enter' && e.target.classList.contains('sup-scan-input')) {
+        e.preventDefault();
+        var rowId = e.target.id.replace('grn-input-','');
+        lookupGRN(rowId);
+      }
+    });
+
+    // ── Return validation modal ───────────────────────────────────────
+    function showReturnModal(title, bodyHtml, accentColor) {
+      accentColor = accentColor || '#dc2626';
+      document.getElementById('retModalTitle').textContent = title;
+      document.getElementById('retModalBody').innerHTML    = bodyHtml;
+      document.getElementById('retModalAccent').style.borderLeftColor = accentColor;
+      document.getElementById('retModalOverlay').style.display = 'flex';
+    }
+    </script>
+
+    <!-- Return validation modal -->
+    <div id="retModalOverlay" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,0.5);z-index:9999;justify-content:center;align-items:center;">
+      <div id="retModalAccent" style="background:#fff;border-radius:8px;padding:26px 26px 20px;width:90%;max-width:560px;box-shadow:0 8px 32px rgba(0,0,0,0.25);border-left:5px solid #dc2626;">
+        <div style="display:flex;align-items:center;gap:12px;margin-bottom:12px;">
+          <span style="font-size:24px;">⚠️</span>
+          <strong id="retModalTitle" style="font-size:16px;color:#1e293b;"></strong>
+        </div>
+        <div id="retModalBody" style="font-size:14px;color:#334155;margin:0 0 18px;line-height:1.7;overflow-x:auto;"></div>
+        <div style="display:flex;justify-content:flex-end;">
+          <button onclick="document.getElementById('retModalOverlay').style.display='none'" style="padding:9px 24px;background:#e5e7eb;border:none;border-radius:5px;font-size:14px;font-weight:600;cursor:pointer;">OK — Go Back</button>
+        </div>
       </div>
     </div>
   </body>
