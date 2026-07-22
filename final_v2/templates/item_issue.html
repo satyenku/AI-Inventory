@@ -307,7 +307,7 @@
                     <option value="">Select Product...</option>
                     {% for p in products %}
                     <option value="{{ p.id }}" data-barcode="{{ p.barcode or '' }}" data-itemcode="{{ p.item_code }}" data-itemname="{{ p.item_name }}" data-qty="{{ p.current_stock }}">
-                      {{ p.item_code }} - {{ p.item_name }} | Barcode: {{ p.barcode or 'N/A' }} (Avail: {{ p.current_stock }})
+                      {{ p.item_code }} - {{ p.item_name }} | QR Code: {{ p.barcode or 'N/A' }} (Avail: {{ p.current_stock }})
                     </option>
                     {% endfor %}
                   </select>
@@ -315,7 +315,7 @@
                        type="button"
                        class="scan-barcode-btn scan-btn"
                        style="margin-top:8px;">
-                       📷 Scan Barcode
+                       Scan QR Code
                    </button>
                   <div class="row-item-details" style="margin-top: 8px; font-size: 13px; color: #475569;"></div>
                 </div>
@@ -338,14 +338,14 @@
       </div>
     </div>
 
-    <!-- Barcode Scanner Modal -->
+    <!-- QR Code Scanner Modal -->
     <div class="scanner-overlay" id="scannerOverlay">
       <div class="scanner-box">
-        <h3>Add Product by Barcode</h3>
+        <h3>Add Product by QR Code</h3>
         
         <!-- Manual Entry (Primary) -->
         <div class="manual-entry-section">
-          <label>Enter Barcode Number</label>
+          <label>Enter QR Code Number</label>
           <input type="text" id="manualBarcodeInput" placeholder="e.g. RM-5023" autofocus />
           <button type="button" id="manualLookupBtn">Search Product</button>
         </div>
@@ -487,7 +487,7 @@
 
         const config = {
           fps: 10,
-          qrbox: { width: 350, height: 200 }, // Wide box optimized for 1D barcodes
+          qrbox: { width: 250, height: 250 }, // Square box optimized for QR codes
           aspectRatio: 1.0,
           formatsToSupport: formatsToSupport,
           experimentalFeatures: {
@@ -508,7 +508,7 @@
           onScanSuccess,
           onScanFailure
         ).then(() => {
-          status.textContent = 'Scanning live... position barcode in green box.';
+          status.textContent = 'Scanning live... position QR code in green box.';
         }).catch(err => {
           console.warn("Environment camera failed, trying front/laptop camera:", err);
           html5QrcodeScannerObj.start(
@@ -517,10 +517,10 @@
             onScanSuccess,
             onScanFailure
           ).then(() => {
-            status.textContent = 'Scanning live (Laptop Mode)... position barcode.';
+            status.textContent = 'Scanning live (Laptop Mode)... position QR code.';
           }).catch(err2 => {
             console.error("All cameras failed:", err2);
-            status.textContent = 'Camera unavailable. Type barcode manually.';
+            status.textContent = 'Camera unavailable. Type QR code manually.';
           });
         });
       }
@@ -543,7 +543,7 @@
       function applyBarcodeCode(code) {
         if (!activeScanRow) return;
         const status = document.getElementById('scannerStatus');
-        status.textContent = 'Searching for barcode: ' + code + '...';
+        status.textContent = 'Searching for QR code: ' + code + '...';
 
         // Use the original HTML-based /search_barcode endpoint you provided
         const formData = new FormData();
@@ -599,12 +599,12 @@
               closeScanner();
             }, 2000);
           } else {
-            showError(code, 'Check if this barcode exists in the Product Master.');
+            showError(code, 'Check if this QR code exists in the Product Master.');
           }
         })
         .catch(err => {
-          status.textContent = 'Error searching barcode. Try manual entry.';
-          console.error('Barcode search error:', err);
+          status.textContent = 'Error searching QR code. Try manual entry.';
+          console.error('QR code search error:', err);
         });
       }
 
@@ -612,11 +612,11 @@
         const resultDiv = document.getElementById('scanResultBox');
         resultDiv.innerHTML = `
           <div style="background:#fef2f2; border:1px solid #dc2626; border-radius:6px; padding:12px; margin-top:10px; text-align:left;">
-            <p style="margin:0; font-weight:bold; color:#dc2626;">❌ No product found with barcode: ${code}</p>
+            <p style="margin:0; font-weight:bold; color:#dc2626;">❌ No product found with QR code: ${code}</p>
             <p style="margin:0; font-size:12px; color:#64748b;">${message}</p>
           </div>
         `;
-        document.getElementById('scannerStatus').textContent = 'Product not found. Try again or type manually.';
+        document.getElementById('scannerStatus').textContent = 'Product not found. Try again or type QR code manually.';
       }
 
       function closeScanner() {
