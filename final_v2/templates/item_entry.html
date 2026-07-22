@@ -296,44 +296,18 @@
 
     <!-- QC Modal Overlay -->
     <div id="qcModalOverlay" class="modal-overlay" style="display:none; align-items:center; justify-content:center;">
-      <div class="modal" role="dialog" aria-modal="true">
+      <div class="modal" role="dialog" aria-modal="true" style="max-width: 920px;">
         <h3>QC — <span id="qc_item_name"></span></h3>
         <div style="margin-bottom:8px;"><strong>Qty:</strong> <span id="qc_item_qty"></span></div>
-        <div style="margin-bottom:8px; display:grid; grid-template-columns:repeat(5,1fr); gap:8px;">
-          <div>
-            <label>Obs1</label>
-            <input id="qc_obs1" type="text" style="width:100%; padding:6px;" />
-          </div>
-          <div>
-            <label>Obs2</label>
-            <input id="qc_obs2" type="text" style="width:100%; padding:6px;" />
-          </div>
-          <div>
-            <label>Obs3</label>
-            <input id="qc_obs3" type="text" style="width:100%; padding:6px;" />
-          </div>
-          <div>
-            <label>Obs4</label>
-            <input id="qc_obs4" type="text" style="width:100%; padding:6px;" />
-          </div>
-          <div>
-            <label>Obs5</label>
-            <input id="qc_obs5" type="text" style="width:100%; padding:6px;" />
-          </div>
-        </div>
-        <div style="margin-top:10px; margin-bottom:8px;">
-          <label>Remarks</label>
-          <textarea id="qc_remarks" style="width:100%;height:60px;padding:8px;border:1px solid #cbd5e1;border-radius:4px;"></textarea>
-        </div>
         <div style="margin-top:12px;">
-          <h4 style="margin:6px 0">Matched Product Specs</h4>
-          <div id="qc_specs_container" style="max-height:220px; overflow:auto; border:1px solid #eef2ff; padding:8px; border-radius:6px; background:#fbfdff;">No matched product found.</div>
+          <h4 style="margin:6px 0 12px 0;">Matched Product Specs &amp; Observations</h4>
+          <div id="qc_specs_container" style="max-height:360px; overflow:auto; border:1px solid #e2e8f0; padding:8px; border-radius:6px; background:#fbfdff;">No matched product found.</div>
         </div>
         <div style="display:flex;align-items:center;gap:12px;margin-bottom:12px;">
           <input type="hidden" id="qc_current_key" value="" />
           <input type="hidden" id="qc_product_id" value="" />
         </div>
-        <div style="display:flex;gap:8px;justify-content:flex-end;">
+        <div style="display:flex;gap:8px;justify-content:flex-end;margin-top:12px;">
           <button class="btn" onclick="document.getElementById('qcModalOverlay').style.display='none'">Close</button>
           <button class="btn" style="background:#0f172a;color:white" onclick="qcExportToExcel()">Export to Excel</button>
           <button class="btn" style="background:#dc2626;color:white" onclick="qcReject()">Reject</button>
@@ -626,17 +600,11 @@ if (!extractedPayload) {
         const qc = loadQCForKey(keyRaw) || {};
         document.getElementById('qc_item_name').textContent = item.description;
         document.getElementById('qc_item_qty').textContent = item.qty || '';
-        document.getElementById('qc_obs1').value = qc.obs1 || '';
-        document.getElementById('qc_obs2').value = qc.obs2 || '';
-        document.getElementById('qc_obs3').value = qc.obs3 || '';
-        document.getElementById('qc_obs4').value = qc.obs4 || '';
-        document.getElementById('qc_obs5').value = qc.obs5 || '';
-        document.getElementById('qc_remarks').value = qc.remarks || '';
         document.getElementById('qc_current_key').value = keyRaw;
         document.getElementById('qc_specs_container').innerHTML = 'Searching product master...';
         document.getElementById('qcModalOverlay').style.display = 'flex';
         // attempt to find matching product and display specs
-        fetchMatchedProductSpecs(item.description);
+        fetchMatchedProductSpecs(item.description, qc);
       }
 
       function sanitizeKey(s) { return (s||'').replace(/[^a-z0-9\-_]/gi, '_'); }
@@ -669,16 +637,38 @@ if (!extractedPayload) {
       function qcApplyStatus(status) {
         console.log("qcApplyStatus called:", status);
         const key = document.getElementById('qc_current_key').value;
-        const observations = {
-          obs1: document.getElementById('qc_obs1').value || '',
-          obs2: document.getElementById('qc_obs2').value || '',
-          obs3: document.getElementById('qc_obs3').value || '',
-          obs4: document.getElementById('qc_obs4').value || '',
-          obs5: document.getElementById('qc_obs5').value || ''
-        };
-        const remarks = document.getElementById('qc_remarks').value || '';
+        const details = [];
+        const rows = document.querySelectorAll('.qc-spec-row');
+        rows.forEach(row => {
+          const propId = row.getAttribute('data-prop-id') || null;
+          const propName = row.getAttribute('data-prop-name') || '';
+          const obs1 = row.querySelector('.qc-obs-1').value || '';
+          const obs2 = row.querySelector('.qc-obs-2').value || '';
+          const obs3 = row.querySelector('.qc-obs-3').value || '';
+          const obs4 = row.querySelector('.qc-obs-4').value || '';
+          const obs5 = row.querySelector('.qc-obs-5').value || '';
+          const remarks = row.querySelector('.qc-remarks-input').value || '';
+          
+          details.push({
+            product_property_id: propId ? parseInt(propId) : null,
+            property_name: propName,
+            obs1, obs2, obs3, obs4, obs5, remarks
+          });
+        });
+
+        const first = details[0] || {};
         const now = new Date().toISOString();
-        const obj = { status, obs1: observations.obs1, obs2: observations.obs2, obs3: observations.obs3, obs4: observations.obs4, obs5: observations.obs5, remarks, updated_at: now };
+        const obj = { 
+          status, 
+          obs1: first.obs1 || '', 
+          obs2: first.obs2 || '', 
+          obs3: first.obs3 || '', 
+          obs4: first.obs4 || '', 
+          obs5: first.obs5 || '', 
+          remarks: first.remarks || '', 
+          details: details,
+          updated_at: now 
+        };
         saveQCForKey(key, obj);
         updateBadgeForKey(key);
 
@@ -690,9 +680,7 @@ if (!extractedPayload) {
           qty: document.getElementById('qc_item_qty').textContent || '',
           product_id: (document.getElementById('qc_product_id').value || '') || null,
           inspection_date: new Date().toISOString(),
-          details: [
-            { obs1: observations.obs1, obs2: observations.obs2, obs3: observations.obs3, obs4: observations.obs4, obs5: observations.obs5, remarks }
-          ],
+          details: details,
           qc_status: status
         };
         console.log(payload);
@@ -705,22 +693,8 @@ if (!extractedPayload) {
         })
         .then(r => r.json())
         .then(j => {
-          // If server accepted, close modal; otherwise show message
           if (j && j.status === 'success') {
-             if(j.status==="success"){
-
-        updateBadgeForKey(key);
-
-        document.getElementById("qcModalOverlay").style.display="none";
-
-    }
-
-    else{
-
-        alert(j.message);
-
-    }
-            
+            updateBadgeForKey(key);
             document.getElementById('qcModalOverlay').style.display = 'none';
             // refresh badges for all items (best-effort)
             setTimeout(() => {
@@ -745,12 +719,6 @@ if (!extractedPayload) {
       function qcExportToExcel() {
         const item = document.getElementById('qc_item_name').textContent || '';
         const qty = document.getElementById('qc_item_qty').textContent || '';
-        const obs1 = document.getElementById('qc_obs1').value || '';
-        const obs2 = document.getElementById('qc_obs2').value || '';
-        const obs3 = document.getElementById('qc_obs3').value || '';
-        const obs4 = document.getElementById('qc_obs4').value || '';
-        const obs5 = document.getElementById('qc_obs5').value || '';
-        const remarks = document.getElementById('qc_remarks').value || '';
         const productId = document.getElementById('qc_product_id').value || null;
         
         const invoiceNumber = document.getElementById('invoice_number').value || '';
@@ -761,15 +729,37 @@ if (!extractedPayload) {
         const qcObj = loadQCForKey(key) || {};
         const status = qcObj.status || 'pending';
 
+        const details = [];
+        const rows = document.querySelectorAll('.qc-spec-row');
+        rows.forEach(row => {
+          const propId = row.getAttribute('data-prop-id') || null;
+          const propName = row.getAttribute('data-prop-name') || '';
+          const obs1 = row.querySelector('.qc-obs-1').value || '';
+          const obs2 = row.querySelector('.qc-obs-2').value || '';
+          const obs3 = row.querySelector('.qc-obs-3').value || '';
+          const obs4 = row.querySelector('.qc-obs-4').value || '';
+          const obs5 = row.querySelector('.qc-obs-5').value || '';
+          const remarks = row.querySelector('.qc-remarks-input').value || '';
+          
+          details.push({
+            product_property_id: propId ? parseInt(propId) : null,
+            property_name: propName,
+            obs1, obs2, obs3, obs4, obs5, remarks
+          });
+        });
+
+        const first = details[0] || {};
+
         const payload = {
           item_name: item,
           qty: qty,
-          obs1: obs1,
-          obs2: obs2,
-          obs3: obs3,
-          obs4: obs4,
-          obs5: obs5,
-          remarks: remarks,
+          obs1: first.obs1 || '',
+          obs2: first.obs2 || '',
+          obs3: first.obs3 || '',
+          obs4: first.obs4 || '',
+          obs5: first.obs5 || '',
+          remarks: first.remarks || '',
+          details: details,
           product_id: productId,
           invoice_number: invoiceNumber,
           invoice_date: invoiceDate,
@@ -807,40 +797,96 @@ if (!extractedPayload) {
 
       function escapeHtml(s) { return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;'); }
 
-      async function fetchMatchedProductSpecs(itemName) {
+      async function fetchMatchedProductSpecs(itemName, previousQC) {
         try {
           const res = await fetch('/api/products');
           const data = await res.json();
           const products = data.products || [];
-          // try exact match, then includes, case-insensitive
           const lower = (itemName||'').toLowerCase();
           let found = products.find(p => (p.item_name||'').toLowerCase() === lower);
           if (!found) found = products.find(p => (p.item_name||'').toLowerCase().includes(lower));
           if (!found) {
-            document.getElementById('qc_specs_container').innerHTML = 'No matching product found in Product Master.';
+            renderInteractiveSpecs([], previousQC);
             document.getElementById('qc_product_id').value = '';
             return;
           }
-          // fetch properties
           document.getElementById('qc_product_id').value = found.id;
           const propsRes = await fetch(`/api/product-properties/${found.id}`);
           const propsData = await propsRes.json();
           const props = propsData.properties || [];
-          if (!props.length) {
-            document.getElementById('qc_specs_container').innerHTML = 'No product specifications found.';
-            return;
-          }
-          let html = '<table style="width:100%; border-collapse:collapse; font-size:13px;">';
-          html += '<tr><th style="text-align:left;padding:6px;border-bottom:1px solid #e6edf8">Property</th><th style="padding:6px;border-bottom:1px solid #e6edf8">Min</th><th style="padding:6px;border-bottom:1px solid #e6edf8">Max</th><th style="padding:6px;border-bottom:1px solid #e6edf8">Method</th></tr>';
-          props.forEach(p => {
-            html += `<tr><td style="padding:6px;border-bottom:1px solid #f1f6ff;text-align:left">${p.property_name}</td><td style="padding:6px;border-bottom:1px solid #f1f6ff">${p.min_value ?? ''}</td><td style="padding:6px;border-bottom:1px solid #f1f6ff">${p.max_value ?? ''}</td><td style="padding:6px;border-bottom:1px solid #f1f6ff">${p.method ?? ''}</td></tr>`;
-          });
-          html += '</table>';
-          document.getElementById('qc_specs_container').innerHTML = html;
+          renderInteractiveSpecs(props, previousQC);
         } catch (e) {
           console.error(e);
           document.getElementById('qc_specs_container').innerHTML = 'Failed to load product specs.';
         }
+      }
+
+      function renderInteractiveSpecs(props, previousQC) {
+        const displayProps = props.length ? props : [{ id: null, property_name: 'General', min_value: '', max_value: '', method: '' }];
+        
+        let html = '<table style="width:100%; border-collapse:collapse; font-size:12px; min-width:680px;">';
+        html += `<thead>
+          <tr style="background:#f8fafc;">
+            <th style="text-align:left;padding:6px;border-bottom:1px solid #cbd5e1;font-weight:bold;width:100px;">Property</th>
+            <th style="padding:6px;border-bottom:1px solid #cbd5e1;font-weight:bold;width:40px;text-align:center;">Min</th>
+            <th style="padding:6px;border-bottom:1px solid #cbd5e1;font-weight:bold;width:40px;text-align:center;">Max</th>
+            <th style="padding:6px;border-bottom:1px solid #cbd5e1;font-weight:bold;width:80px;text-align:left;">Method</th>
+            <th style="padding:6px;border-bottom:1px solid #cbd5e1;font-weight:bold;width:48px;text-align:center;">Obs 1</th>
+            <th style="padding:6px;border-bottom:1px solid #cbd5e1;font-weight:bold;width:48px;text-align:center;">Obs 2</th>
+            <th style="padding:6px;border-bottom:1px solid #cbd5e1;font-weight:bold;width:48px;text-align:center;">Obs 3</th>
+            <th style="padding:6px;border-bottom:1px solid #cbd5e1;font-weight:bold;width:48px;text-align:center;">Obs 4</th>
+            <th style="padding:6px;border-bottom:1px solid #cbd5e1;font-weight:bold;width:48px;text-align:center;">Obs 5</th>
+            <th style="padding:6px;border-bottom:1px solid #cbd5e1;font-weight:bold;width:120px;text-align:left;">Remarks</th>
+          </tr>
+        </thead><tbody>`;
+
+        displayProps.forEach((p, idx) => {
+          let obs1 = '', obs2 = '', obs3 = '', obs4 = '', obs5 = '', remarks = '';
+          
+          if (previousQC) {
+            if (previousQC.details && previousQC.details.length) {
+              const matchedDet = previousQC.details.find(d => 
+                (p.id && String(d.product_property_id) === String(p.id)) || 
+                (String(d.property_name).toLowerCase() === String(p.property_name).toLowerCase())
+              );
+              if (matchedDet) {
+                obs1 = matchedDet.obs1 || '';
+                obs2 = matchedDet.obs2 || '';
+                obs3 = matchedDet.obs3 || '';
+                obs4 = matchedDet.obs4 || '';
+                obs5 = matchedDet.obs5 || '';
+                remarks = matchedDet.remarks || '';
+              }
+            }
+            if (idx === 0 && !obs1 && !obs2 && !obs3 && !obs4 && !obs5 && !remarks) {
+              obs1 = previousQC.obs1 || '';
+              obs2 = previousQC.obs2 || '';
+              obs3 = previousQC.obs3 || '';
+              obs4 = previousQC.obs4 || '';
+              obs5 = previousQC.obs5 || '';
+              remarks = previousQC.remarks || '';
+            }
+          }
+
+          const propIdVal = p.id ? p.id : '';
+          
+          html += `
+          <tr class="qc-spec-row" data-prop-id="${propIdVal}" data-prop-name="${escapeHtml(p.property_name)}" style="border-bottom:1px solid #cbd5e1;">
+            <td style="padding:6px;text-align:left;color:#0f172a;"><strong>${escapeHtml(p.property_name)}</strong></td>
+            <td style="padding:6px;color:#475569;text-align:center;">${p.min_value ?? ''}</td>
+            <td style="padding:6px;color:#475569;text-align:center;">${p.max_value ?? ''}</td>
+            <td style="padding:6px;color:#475569;text-align:left;font-size:11px;">${escapeHtml(p.method ?? '')}</td>
+            <td style="padding:6px;text-align:center;"><input type="text" class="qc-obs-1" value="${escapeHtml(obs1)}" style="width:38px;padding:4px;font-size:12px;text-align:center;border:1px solid #cbd5e1;border-radius:4px;" /></td>
+            <td style="padding:6px;text-align:center;"><input type="text" class="qc-obs-2" value="${escapeHtml(obs2)}" style="width:38px;padding:4px;font-size:12px;text-align:center;border:1px solid #cbd5e1;border-radius:4px;" /></td>
+            <td style="padding:6px;text-align:center;"><input type="text" class="qc-obs-3" value="${escapeHtml(obs3)}" style="width:38px;padding:4px;font-size:12px;text-align:center;border:1px solid #cbd5e1;border-radius:4px;" /></td>
+            <td style="padding:6px;text-align:center;"><input type="text" class="qc-obs-4" value="${escapeHtml(obs4)}" style="width:38px;padding:4px;font-size:12px;text-align:center;border:1px solid #cbd5e1;border-radius:4px;" /></td>
+            <td style="padding:6px;text-align:center;"><input type="text" class="qc-obs-5" value="${escapeHtml(obs5)}" style="width:38px;padding:4px;font-size:12px;text-align:center;border:1px solid #cbd5e1;border-radius:4px;" /></td>
+            <td style="padding:6px;text-align:left;"><input type="text" class="qc-remarks-input" value="${escapeHtml(remarks)}" style="width:90%;padding:4px;font-size:12px;border:1px solid #cbd5e1;border-radius:4px;" /></td>
+          </tr>`;
+        });
+
+        html += '</tbody></table>';
+        document.getElementById('qc_specs_container').innerHTML = html;
       }
 
       function loadSavedPayload() {
