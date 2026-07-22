@@ -1414,6 +1414,7 @@ def api_export_qc_excel():
     obs4 = (data.get('obs4') or '').strip()
     obs5 = (data.get('obs5') or '').strip()
     remarks = (data.get('remarks') or '').strip()
+    details = data.get('details', [])
     invoice_number = (data.get('invoice_number') or '').strip()
     invoice_date = (data.get('invoice_date') or '').strip()
     status = (data.get('status') or '').strip()
@@ -1438,7 +1439,7 @@ def api_export_qc_excel():
         # Fetch specifications properties
         if product_id:
             rows = conn.execute("""
-                SELECT property_name, min_value, max_value, method 
+                SELECT id, property_name, min_value, max_value, method 
                 FROM product_properties 
                 WHERE product_id = ?
                 ORDER BY id
@@ -1598,6 +1599,16 @@ def api_export_qc_excel():
     current_row = 10
     display_props = properties if properties else [{'property_name': item_name, 'min_value': '', 'max_value': '', 'method': ''}]
 
+    # Convert details array to lookup map
+    details_map = {}
+    for det in details:
+        p_id = det.get('product_property_id')
+        p_name = (det.get('property_name') or '').strip().lower()
+        if p_id:
+            details_map[str(p_id)] = det
+        if p_name:
+            details_map[p_name] = det
+
     for idx, prop in enumerate(display_props, 1):
         ws.row_dimensions[current_row].height = 22
         
@@ -1607,21 +1618,34 @@ def api_export_qc_excel():
         ws[f"D{current_row}"] = prop.get('max_value', '')
         ws[f"E{current_row}"] = prop.get('method', '')
         
-        # Populate observations and remarks on the first row
-        if idx == 1:
-            ws[f"F{current_row}"] = obs1
-            ws[f"G{current_row}"] = obs2
-            ws[f"H{current_row}"] = obs3
-            ws[f"I{current_row}"] = obs4
-            ws[f"J{current_row}"] = obs5
-            ws[f"K{current_row}"] = remarks
+        # Match observations in details_map
+        prop_id_str = str(prop.get('id') or '')
+        prop_name_str = (prop.get('property_name') or '').strip().lower()
+        
+        det_obs = details_map.get(prop_id_str) or details_map.get(prop_name_str)
+        if det_obs:
+            ws[f"F{current_row}"] = (det_obs.get('obs1') or '').strip()
+            ws[f"G{current_row}"] = (det_obs.get('obs2') or '').strip()
+            ws[f"H{current_row}"] = (det_obs.get('obs3') or '').strip()
+            ws[f"I{current_row}"] = (det_obs.get('obs4') or '').strip()
+            ws[f"J{current_row}"] = (det_obs.get('obs5') or '').strip()
+            ws[f"K{current_row}"] = (det_obs.get('remarks') or '').strip()
         else:
-            ws[f"F{current_row}"] = ""
-            ws[f"G{current_row}"] = ""
-            ws[f"H{current_row}"] = ""
-            ws[f"I{current_row}"] = ""
-            ws[f"J{current_row}"] = ""
-            ws[f"K{current_row}"] = ""
+            # Fallback to global values on the first row
+            if idx == 1:
+                ws[f"F{current_row}"] = obs1
+                ws[f"G{current_row}"] = obs2
+                ws[f"H{current_row}"] = obs3
+                ws[f"I{current_row}"] = obs4
+                ws[f"J{current_row}"] = obs5
+                ws[f"K{current_row}"] = remarks
+            else:
+                ws[f"F{current_row}"] = ""
+                ws[f"G{current_row}"] = ""
+                ws[f"H{current_row}"] = ""
+                ws[f"I{current_row}"] = ""
+                ws[f"J{current_row}"] = ""
+                ws[f"K{current_row}"] = ""
 
         # Apply standard alignments and fonts
         ws[f"A{current_row}"].alignment = Alignment(horizontal='center', vertical='center')
