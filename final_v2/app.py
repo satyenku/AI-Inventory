@@ -128,6 +128,7 @@ def ensure_ledger_integrity():
         conn = get_db_connection()
         cur = conn.cursor()
         # unique index to prevent accidental duplicate ledger entries for same source
+        # (do not include movement_type here would cause ISSUE/RETURN collisions)
         cur.execute("CREATE UNIQUE INDEX IF NOT EXISTS idx_ledger_ref_unique ON stock_ledger(reference_table, reference_id, movement_type);")
 
         # trigger to remove stock_ledger entries when grn_items deleted

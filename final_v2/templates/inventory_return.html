@@ -339,6 +339,17 @@
               <input type="date" name="return_date" required />
             </div>
             <div>
+    <label>Issue Slip</label>
+    <select name="issue_id" id="issueSelect" required>
+        <option value="">Select Issue Slip</option>
+        {% for issue in issues %}
+        <option value="{{ issue.id }}">
+            {{ issue.issue_slip_no }}
+        </option>
+        {% endfor %}
+    </select>
+</div>
+            <div>
               <label>Returned By (Staff)</label>
               <input type="text" name="returned_by"
                      placeholder="Staff Full Name" required />
@@ -367,6 +378,8 @@
                 <div style="grid-column: span 2">
                   <label>Select Product</label>
                   <select name="product_id[]" class="returnProductSelect" required>
+    <option value="">Select Product</option>
+</select>
                     <option value="">-- Select Product --</option>
                     {% for p in products %}
                     <option value="{{ p.id }}" data-barcode="{{ p.barcode or '' }}">
@@ -379,6 +392,20 @@
                   <label>Returned Quantity</label>
                   <input type="number" name="qty[]" placeholder="e.g. 5" required />
                 </div>
+                <div>
+    <label>Issued Qty</label>
+    <input type="text" class="issuedQty" readonly>
+</div>
+
+<div>
+    <label>Returned Qty</label>
+    <input type="text" class="returnedQty" readonly>
+</div>
+
+<div>
+    <label>Remaining Qty</label>
+    <input type="text" class="remainingQty" readonly>
+</div>
                 <div>
                   <label>Physical Condition</label>
                   <select name="condition[]">
