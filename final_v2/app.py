@@ -1,4 +1,5 @@
 # app.py
+import logging
 import os
 import re
 import sqlite3
@@ -12,7 +13,15 @@ from html import escape
 from io import BytesIO
 from zipfile import ZIP_DEFLATED, ZipFile
 from flask import Flask, render_template, request, redirect, url_for, flash, session, jsonify, Response, send_file
+from werkzeug.security import generate_password_hash, check_password_hash
 import traceback
+
+# Configure application-level logging (replaces print() debugging)
+logging.basicConfig(
+    level=logging.INFO,
+    format="%(asctime)s [%(levelname)s] %(message)s",
+)
+logger = logging.getLogger(__name__)
 
 
 def parse_decimal(value, fallback=0.0):
@@ -62,58 +71,94 @@ Config.validate()
 
 
 
-SMTP_SERVER = "smtp.gmail.com"
-SMTP_PORT = 587
+# ---------------------------------------------------------------------------
+# Mail settings — read exclusively from environment; never hardcoded.
+# Supported .env keys:
+#   MAIL_SERVER          (default: smtp.gmail.com)
+#   MAIL_PORT            (default: 587)
+#   MAIL_USERNAME        or EMAIL_USER   — sender login
+#   MAIL_PASSWORD        or EMAIL_PASS   — sender password / app-password
+#   MAIL_DEFAULT_SENDER  (default: same as MAIL_USERNAME)
+# ---------------------------------------------------------------------------
+_MAIL_SERVER  = os.getenv("MAIL_SERVER",  os.getenv("SMTP_SERVER",  "smtp.gmail.com"))
+_MAIL_PORT    = int(os.getenv("MAIL_PORT", os.getenv("SMTP_PORT", "587")))
+_MAIL_USER    = os.getenv("MAIL_USERNAME", os.getenv("EMAIL_USER", ""))
+_MAIL_PASS    = os.getenv("MAIL_PASSWORD", os.getenv("EMAIL_PASS", ""))
+_MAIL_SENDER  = os.getenv("MAIL_DEFAULT_SENDER", _MAIL_USER)
 
-SMTP_USERNAME = os.getenv("EMAIL_USER")
-SMTP_PASSWORD = os.getenv("EMAIL_PASS")
+# Keep legacy aliases so any existing references still work
+SMTP_SERVER   = _MAIL_SERVER
+SMTP_PORT     = _MAIL_PORT
+SMTP_USERNAME = _MAIL_USER
+SMTP_PASSWORD = _MAIL_PASS
 
-print("SMTP_USERNAME =", SMTP_USERNAME)
-print("SMTP_PASSWORD =", SMTP_PASSWORD)
+# NOTE: Credentials are read from environment — never logged to console.
 
-# ==========================================
-# LIVE SMTP EMAIL CONFIGURATION
-# ==========================================
-SMTP_SERVER = "smtp.gmail.com"             
-SMTP_PORT = 587
-SMTP_USERNAME = os.getenv("EMAIL_USER")     # Outbound business email address
-SMTP_PASSWORD = os.getenv("EMAIL_PASS")     # Secure App Password (16 characters)
 
-def send_recovery_email(target_email, username, reset_link):
-    """Dispatches an HTML transactional recovery link to the user's verified address."""
-    msg = MIMEMultipart()
-    msg['From'] = SMTP_USERNAME
-    msg['To'] = target_email
-    msg['Subject'] = f"Password Reset Request for {username}"
+def send_recovery_email(target_email: str, username: str, reset_link: str) -> bool:
+    """Send an HTML password-reset email to *target_email*.
 
-    body = f"""
-    <div style="font-family: sans-serif; padding: 20px; color: #333; max-width: 600px; border: 1px solid #e5e7eb; border-radius: 8px;">
-        <h3 style="color: #111827;">Hello {username},</h3>
-        <p>We received a request to reset your application password. Click the secure link below to set a new password:</p>
-        <p style="margin: 25px 0;">
-            <a href="{reset_link}" style="background-color: #2563eb; color: white; padding: 10px 18px; text-decoration: none; border-radius: 5px; display: inline-block; font-weight: bold;">Reset Password</a>
+    Returns True on success, False on any failure (error is logged, not raised).
+    Credentials are sourced exclusively from environment variables.
+    """
+    if not _MAIL_USER or not _MAIL_PASS:
+        logger.error("[MAIL] Cannot send email: MAIL_USERNAME / MAIL_PASSWORD not configured in environment.")
+        return False
+
+    msg = MIMEMultipart("alternative")
+    msg["From"]    = _MAIL_SENDER
+    msg["To"]      = target_email
+    msg["Subject"] = "Password Reset Request — AI Inventory"
+
+    html_body = f"""
+    <div style="font-family:Arial,sans-serif;padding:28px;color:#1e293b;
+                max-width:560px;border:1px solid #e5e7eb;border-radius:8px;">
+        <h3 style="margin-top:0;color:#111827;">Hello {escape(username)},</h3>
+        <p style="line-height:1.6;">
+            We received a request to reset your <strong>AI Inventory</strong> account password.
+            Click the secure button below to choose a new password.
+            This link is valid for <strong>15 minutes</strong> and can only be used once.
         </p>
-        <p>This recovery channel is confidential and will automatically expire in 15 minutes.</p>
-        <p style="color: #6b7280; font-size: 0.85em; margin-top: 20px; border-top: 1px solid #f3f4f6; padding-top: 10px;">
-            If you did not make this request, you can safely ignore this automated message.
+        <p style="margin:28px 0;">
+            <a href="{reset_link}"
+               style="background:#2563eb;color:#fff;padding:11px 22px;
+                      text-decoration:none;border-radius:5px;
+                      display:inline-block;font-weight:bold;font-size:14px;">
+               Reset My Password
+            </a>
+        </p>
+        <p style="color:#64748b;font-size:13px;line-height:1.5;">
+            If the button doesn't work, copy and paste this link into your browser:<br>
+            <span style="word-break:break-all;">{reset_link}</span>
+        </p>
+        <hr style="border:none;border-top:1px solid #f3f4f6;margin:20px 0;">
+        <p style="color:#94a3b8;font-size:12px;margin:0;">
+            If you did not request a password reset, you can safely ignore this email.
+            Your password will not change until you click the link above.
         </p>
     </div>
     """
-    msg.attach(MIMEText(body, 'html'))
+    msg.attach(MIMEText(html_body, "html"))
 
     try:
-        server = smtplib.SMTP(SMTP_SERVER, SMTP_PORT)
-        server.starttls()  # Initialize safe Transport Layer Security channel
-        server.login(SMTP_USERNAME, SMTP_PASSWORD)
-        server.send_message(msg)
-        server.quit()
+        with smtplib.SMTP(_MAIL_SERVER, _MAIL_PORT, timeout=15) as server:
+            server.ehlo()
+            server.starttls()
+            server.ehlo()
+            server.login(_MAIL_USER, _MAIL_PASS)
+            server.send_message(msg)
+        logger.info("[MAIL] Password reset email sent to %s", target_email)
         return True
-    except Exception as e:
-        print(f"[MAIL SERVER ERROR] Failed email delivery: {e}")
-        return False
+    except smtplib.SMTPAuthenticationError:
+        logger.error("[MAIL] Authentication failed — check MAIL_USERNAME / MAIL_PASSWORD.")
+    except smtplib.SMTPException as exc:
+        logger.error("[MAIL] SMTP error sending to %s: %s", target_email, exc)
+    except Exception as exc:
+        logger.error("[MAIL] Unexpected error sending to %s: %s", target_email, exc)
+    return False
 
 def login_required(f):
-    """Simple helper ensuring secure authenticated system routes."""
+    """Redirect unauthenticated requests to the login page."""
     from functools import wraps
     @wraps(f)
     def decorated_function(*args, **kwargs):
@@ -121,6 +166,59 @@ def login_required(f):
             return redirect(url_for('login'))
         return f(*args, **kwargs)
     return decorated_function
+
+
+def admin_required(f):
+    """Block non-admin users with a 403 page.
+
+    Used on routes that must only be accessible to users with role='admin'.
+    Staff and viewer accounts that attempt a direct URL hit receive a clear,
+    styled Access Denied page — not a raw server error or a silent redirect.
+    """
+    from functools import wraps
+    @wraps(f)
+    def decorated_function(*args, **kwargs):
+        if 'user' not in session:
+            return redirect(url_for('login'))
+        if session.get('role') != 'admin':
+            logger.warning(
+                "[RBAC] User '%s' (role=%s) attempted to access admin-only route '%s'.",
+                session.get('user'), session.get('role'), request.path
+            )
+            return render_template('403.html'), 403
+        return f(*args, **kwargs)
+    return decorated_function
+
+
+def get_session_role():
+    """Return the current session role string, lower-cased. Empty string if not set."""
+    return (session.get('role') or '').lower()
+
+
+def is_admin():
+    """True when the logged-in user has the admin role."""
+    return get_session_role() == 'admin'
+
+
+def is_write_allowed():
+    """True for admin and staff. False for viewer and any unrecognised role.
+
+    Use this to gate any route or template control that creates, edits or
+    deletes data.  Viewer accounts are intentionally read-only across the
+    entire application except for the three pages they are allowed to see.
+    """
+    return get_session_role() in ('admin', 'staff')
+
+# ── Global error handlers ────────────────────────────────────────────────────
+
+@app.errorhandler(403)
+def forbidden(e):
+    return render_template('403.html'), 403
+
+@app.errorhandler(404)
+def not_found(e):
+    return render_template('404.html'), 404
+
 
 # Ensure ledger integrity triggers and indexes exist (safe to run multiple times)
 def ensure_ledger_integrity():
@@ -154,6 +252,37 @@ def ensure_ledger_integrity():
         if 'issue_item_id' not in existing_cols:
             cur.execute("ALTER TABLE inventory_return_items ADD COLUMN issue_item_id INTEGER REFERENCES item_issue_items(id)")
 
+        # Migration: add email/reset_token columns to users if missing
+        user_cols = [row[1] for row in cur.execute("PRAGMA table_info(users)").fetchall()]
+        if 'email' not in user_cols:
+            cur.execute("ALTER TABLE users ADD COLUMN email TEXT")
+        if 'email_verified' not in user_cols:
+            cur.execute("ALTER TABLE users ADD COLUMN email_verified INTEGER DEFAULT 0")
+        if 'reset_token' not in user_cols:
+            cur.execute("ALTER TABLE users ADD COLUMN reset_token TEXT")
+        if 'token_expiry' not in user_cols:
+            cur.execute("ALTER TABLE users ADD COLUMN token_expiry REAL")
+
+        # Migration: create UNIQUE index on users.email (safe — NULL values are not considered duplicates)
+        cur.execute(
+            "CREATE UNIQUE INDEX IF NOT EXISTS idx_users_email_unique ON users(email) WHERE email IS NOT NULL"
+        )
+        # Migration: create index on reset_token for fast token lookups
+        cur.execute(
+            "CREATE INDEX IF NOT EXISTS idx_users_reset_token ON users(reset_token) WHERE reset_token IS NOT NULL"
+        )
+
+        # Migration: re-hash any plain-text passwords (plain passwords don't start with known hash prefixes)
+        from werkzeug.security import generate_password_hash
+        plain_users = cur.execute(
+            "SELECT id, password_hash FROM users WHERE password_hash NOT LIKE 'scrypt:%' AND password_hash NOT LIKE 'pbkdf2:%' AND password_hash NOT LIKE 'bcrypt:%'"
+        ).fetchall()
+        for pu in plain_users:
+            cur.execute(
+                "UPDATE users SET password_hash = ? WHERE id = ?",
+                (generate_password_hash(pu[1]), pu[0])
+            )
+
         conn.commit()
     except Exception:
         try:
@@ -169,16 +298,6 @@ def ensure_ledger_integrity():
 
 ensure_ledger_integrity()
 
-def login_required(f):
-    """Simple helper ensuring secure authenticated system routes."""
-    from functools import wraps
-    @wraps(f)
-    def decorated_function(*args, **kwargs):
-        if 'user' not in session:
-            return redirect(url_for('login'))
-        return f(*args, **kwargs)
-    return decorated_function
-
 def generate_barcode_asset(barcode_value):
     """Generate a QR code PNG for the given value and return the file path."""
     folder = os.path.join(app.root_path, 'static', 'barcodes')
@@ -187,7 +306,10 @@ def generate_barcode_asset(barcode_value):
     qr.add_data(barcode_value)
     qr.make(fit=True)
     img = qr.make_image(fill_color='black', back_color='white')
-    png_path = os.path.join(folder, f"{barcode_value}.png")
+    # Sanitize barcode_value so it is safe as a filename (no slashes, no dotdot)
+    safe_stem = re.sub(r'[^\w\-.]', '_', str(barcode_value))
+    safe_stem = safe_stem.replace('..', '_')
+    png_path = os.path.join(folder, f"{safe_stem}.png")
     img.save(png_path)
     return png_path
 
@@ -197,7 +319,8 @@ def ensure_barcode_asset_exists(barcode_value):
         return None
     folder = os.path.join(app.root_path, 'static', 'barcodes')
     os.makedirs(folder, exist_ok=True)
-    png_path = os.path.join(folder, f"{barcode_value}.png")
+    safe_stem = re.sub(r'[^\w\-.]', '_', str(barcode_value)).replace('..', '_')
+    png_path = os.path.join(folder, f"{safe_stem}.png")
     if not os.path.exists(png_path):
         try:
             return generate_barcode_asset(barcode_value)
@@ -425,13 +548,14 @@ def login():
         user = conn.execute("SELECT * FROM users WHERE username = ?", (username,)).fetchone()
         conn.close()
         
-        # Plain-text alignment corresponding to user initialization structure
-        if user and user['password_hash'] == password:
+        # Check password using secure hash comparison
+        if user and user['is_active'] and check_password_hash(user['password_hash'], password):
             session['user'] = user['username']
             session['user_id'] = user['id']
+            session['role'] = user['role']
             return redirect(url_for('dashboard'))
         else:
-            flash("Invalid credentials", "error")
+            flash("Invalid credentials. Please check your username and password.", "error")
             
     return render_template('login.html')
 
@@ -454,12 +578,13 @@ def dashboard():
     # 2. Get Product Inventories
     items = conn.execute("SELECT * FROM products ORDER BY item_code ASC").fetchall()
     
-    # 3. Read Issued items 
+    # 3. Read Issued items — today only
     issues = conn.execute("""
         SELECT i.issue_date, i.issue_slip_no, p.item_code, p.item_name, i.issued_to, ii.quantity, p.unit
         FROM item_issue_items ii
         JOIN item_issues i ON ii.issue_id = i.id
         JOIN products p ON ii.product_id = p.id
+        WHERE i.issue_date = DATE('now')
         ORDER BY i.created_at DESC LIMIT 10
     """).fetchall()
     
@@ -471,6 +596,14 @@ def dashboard():
 def product_master():
     conn = get_db_connection()
     if request.method == 'POST':
+        if not is_write_allowed():
+            conn.close()
+            logger.warning(
+                "[RBAC] User '%s' (role=%s) attempted POST on /products.",
+                session.get('user'), session.get('role')
+            )
+            return render_template('403.html'), 403
+
         item_code = request.form.get('item_code')
         item_name = request.form.get('item_name')
         category = request.form.get('category')
@@ -533,40 +666,202 @@ def product_master():
         
     products_list = conn.execute("SELECT * FROM products ORDER BY item_code ASC").fetchall()
     conn.close()
-    return render_template('product_master.html', products=products_list)
+    can_write = is_write_allowed()
+    can_delete = is_admin()  # Only admin can delete
+    return render_template('product_master.html', products=products_list, can_write=can_write, can_delete=can_delete)
+
+@app.route('/product/edit', methods=['POST'])
+@login_required
+def edit_product():
+    # Staff and Admin can edit, Viewer cannot
+    if not is_write_allowed():
+        logger.warning(
+            "[RBAC] User '%s' (role=%s) attempted POST on /product/edit.",
+            session.get('user'), session.get('role')
+        )
+        return render_template('403.html'), 403
+
+    conn = get_db_connection()
+    cursor = conn.cursor()
+    
+    product_id = request.form.get('product_id')
+    item_code = request.form.get('item_code')
+    item_name = request.form.get('item_name')
+    category = request.form.get('category')
+    subcategory = request.form.get('subcategory')
+    unit = request.form.get('unit')
+    min_stock = float(request.form.get('min_stock_level') or 0)
+    max_stock = float(request.form.get('max_stock_level') or 0)
+    reorder_level = float(request.form.get('reorder_level') or 0)
+    hsn = request.form.get('hsn_sac_code')
+    location = request.form.get('storage_location')
+    description = request.form.get('description')
+    
+    if not product_id or not item_code or not item_name:
+        flash("Product ID, Item Code, and Item Name are required.", "error")
+        conn.close()
+        return redirect(url_for('product_master'))
+    
+    try:
+        # Check for duplicate item_code or item_name (excluding current product)
+        normalized_name = normalize_item_text(item_name)
+        existing = conn.execute("""
+            SELECT id FROM products 
+            WHERE (LOWER(item_code) = ? OR LOWER(item_name) = ?)
+            AND id != ?
+            LIMIT 1
+        """, (item_code.strip().lower(), normalized_name, product_id)).fetchone()
+        
+        if existing:
+            flash("Product Code or Product Name already exists.", "error")
+            conn.close()
+            return redirect(url_for('product_master'))
+        
+        # Update product
+        cursor.execute("""
+            UPDATE products
+            SET item_code = ?, barcode = ?, item_name = ?, category = ?, 
+                subcategory = ?, unit = ?, min_stock_level = ?, max_stock_level = ?, 
+                reorder_level = ?, hsn_sac_code = ?, storage_location = ?, description = ?
+            WHERE id = ?
+        """, (item_code, item_code, item_name, category, subcategory, unit, 
+              min_stock, max_stock, reorder_level, hsn, location, description, product_id))
+        
+        # Delete existing properties for this product
+        cursor.execute("DELETE FROM product_properties WHERE product_id = ?", (product_id,))
+        
+        # Insert updated inspection properties
+        prop_names = request.form.getlist('property_name[]')
+        prop_mins = request.form.getlist('property_min[]')
+        prop_maxs = request.form.getlist('property_max[]')
+        prop_methods = request.form.getlist('property_method[]')
+        
+        for idx, name in enumerate(prop_names):
+            name = (name or '').strip()
+            if not name:
+                continue
+            try:
+                min_val = float(prop_mins[idx]) if idx < len(prop_mins) and prop_mins[idx] not in (None, '') else None
+            except Exception:
+                min_val = None
+            try:
+                max_val = float(prop_maxs[idx]) if idx < len(prop_maxs) and prop_maxs[idx] not in (None, '') else None
+            except Exception:
+                max_val = None
+            method = prop_methods[idx] if idx < len(prop_methods) else None
+            insert_product_property(cursor, product_id, name, min_val, max_val, method)
+        
+        conn.commit()
+        ensure_barcode_asset_exists(item_code)
+        flash("Product updated successfully!", "success")
+    except sqlite3.IntegrityError:
+        flash("Product Code or Barcode already exists.", "error")
+    except Exception as e:
+        logger.error("[edit_product] Error: %s", e, exc_info=True)
+        flash("An error occurred while updating the product. Please try again.", "error")
+    
+    conn.close()
+    return redirect(url_for('product_master'))
+
+@app.route('/product/delete/<int:product_id>', methods=['POST'])
+@login_required
+def delete_product(product_id):
+    # Only Admin can delete products
+    if not is_admin():
+        logger.warning(
+            "[RBAC] User '%s' (role=%s) attempted POST on /product/delete.",
+            session.get('user'), session.get('role')
+        )
+        return render_template('403.html'), 403
+
+    conn = get_db_connection()
+    cursor = conn.cursor()
+    try:
+        # Delete inspection properties first
+        cursor.execute("DELETE FROM product_properties WHERE product_id = ?", (product_id,))
+        # Delete product
+        cursor.execute("DELETE FROM products WHERE id = ?", (product_id,))
+        conn.commit()
+        flash("Product deleted successfully.", "success")
+    except Exception as e:
+        logger.error("[delete_product] %s", e, exc_info=True)
+        flash("An error occurred while deleting the product. Please try again.", "error")
+    
+    conn.close()
+    return redirect(url_for('product_master'))
+
+@app.route('/api/product/<int:product_id>', methods=['GET'])
+@login_required
+def get_product_details(product_id):
+    """API endpoint to fetch product details including inspection properties"""
+    conn = get_db_connection()
+    cursor = conn.cursor()
+    
+    try:
+        # Get product details
+        product = cursor.execute("""
+            SELECT * FROM products WHERE id = ?
+        """, (product_id,)).fetchone()
+        
+        if not product:
+            conn.close()
+            return jsonify({"error": "Product not found"}), 404
+        
+        # Get inspection properties
+        properties = cursor.execute("""
+            SELECT property_name, min_value, max_value, test_method
+            FROM product_properties
+            WHERE product_id = ?
+            ORDER BY id
+        """, (product_id,)).fetchall()
+        
+        conn.close()
+        
+        # Convert to dict
+        product_dict = dict(product)
+        properties_list = [dict(prop) for prop in properties]
+        
+        product_dict['properties'] = properties_list
+        
+        return jsonify(product_dict)
+    except Exception as e:
+        logger.error("[get_product_details] Error: %s", e, exc_info=True)
+        conn.close()
+        return jsonify({"error": "Failed to fetch product details"}), 500
 
 @app.route('/suppliers', methods=['GET', 'POST'])
 @login_required
 def supplier_management():
+    can_manage = is_admin()
     conn = get_db_connection()
 
     if request.method == 'POST':
-        name = request.form.get('supplier_name', '').strip()
+        # Hard block — even if someone crafts a direct POST
+        if not can_manage:
+            conn.close()
+            logger.warning(
+                "[RBAC] User '%s' (role=%s) attempted POST on /suppliers.",
+                session.get('user'), session.get('role')
+            )
+            return render_template('403.html'), 403
+
+        name       = request.form.get('supplier_name', '').strip()
         gst_number = request.form.get('gst_number', '').strip().upper()
-        contact = request.form.get('contact_person', '').strip()
-        phone = request.form.get('phone', '').strip()
-        email = request.form.get('email', '').strip()
-        address = request.form.get('address', '').strip()
+        contact    = request.form.get('contact_person', '').strip()
+        phone      = request.form.get('phone', '').strip()
+        email      = request.form.get('email', '').strip()
+        address    = request.form.get('address', '').strip()
 
         try:
             conn.execute("""
                 INSERT INTO suppliers
                 (supplier_name, gst_number, contact_person, phone, email, address)
                 VALUES (?, ?, ?, ?, ?, ?)
-            """, (
-                name,
-                gst_number,
-                contact,
-                phone,
-                email,
-                address
-            ))
-
+            """, (name, gst_number, contact, phone, email, address))
             conn.commit()
             flash("Supplier record created successfully.", "success")
 
         except sqlite3.IntegrityError:
-            # Duplicate GST Number
             flash("GST Number already exists.", "error")
 
         finally:
@@ -574,51 +869,137 @@ def supplier_management():
 
         return redirect(url_for('supplier_management'))
 
-    suppliers = conn.execute("""
-        SELECT *
-        FROM suppliers
-        ORDER BY supplier_name ASC
-    """).fetchall()
-
+    suppliers = conn.execute(
+        "SELECT * FROM suppliers ORDER BY supplier_name ASC"
+    ).fetchall()
     conn.close()
 
     return render_template(
         'supplier_management.html',
-        suppliers=suppliers
+        suppliers=suppliers,
+        can_manage=can_manage
     )
+
+@app.route('/supplier/edit', methods=['POST'])
+@login_required
+def edit_supplier():
+    if not is_admin():
+        logger.warning(
+            "[RBAC] User '%s' (role=%s) attempted POST on /supplier/edit.",
+            session.get('user'), session.get('role')
+        )
+        return render_template('403.html'), 403
+
+    conn = get_db_connection()
+    supplier_id = request.form.get('supplier_id')
+    supplier_name = request.form.get('supplier_name')
+    gst_number = request.form.get('gst_number')
+    contact_person = request.form.get('contact_person')
+    phone = request.form.get('phone')
+    email = request.form.get('email')
+    address = request.form.get('address')
+    
+    if not supplier_id or not supplier_name or not gst_number:
+        flash("Supplier ID, Name, and GST Number are required.", "error")
+        conn.close()
+        return redirect(url_for('supplier_management'))
+    
+    try:
+        conn.execute("""
+            UPDATE suppliers
+            SET supplier_name = ?, gst_number = ?, contact_person = ?, 
+                phone = ?, email = ?, address = ?
+            WHERE id = ?
+        """, (supplier_name, gst_number.strip().upper(), contact_person, 
+              phone, email, address, supplier_id))
+        conn.commit()
+        flash("Supplier updated successfully.", "success")
+    except sqlite3.IntegrityError:
+        flash("GST Number already exists. Please use a unique GST Number.", "error")
+    except Exception as e:
+        logger.error("[edit_supplier] %s", e, exc_info=True)
+        flash("An error occurred while updating the supplier. Please try again.", "error")
+    
+    conn.close()
+    return redirect(url_for('supplier_management'))
+
+@app.route('/supplier/delete/<int:supplier_id>', methods=['POST'])
+@login_required
+def delete_supplier(supplier_id):
+    if not is_admin():
+        logger.warning(
+            "[RBAC] User '%s' (role=%s) attempted POST on /supplier/delete.",
+            session.get('user'), session.get('role')
+        )
+        return render_template('403.html'), 403
+
+    conn = get_db_connection()
+    try:
+        conn.execute("DELETE FROM suppliers WHERE id = ?", (supplier_id,))
+        conn.commit()
+        flash("Supplier deleted successfully.", "success")
+    except Exception as e:
+        logger.error("[delete_supplier] %s", e, exc_info=True)
+        flash("An error occurred while deleting the supplier. Please try again.", "error")
+    
+    conn.close()
+    return redirect(url_for('supplier_management'))
 
 @app.route('/departments', methods=['GET', 'POST'])
 @login_required
 def department_management():
+    can_manage = is_admin()
     conn = get_db_connection()
+
     if request.method == 'POST':
-        dept_id = request.form.get('dept_id')
+        if not can_manage:
+            conn.close()
+            logger.warning(
+                "[RBAC] User '%s' (role=%s) attempted POST on /departments.",
+                session.get('user'), session.get('role')
+            )
+            return render_template('403.html'), 403
+
+        dept_id   = request.form.get('dept_id')
         dept_name = request.form.get('dept_name')
-        
+
         if not dept_id or not dept_name:
             flash("Department ID and Name are required.", "error")
+            conn.close()
             return redirect(url_for('department_management'))
-        
+
         try:
-            conn.execute("""
-                INSERT INTO departments (dept_id, dept_name)
-                VALUES (?, ?)
-            """, (dept_id, dept_name))
+            conn.execute(
+                "INSERT INTO departments (dept_id, dept_name) VALUES (?, ?)",
+                (dept_id, dept_name)
+            )
             conn.commit()
             flash("Department created successfully.", "success")
         except sqlite3.IntegrityError:
             flash("Department ID already exists. Please use a unique ID.", "error")
         except Exception as e:
-            flash(f"Error creating department: {e}", "error")
+            logger.error("[department_management create] %s", e, exc_info=True)
+            flash("An error occurred while creating the department. Please try again.", "error")
+
+        conn.close()
         return redirect(url_for('department_management'))
-        
-    departments = conn.execute("SELECT id, dept_id, dept_name, created_at FROM departments ORDER BY dept_name ASC").fetchall()
+
+    departments = conn.execute(
+        "SELECT id, dept_id, dept_name, created_at FROM departments ORDER BY dept_name ASC"
+    ).fetchall()
     conn.close()
-    return render_template('department_management.html', departments=departments)
+    return render_template('department_management.html', departments=departments, can_manage=can_manage)
 
 @app.route('/department/edit', methods=['POST'])
 @login_required
 def edit_department():
+    if not is_admin():
+        logger.warning(
+            "[RBAC] User '%s' (role=%s) attempted POST on /department/edit.",
+            session.get('user'), session.get('role')
+        )
+        return render_template('403.html'), 403
+
     conn = get_db_connection()
     dept_id = request.form.get('dept_id')
     dept_id_new = request.form.get('dept_id_new')
@@ -639,7 +1020,8 @@ def edit_department():
     except sqlite3.IntegrityError:
         flash("Department ID already exists. Please use a unique ID.", "error")
     except Exception as e:
-        flash(f"Error updating department: {e}", "error")
+        logger.error("[edit_department] %s", e, exc_info=True)
+        flash("An error occurred while updating the department. Please try again.", "error")
     
     conn.close()
     return redirect(url_for('department_management'))
@@ -647,13 +1029,21 @@ def edit_department():
 @app.route('/department/delete/<int:dept_id>', methods=['POST'])
 @login_required
 def delete_department(dept_id):
+    if not is_admin():
+        logger.warning(
+            "[RBAC] User '%s' (role=%s) attempted POST on /department/delete.",
+            session.get('user'), session.get('role')
+        )
+        return render_template('403.html'), 403
+
     conn = get_db_connection()
     try:
         conn.execute("DELETE FROM departments WHERE id = ?", (dept_id,))
         conn.commit()
         flash("Department deleted successfully.", "success")
     except Exception as e:
-        flash(f"Error deleting department: {e}", "error")
+        logger.error("[delete_department] %s", e, exc_info=True)
+        flash("An error occurred while deleting the department. Please try again.", "error")
     
     conn.close()
     return redirect(url_for('department_management'))
@@ -661,6 +1051,14 @@ def delete_department(dept_id):
 @app.route('/item-entry')
 @login_required
 def item_entry():
+    # Viewer cannot access item entry
+    if not is_write_allowed():
+        logger.warning(
+            "[RBAC] User '%s' (role=%s) attempted access to /item-entry.",
+            session.get('user'), session.get('role')
+        )
+        return render_template('403.html'), 403
+    
     conn = get_db_connection()
     suppliers = conn.execute("SELECT * FROM suppliers").fetchall()
     conn.close()
@@ -669,21 +1067,35 @@ def item_entry():
 @app.route('/api/extract', methods=['POST'])
 @login_required
 def api_extract_data():
+    # Viewer cannot extract invoices
+    if not is_write_allowed():
+        logger.warning(
+            "[RBAC] User '%s' (role=%s) attempted POST on /api/extract.",
+            session.get('user'), session.get('role')
+        )
+        return {"error": "Access denied"}, 403
+    
     if 'file' not in request.files:
         return {"error": "Missing upload file payload"}, 400
 
     file = request.files['file']
-    file_path = os.path.join(app.config['UPLOAD_FOLDER'], file.filename)
+    if not file or file.filename == '':
+        return {"error": "No file selected"}, 400
+
+    # Validate file extension — only PDF allowed for invoice extraction
+    original_name = file.filename or ''
+    ext = os.path.splitext(original_name)[1].lower()
+    if ext not in ('.pdf',):
+        return {"error": "Only PDF files are accepted for invoice extraction."}, 400
+
+    # Use a safe server-generated filename to prevent path traversal
+    safe_name = f"invoice_upload_{secrets.token_hex(8)}.pdf"
+    file_path = os.path.join(app.config['UPLOAD_FOLDER'], safe_name)
     file.save(file_path)
 
     try:
         # AI Extraction
         extracted = ai.extract_invoice_data(file_path)
-
-        # Print Gemini Output (Temporary Debug)
-        print("========== GEMINI OUTPUT ==========")
-        print(extracted.model_dump())
-        print("===================================")
 
         result = extracted.model_dump()
 
@@ -709,17 +1121,25 @@ def api_extract_data():
         return result
 
     except Exception as e:
-        return {"error": str(e)}, 500
+        logger.error(f"[api_extract_data] Error: {e}", exc_info=True)
+        return {"error": "Invoice extraction failed. Please try again or enter details manually."}, 500
 
     finally:
         if os.path.exists(file_path):
-            os.remove(file_path) 
+            os.remove(file_path)
 
 @app.route('/api/save', methods=['POST'])
 
 @login_required
 
 def api_save_invoice():
+    # Viewer cannot save invoices
+    if not is_write_allowed():
+        logger.warning(
+            "[RBAC] User '%s' (role=%s) attempted POST on /api/save.",
+            session.get('user'), session.get('role')
+        )
+        return {"error": "Access denied"}, 403
 
 
 
@@ -887,7 +1307,7 @@ def api_save_invoice():
 
 
 
-            grn_no = f"GRN-{invoice_num}"
+            grn_no = f"GRN-{invoice_num}-{secrets.token_hex(4).upper()}"
 
 
 
@@ -1396,16 +1816,24 @@ def api_save_invoice():
 
         import traceback
 
-        traceback.print_exc()
+        logger.error("[api_save_invoice] Unhandled error: %s", traceback.format_exc())
 
         return {
 
-            "error": str(e)
+            "error": "An internal error occurred while saving the GRN. Please try again."
 
         }, 500
 @app.route('/item-issue', methods=['GET', 'POST'])
 @login_required
 def item_issue():
+    # Viewer cannot access item issue
+    if not is_write_allowed():
+        logger.warning(
+            "[RBAC] User '%s' (role=%s) attempted access to /item-issue.",
+            session.get('user'), session.get('role')
+        )
+        return render_template('403.html'), 403
+    
     if request.method == 'POST':
         slip_no = request.form.get('issue_slip_no')
         issue_date = request.form.get('issue_date')
@@ -1453,7 +1881,8 @@ def item_issue():
         except sqlite3.IntegrityError:
             flash("Issue Slip Number must be unique.", "error")
         except Exception as e:
-            flash(f"Error executing transaction: {e}", "error")
+            logger.error("[item_issue] Error: %s", e, exc_info=True)
+            flash("An error occurred while processing the dispatch. Please try again.", "error")
         return redirect(url_for('item_issue'))
         
     with get_db_connection() as conn:
@@ -1565,6 +1994,14 @@ def api_issue_items(issue_id):
 @app.route('/inventory-return', methods=['GET', 'POST'])
 @login_required
 def inventory_return():
+    # Viewer cannot access inventory return
+    if not is_write_allowed():
+        logger.warning(
+            "[RBAC] User '%s' (role=%s) attempted access to /inventory-return.",
+            session.get('user'), session.get('role')
+        )
+        return render_template('403.html'), 403
+    
     if request.method == 'POST':
         return_id   = request.form.get('return_id')
         return_date = request.form.get('return_date')
@@ -1667,7 +2104,8 @@ def inventory_return():
         except ValueError as ve:
             flash(str(ve), "error")
         except Exception as e:
-            flash(f"Error handling entry transaction: {e}", "error")
+            logger.error("[inventory_return] Error: %s", e, exc_info=True)
+            flash("An error occurred while processing the return. Please try again.", "error")
 
         return redirect(url_for('inventory_return'))
 
@@ -1720,22 +2158,20 @@ def inventory_status():
     finally:
         conn.close()
 
-    return render_template('inventory_status.html', product=product, ledger=ledger, query=search_query, products=products)
+    can_write = is_write_allowed()
+    return render_template('inventory_status.html', product=product, ledger=ledger, query=search_query, products=products, can_write=can_write)
 
 
 @app.route('/users', methods=['GET', 'POST'])
 @login_required
 def user_management():
-    """User management — admin only."""
-    conn = get_db_connection()
-    current_role = conn.execute(
-        "SELECT role FROM users WHERE username = ?", (session.get('user'),)
-    ).fetchone()
-    conn.close()
-
-    if not current_role or current_role['role'] != 'admin':
-        flash('Access denied. Admin role required.', 'error')
-        return redirect(url_for('dashboard'))
+    """User management — admin only. Staff/viewer receive HTTP 403."""
+    if not is_admin():
+        logger.warning(
+            "[RBAC] User '%s' (role=%s) attempted to access /users.",
+            session.get('user'), session.get('role')
+        )
+        return render_template('403.html'), 403
 
     if request.method == 'POST':
         action = request.form.get('action')
@@ -1746,19 +2182,38 @@ def user_management():
             password  = request.form.get('password', '').strip()
             full_name = request.form.get('full_name', '').strip()
             role      = request.form.get('role', 'staff')
+            email     = request.form.get('email', '').strip().lower() or None
+
             if not username or not password:
                 flash('Username and password are required.', 'error')
                 conn.close()
                 return redirect(url_for('user_management'))
+
+            if len(password) < 8:
+                flash('Password must be at least 8 characters long.', 'error')
+                conn.close()
+                return redirect(url_for('user_management'))
+
+            # Validate email format when provided
+            _email_re = re.compile(r'^[^@\s]+@[^@\s]+\.[^@\s]+$')
+            if email and not _email_re.match(email):
+                flash('Please enter a valid email address.', 'error')
+                conn.close()
+                return redirect(url_for('user_management'))
+
             try:
                 conn.execute(
-                    "INSERT INTO users (username, password_hash, full_name, role) VALUES (?,?,?,?)",
-                    (username, password, full_name, role)
+                    "INSERT INTO users (username, password_hash, full_name, role, email) VALUES (?,?,?,?,?)",
+                    (username, generate_password_hash(password), full_name, role, email)
                 )
                 conn.commit()
                 flash(f"User '{username}' created successfully.", 'success')
-            except Exception:
-                flash('Username already exists.', 'error')
+            except sqlite3.IntegrityError as exc:
+                err = str(exc).lower()
+                if 'email' in err:
+                    flash('That email address is already registered to another account.', 'error')
+                else:
+                    flash('Username already exists.', 'error')
 
         elif action == 'toggle':
             uid = request.form.get('user_id')
@@ -1772,13 +2227,34 @@ def user_management():
         elif action == 'reset_password':
             uid      = request.form.get('user_id')
             new_pass = request.form.get('new_password', '').strip()
-            if new_pass:
+            if not new_pass:
+                flash('New password cannot be blank.', 'error')
+            elif len(new_pass) < 8:
+                flash('Password must be at least 8 characters long.', 'error')
+            else:
                 conn.execute(
                     "UPDATE users SET password_hash=? WHERE id=?",
-                    (new_pass, uid)
+                    (generate_password_hash(new_pass), uid)
                 )
                 conn.commit()
-                flash('Password updated.', 'success')
+                flash('Password updated successfully.', 'success')
+
+        elif action == 'edit_email':
+            uid   = request.form.get('user_id')
+            email = request.form.get('email', '').strip().lower() or None
+            _email_re = re.compile(r'^[^@\s]+@[^@\s]+\.[^@\s]+$')
+            if email and not _email_re.match(email):
+                flash('Please enter a valid email address.', 'error')
+            else:
+                try:
+                    conn.execute(
+                        "UPDATE users SET email = ? WHERE id = ?",
+                        (email, uid)
+                    )
+                    conn.commit()
+                    flash('Email address updated.', 'success')
+                except sqlite3.IntegrityError:
+                    flash('That email address is already registered to another account.', 'error')
 
         elif action == 'delete':
             uid = request.form.get('user_id')
@@ -1799,7 +2275,7 @@ def user_management():
     conn = get_db_connection()
     users = conn.execute("SELECT * FROM users ORDER BY role DESC, username ASC").fetchall()
     conn.close()
-    return render_template('user_management.html', users=users)
+    return render_template('user_management.html', users=users, can_manage=True)
 
 
 @app.route('/api/barcode-lookup')
@@ -1934,6 +2410,14 @@ def api_product_properties(product_id):
 @app.route('/api/save-inspection', methods=['POST'])
 @login_required
 def save_inspection():
+    # Viewer cannot save inspection
+    if not is_write_allowed():
+        logger.warning(
+            "[RBAC] User '%s' (role=%s) attempted POST on /api/save-inspection.",
+            session.get('user'), session.get('role')
+        )
+        return jsonify({"error": "Access denied"}), 403
+    
 
     data = request.json
 
@@ -1974,7 +2458,6 @@ def save_inspection():
                 except Exception:
                     prop_id = None
 
-                print('[DEBUG] inserting inspection_details with prop_id=', prop_id, 'inspection_id=', inspection_id, 'detail=', detail)
                 cursor.execute("""
                 INSERT INTO inspection_details
                 (
@@ -2008,10 +2491,10 @@ def save_inspection():
         })
 
     except Exception as e:
-
+        logger.error("[save_inspection] Error: %s", e, exc_info=True)
         return jsonify({
             "status": "error",
-            "message": str(e)
+            "message": "Inspection save failed. Please try again."
         }), 500
 
 @app.route('/qc-sheet')
@@ -2083,6 +2566,14 @@ def qc_sheet():
 @app.route('/api/export-qc-excel', methods=['POST'])
 @login_required
 def api_export_qc_excel():
+    # Viewer cannot export QC excel
+    if not is_write_allowed():
+        logger.warning(
+            "[RBAC] User '%s' (role=%s) attempted POST on /api/export-qc-excel.",
+            session.get('user'), session.get('role')
+        )
+        return jsonify({"error": "Access denied"}), 403
+    
     import openpyxl
     from openpyxl.styles import Font, PatternFill, Alignment, Border, Side
     from openpyxl.utils import get_column_letter
@@ -2129,7 +2620,7 @@ def api_export_qc_excel():
             """, (product_id,)).fetchall()
             properties = [dict(r) for r in rows]
     except Exception as e:
-        print("[ERROR] Failed to query product specifications:", e)
+        logger.error("[api_export_qc_excel] Failed to query product specifications: %s", e)
     finally:
         conn.close()
 
@@ -2413,8 +2904,15 @@ def api_export_qc_excel():
 @app.route('/api/save-qc', methods=['POST'])
 @login_required
 def api_save_qc():
+    # Viewer cannot save QC
+    if not is_write_allowed():
+        logger.warning(
+            "[RBAC] User '%s' (role=%s) attempted POST on /api/save-qc.",
+            session.get('user'), session.get('role')
+        )
+        return jsonify({"error": "Access denied"}), 403
+    
     data = request.json or {}
-    print('\n[DEBUG] /api/save-qc payload:', data)
     item_name = (data.get('item_name') or '').strip()
     product_id = data.get('product_id')
     invoice_number = (data.get('invoice_number') or '').strip()
@@ -2466,7 +2964,6 @@ def api_save_qc():
                     except Exception:
                         prop_id = None
 
-                print('[DEBUG] inserting inspection_details with prop_id=', prop_id, 'inspection_id=', inspection_id, 'detail=', detail)
                 cursor.execute("""
                     INSERT INTO inspection_details (
                         inspection_id,
@@ -2530,13 +3027,21 @@ def api_save_qc():
             "product_id": product_id,
         })
     except Exception as e:
-        traceback.print_exc()
-        return jsonify({"status": "error", "message": str(e)}), 500
+        logger.error("[api_save_qc] Error: %s", traceback.format_exc())
+        return jsonify({"status": "error", "message": "QC save failed. Please try again."}), 500
 
 
 @app.route('/api/apply-qc-map', methods=['POST'])
 @login_required
 def api_apply_qc_map():
+    # Viewer cannot apply QC map
+    if not is_write_allowed():
+        logger.warning(
+            "[RBAC] User '%s' (role=%s) attempted POST on /api/apply-qc-map.",
+            session.get('user'), session.get('role')
+        )
+        return jsonify({"error": "Access denied"}), 403
+    
     data = request.json or {}
     grn_id = data.get('grn_id')
     qc_map = data.get('qc_map') or {}
@@ -2588,7 +3093,8 @@ def api_apply_qc_map():
             conn.commit()
         return jsonify({"status":"success","applied": applied})
     except Exception as e:
-        return jsonify({"status":"error","message":str(e)}), 500
+        logger.error("[api_apply_qc_map] Error: %s", e, exc_info=True)
+        return jsonify({"status":"error","message":"An error occurred while applying QC results. Please try again."}), 500
 
 
 @app.route('/api/qc-sheet/<int:product_id>')
@@ -2617,6 +3123,7 @@ def qc_data(product_id):
 # ===========================
 
 @app.route('/api/search_barcode', methods=['POST'])
+@login_required
 def api_search_barcode():
     data = request.get_json() or {}
     barcode_no = data.get('barcode_no', '').strip()
@@ -2639,6 +3146,7 @@ def api_search_barcode():
         conn.close()
 
 @app.route('/api/ai_scan_barcode', methods=['POST'])
+@login_required
 def api_ai_scan_barcode():
     if 'image' not in request.files:
         return jsonify({'success': False, 'message': 'No image file uploaded.'}), 400
@@ -2647,23 +3155,29 @@ def api_ai_scan_barcode():
     if image_file.filename == '':
         return jsonify({'success': False, 'message': 'No selected image file.'}), 400
 
-    # Save to a temporary location
-    temp_path = os.path.join(app.root_path, 'static', 'temp_barcode.jpg')
-    image_file.save(temp_path)
+    # Validate extension — only common image formats accepted
+    allowed_image_exts = {'.jpg', '.jpeg', '.png', '.gif', '.webp', '.bmp'}
+    ext = os.path.splitext(image_file.filename)[1].lower()
+    if ext not in allowed_image_exts:
+        return jsonify({'success': False, 'message': 'Invalid image format. Upload JPG, PNG, or WEBP.'}), 400
+
+    # Use a safe server-generated temp filename
+    safe_temp = os.path.join(app.root_path, 'static', f'tmp_barcode_{secrets.token_hex(8)}{ext}')
+    image_file.save(safe_temp)
 
     extracted_code = ""
     try:
         # Pass the image to the AI logic in gemini_extractor
-        result_schema = ai.extract_barcode_data(temp_path)
+        result_schema = ai.extract_barcode_data(safe_temp)
         extracted_code = result_schema.barcode_text.strip()
     except Exception as e:
-        if os.path.exists(temp_path):
-            os.remove(temp_path)
-        return jsonify({'success': False, 'message': f'AI extraction failed: {str(e)}'}), 500
+        if os.path.exists(safe_temp):
+            os.remove(safe_temp)
+        return jsonify({'success': False, 'message': 'AI extraction failed. Please try again.'}), 500
 
     # Clean up file
-    if os.path.exists(temp_path):
-        os.remove(temp_path)
+    if os.path.exists(safe_temp):
+        os.remove(safe_temp)
 
     if not extracted_code:
         return jsonify({'success': False, 'message': 'AI could not find a barcode in the image.'}), 404
@@ -2696,6 +3210,7 @@ def api_ai_scan_barcode():
 # ===========================
 
 @app.route('/search_barcode', methods=['GET', 'POST'])
+@login_required
 def search_barcode():
     result = None
 
@@ -2721,12 +3236,21 @@ def search_barcode():
     )
 
 @app.route('/scanner_demo')
+@login_required
 def scanner_demo():
     return render_template("scanner_demo.html")
 
 @app.route('/confirm-grn/<int:grn_id>', methods=['POST'])
 @login_required
 def confirm_grn(grn_id):
+    # Viewer cannot confirm GRN
+    if not is_write_allowed():
+        logger.warning(
+            "[RBAC] User '%s' (role=%s) attempted POST on /confirm-grn.",
+            session.get('user'), session.get('role')
+        )
+        return jsonify({"status": "error", "message": "Access denied"}), 403
+    
     from datetime import datetime
     try:
         conn = get_db_connection()
@@ -2742,6 +3266,7 @@ def confirm_grn(grn_id):
             cursor.execute("ALTER TABLE grn ADD COLUMN posted_date TEXT")
 
         # Begin transaction explicitly
+        conn.isolation_level = None   # autocommit off — we manage transaction manually
         cursor.execute('BEGIN')
 
         # Ensure grn_items.qc_status exists
@@ -2834,7 +3359,7 @@ def confirm_grn(grn_id):
             conn.rollback()
         except Exception:
             pass
-        return jsonify({"status": "error", "message": str(e)}), 500
+        return jsonify({"status": "error", "message": "An error occurred while posting the GRN. Please try again."}), 500
     finally:
         try:
             conn.close()
@@ -2847,99 +3372,121 @@ def confirm_grn(grn_id):
 
 @app.route('/forgot-password', methods=['GET', 'POST'])
 def forgot_password():
+    """
+    Password recovery — step 1.
+    Accepts an email address, generates a one-time token, stores it with a
+    15-minute expiry, and dispatches the reset link.  The response is always
+    generic so we never leak whether the email exists in the database.
+    """
     if request.method == 'POST':
-        # CHANGED: Read 'email' from the form submission instead of 'username'
-        email = request.form.get('email', '').strip()
-        
-        conn = get_db_connection()
-        # CHANGED: Query the database by 'email' to find the matching user profile
-        user = conn.execute("SELECT * FROM users WHERE email = ?", (email,)).fetchone()
-        
-        # Verify user exists AND check if they have a registered email
-        if user and user['email']:
-            username = user['username'] # Retrieve their username from the database row
-            
-            # Create a unique 32-character security token
-            token = secrets.token_urlsafe(32)
-            # Token expires 15 minutes from now (900 seconds)
-            expiry = time.time() + 900 
-            
-            conn.execute(
-                "UPDATE users SET reset_token = ?, token_expiry = ? WHERE id = ?",
-                (token, expiry, user['id'])
-            )
-            conn.commit()
-            conn.close()
-            
-            # Formulate outbound reset link payload
-            reset_url = url_for('reset_password', token=token, _external=True)
-            print("\n" + "="*60)
-            print(f" PASSWORD RESET URL GENERATED FOR USER '{username}' ({email}):")
-            print(f" {reset_url}")
-            print("="*60 + "\n")
-            
-            # Trigger Live Transactive Email
-            email_sent = send_recovery_email(user['email'], username, reset_url)
-            
-            if email_sent:
-                flash(f"A password reset link has been safely dispatched to {user['email']}.", "success")
-            else:
-                flash("Internal transactional mail connection timeout. Token printed to local console system logs.", "success")
-        else:
-            if conn:
-                conn.close()
-            # Security best practice: keep the alert text generic so attackers don't know which emails exist
-            flash("If the account exists and has a configured email profile, a link was generated. Check system console logs.", "success")
-            
-        return redirect(url_for('login'))
-        
-    return render_template('forgot_password.html')
+        raw_email = request.form.get('email', '').strip().lower()
 
+        # Basic format validation (server-side guard)
+        email_pattern = re.compile(r'^[^@\s]+@[^@\s]+\.[^@\s]+$')
+        if not raw_email or not email_pattern.match(raw_email):
+            # Still show the generic message — don't help enumerate accounts
+            flash(
+                "If an account exists for this email, a password reset link has been sent.",
+                "info"
+            )
+            return redirect(url_for('forgot_password'))
+
+        try:
+            with get_db_connection() as conn:
+                user = conn.execute(
+                    "SELECT id, username FROM users WHERE LOWER(email) = ?",
+                    (raw_email,)
+                ).fetchone()
+
+                if user:
+                    token      = secrets.token_urlsafe(32)
+                    expiry     = time.time() + 15 * 60  # 15 minutes from now
+
+                    conn.execute(
+                        "UPDATE users SET reset_token = ?, token_expiry = ? WHERE id = ?",
+                        (token, expiry, user['id'])
+                    )
+                    conn.commit()
+
+                    reset_link = url_for('reset_password', token=token, _external=True)
+                    sent = send_recovery_email(raw_email, user['username'], reset_link)
+                    if not sent:
+                        logger.warning(
+                            "[forgot_password] Email delivery failed for user id=%s — "
+                            "token was stored but email was not sent.", user['id']
+                        )
+                # Always show the same message regardless of whether the email was found
+                flash(
+                    "If an account exists for this email, a password reset link has been sent.",
+                    "info"
+                )
+        except Exception:
+            logger.error("[forgot_password] Unhandled error", exc_info=True)
+            flash(
+                "If an account exists for this email, a password reset link has been sent.",
+                "info"
+            )
+
+        return redirect(url_for('forgot_password'))
+
+    return render_template("forgot_password.html")
 
 @app.route('/reset-password', methods=['GET', 'POST'])
 def reset_password():
-    token = request.args.get('token')
+    """
+    Password recovery — step 2.
+    Validates the one-time token, enforces password rules, hashes the new
+    password, and clears the token so the link cannot be reused.
+    """
+    token = request.args.get('token', '').strip()
     if not token:
-        flash("Invalid request token syntax.", "error")
+        flash("Invalid or missing reset token.", "error")
         return redirect(url_for('login'))
-        
-    conn = get_db_connection()
-    user = conn.execute(
-        "SELECT * FROM users WHERE reset_token = ? AND token_expiry > ?", 
-        (token, time.time())
-    ).fetchone()
-    
-    if not user:
-        conn.close()
-        flash("The link has either expired or is invalid.", "error")
-        return redirect(url_for('login'))
-        
-    if request.method == 'POST':
-        new_password = request.form.get('password', '').strip()
-        confirm_password = request.form.get('confirm_password', '').strip()
-        
-        if not new_password:
-            flash("Password cannot be blank.", "error")
-            conn.close()
-            return render_template('reset_password.html', token=token)
-            
-        if new_password != confirm_password:
-            flash("Passwords do not match.", "error")
-            conn.close()
-            return render_template('reset_password.html', token=token)
-            
-        # Match alignment pattern with user registration logic (plain text)
-        conn.execute(
-            "UPDATE users SET password_hash = ?, reset_token = NULL, token_expiry = NULL WHERE id = ?",
-            (new_password, user['id'])
-        )
-        conn.commit()
-        conn.close()
-        
-        flash("Your password has been successfully updated. Please log in.", "success")
-        return redirect(url_for('login'))
-        
-    conn.close()
+
+    try:
+        with get_db_connection() as conn:
+            user = conn.execute(
+                "SELECT id, username FROM users WHERE reset_token = ? AND token_expiry > ?",
+                (token, time.time())
+            ).fetchone()
+
+            if not user:
+                flash("This password reset link has expired or has already been used.", "error")
+                return redirect(url_for('login'))
+
+            if request.method == 'POST':
+                new_password     = request.form.get('password', '').strip()
+                confirm_password = request.form.get('confirm_password', '').strip()
+
+                # --- Validation ---
+                if len(new_password) < 8:
+                    flash("Password must be at least 8 characters long.", "error")
+                    return render_template('reset_password.html', token=token)
+
+                if new_password != confirm_password:
+                    flash("Passwords do not match. Please try again.", "error")
+                    return render_template('reset_password.html', token=token)
+
+                # --- Persist hashed password; invalidate token (one-time use) ---
+                conn.execute(
+                    """UPDATE users
+                       SET password_hash = ?,
+                           reset_token   = NULL,
+                           token_expiry  = NULL
+                       WHERE id = ?""",
+                    (generate_password_hash(new_password), user['id'])
+                )
+                conn.commit()
+
+                logger.info("[reset_password] Password updated for user id=%s", user['id'])
+                flash("Your password has been updated successfully. Please sign in.", "success")
+                return redirect(url_for('login'))
+
+    except Exception:
+        logger.error("[reset_password] Unhandled error", exc_info=True)
+        flash("An error occurred. Please request a new reset link.", "error")
+        return redirect(url_for('forgot_password'))
+
     return render_template('reset_password.html', token=token)
 
 
@@ -2950,32 +3497,29 @@ def reset_password():
 @app.route('/admin/users-email', methods=['GET', 'POST'])
 @login_required
 def manage_users_emails():
-    """Administrative access dashboard to attach emails and verification flags to user accounts."""
-    conn = get_db_connection()
-    current_role = conn.execute("SELECT role FROM users WHERE username = ?", (session.get('user'),)).fetchone()
-    
-    if not current_role or current_role['role'] != 'admin':
-        conn.close()
-        flash('Access denied. Admin role configuration validation failed.', 'error')
-        return redirect(url_for('dashboard'))
+    """Administrative email directory — admin only."""
+    if not is_admin():
+        return render_template('403.html'), 403
 
+    conn = get_db_connection()
     if request.method == 'POST':
-        user_id = request.form.get('user_id')
-        new_email = request.form.get('email', '').strip()
+        user_id     = request.form.get('user_id')
+        new_email   = request.form.get('email', '').strip()
         is_verified = request.form.get('verified') == '1'
-        
+
         conn.execute(
-            "UPDATE users SET email = ?, email_verified = ? WHERE id = ?", 
+            "UPDATE users SET email = ?, email_verified = ? WHERE id = ?",
             (new_email if new_email else None, 1 if is_verified else 0, user_id)
         )
         conn.commit()
-        flash("User profile email record updated successfully.", "success")
-        
-    all_users = conn.execute("SELECT id, username, role, is_active, email, email_verified FROM users ORDER BY username ASC").fetchall()
+        flash("User email updated successfully.", "success")
+
+    all_users = conn.execute(
+        "SELECT id, username, role, is_active, email, email_verified FROM users ORDER BY username ASC"
+    ).fetchall()
     conn.close()
-    
-    # CHANGED: Swapped 'user_email_management.html' to your actual file 'user_management.html'
-    return render_template('user_management.html', users=all_users)
+
+    return render_template('user_management.html', users=all_users, can_manage=True)
 
 
 # =====================================================
@@ -2983,6 +3527,15 @@ def manage_users_emails():
 # =====================================================
 
 mobile_sessions = {}
+_MOBILE_SESSION_TTL = 900  # 15 minutes
+
+def _cleanup_mobile_sessions():
+    """Remove expired mobile sessions to prevent unbounded memory growth."""
+    now = time.time()
+    expired = [sid for sid, s in list(mobile_sessions.items())
+               if now - s.get('created_at', now) > _MOBILE_SESSION_TTL]
+    for sid in expired:
+        mobile_sessions.pop(sid, None)
 
 def async_extract_task(file_path, session_id):
     mobile_sessions[session_id]["status"] = "processing"
@@ -3010,8 +3563,9 @@ def async_extract_task(file_path, session_id):
         mobile_sessions[session_id]["payload"] = result
         mobile_sessions[session_id]["status"] = "success"
     except Exception as e:
+        logger.error("[async_extract_task] session=%s error=%s", session_id, e, exc_info=True)
         mobile_sessions[session_id]["status"] = "error"
-        mobile_sessions[session_id]["error"] = str(e)
+        mobile_sessions[session_id]["error"] = "Extraction failed. Please try again or enter details manually."
     finally:
         if os.path.exists(file_path):
             try:
@@ -3020,14 +3574,17 @@ def async_extract_task(file_path, session_id):
                 pass
 
 @app.route('/api/mobile-session/create', methods=['POST'])
+@login_required
 def create_mobile_session():
     import uuid
     import socket
+    _cleanup_mobile_sessions()   # prune stale sessions first
     session_id = str(uuid.uuid4())
     mobile_sessions[session_id] = {
         "status": "pending",
         "payload": None,
-        "error": None
+        "error": None,
+        "created_at": time.time()
     }
     
     def get_local_ip():
@@ -3175,6 +3732,15 @@ def api_check_duplicate():
                 exists = True
                 detail = f"Username <strong>{row['username']}</strong> is already taken."
 
+        elif dtype == 'email':
+            row = conn.execute(
+                "SELECT username FROM users WHERE LOWER(email) = LOWER(?) LIMIT 1",
+                (value,)
+            ).fetchone()
+            if row:
+                exists = True
+                detail = f"Email address <strong>{value}</strong> is already registered to another account."
+
         elif dtype == 'invoice_number':
             row = conn.execute(
                 "SELECT invoice_number, invoice_date, vendor_name FROM invoices WHERE LOWER(invoice_number) = LOWER(?) LIMIT 1",
@@ -3244,6 +3810,7 @@ def api_check_stock():
 
 
 if __name__ == '__main__':
-    app.run(debug=True, port=5000, host='0.0.0.0')
+    # debug=False in production — set HOST/PORT via environment if needed
+    app.run(debug=False, port=int(os.getenv('PORT', 5000)), host='0.0.0.0')
 
 

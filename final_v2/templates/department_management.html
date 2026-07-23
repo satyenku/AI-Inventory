@@ -193,6 +193,17 @@
       .modal-close:hover {
         color: #475569;
       }
+      .search-box {
+        margin-bottom: 15px;
+      }
+      .search-box input {
+        width: 100%;
+        max-width: 400px;
+        padding: 10px;
+        font-size: 14px;
+        border: 1px solid #cbd5e1;
+        border-radius: 4px;
+      }
     </style>
   </head>
   <body>
@@ -221,34 +232,43 @@
             {% endfor %}
           {% endif %}
         {% endwith %}
+
+        {% if not can_manage %}
+        <div style="display:flex;align-items:center;gap:10px;background:#fef9c3;border:1px solid #fde047;border-radius:6px;padding:12px 16px;margin-bottom:20px;">
+          <span style="font-size:20px;">🔒</span>
+          <div>
+            <strong style="font-size:13px;color:#78350f;">View-Only Access</strong>
+            <p style="font-size:12px;color:#92400e;margin:2px 0 0;">
+              Your account role (<strong>{{ session.get('role','') | capitalize }}</strong>) does not have permission to add, edit, or delete departments.
+              Contact an administrator if you need access.
+            </p>
+          </div>
+        </div>
+        {% endif %}
+
+        {% if can_manage %}
         <form action="{{ url_for('department_management') }}" method="POST" id="deptForm">
           <div class="form-grid">
             <div class="form-group">
               <label>Department ID (Code)</label>
-              <input
-                type="text"
-                name="dept_id"
-                placeholder="e.g. D001, HR, OPS"
-                required
-              />
+              <input type="text" name="dept_id" placeholder="e.g. D001, HR, OPS" required />
             </div>
             <div class="form-group">
               <label>Department Name</label>
-              <input
-                type="text"
-                name="dept_name"
-                placeholder="e.g. Human Resources, Operations"
-                required
-              />
+              <input type="text" name="dept_name" placeholder="e.g. Human Resources, Operations" required />
             </div>
           </div>
           <button type="submit">Create Department</button>
         </form>
+        {% endif %}
       </div>
 
       <div class="container">
         <h2>Active Departments</h2>
-        <table>
+        <div class="search-box">
+          <input type="text" id="searchInput" placeholder="🔍 Search by Department ID or Department Name..." onkeyup="filterTable()" />
+        </div>
+        <table id="departmentTable">
           <thead>
             <tr>
               <th>Department ID</th>
@@ -265,10 +285,14 @@
               <td>{{ dept.created_at or 'N/A' }}</td>
               <td>
                 <div class="action-buttons">
-                  <button class="btn-edit" onclick="openEditModal({{ dept.id }}, '{{ dept.dept_id }}', '{{ dept.dept_name }}')">Edit</button>
+                  {% if can_manage %}
+                  <button class="btn-edit" onclick='openEditModal({{ dept.id }}, {{ dept.dept_id | tojson }}, {{ dept.dept_name | tojson }})'>Edit</button>
                   <form action="{{ url_for('delete_department', dept_id=dept.id) }}" method="POST" style="display: inline;" onsubmit="return confirm('Are you sure you want to delete this department?');">
                     <button type="submit" class="btn-delete">Delete</button>
                   </form>
+                  {% else %}
+                  <span style="font-size:12px;color:#94a3b8;font-style:italic;">View only</span>
+                  {% endif %}
                 </div>
               </td>
             </tr>
@@ -284,7 +308,8 @@
       </div>
     </div>
 
-    <!-- Edit Modal -->
+    {% if can_manage %}
+    <!-- Edit Modal — only rendered for admin users -->
     <div id="editModal" class="modal">
       <div class="modal-content">
         <span class="modal-close" onclick="closeEditModal()">&times;</span>
@@ -293,31 +318,21 @@
           <input type="hidden" name="dept_id" id="editDeptId" />
           <div class="form-group" style="margin-bottom: 15px;">
             <label>Department ID (Code)</label>
-            <input
-              type="text"
-              name="dept_id_new"
-              id="editDeptCode"
-              placeholder="e.g. D001, HR, OPS"
-              required
-            />
+            <input type="text" name="dept_id_new" id="editDeptCode" placeholder="e.g. D001, HR, OPS" required />
           </div>
           <div class="form-group" style="margin-bottom: 15px;">
             <label>Department Name</label>
-            <input
-              type="text"
-              name="dept_name"
-              id="editDeptName"
-              placeholder="e.g. Human Resources, Operations"
-              required
-            />
+            <input type="text" name="dept_name" id="editDeptName" placeholder="e.g. Human Resources, Operations" required />
           </div>
           <button type="submit" style="width: 100%;">Update Department</button>
           <button type="button" style="width: 100%; background: #94a3b8; margin-top: 8px;" onclick="closeEditModal()">Cancel</button>
         </form>
       </div>
     </div>
+    {% endif %}
 
     <script>
+      {% if can_manage %}
       function showDupModal(title, detail) {
         document.getElementById('dDupTitle').textContent = title;
         document.getElementById('dDupDetail').innerHTML  = detail;
@@ -342,7 +357,7 @@
       });
 
       function openEditModal(id, deptId, deptName) {
-        document.getElementById('editDeptId').value = id;
+        document.getElementById('editDeptId').value   = id;
         document.getElementById('editDeptCode').value = deptId;
         document.getElementById('editDeptName').value = deptName;
         document.getElementById('editModal').classList.add('active');
@@ -352,18 +367,40 @@
         document.getElementById('editModal').classList.remove('active');
       }
 
-      window.onclick = function(event) {
-        const modal = document.getElementById('editModal');
-        if (event.target == modal) {
-          modal.classList.remove('active');
-        }
-        const dup = document.getElementById('dDupOverlay');
-        if (event.target == dup) {
-          dup.style.display = 'none';
+      function filterTable() {
+        var input = document.getElementById('searchInput');
+        var filter = input.value.toUpperCase();
+        var table = document.getElementById('departmentTable');
+        var tr = table.getElementsByTagName('tr');
+        
+        for (var i = 1; i < tr.length; i++) {
+          var td = tr[i].getElementsByTagName('td');
+          var found = false;
+          
+          for (var j = 0; j < td.length - 1; j++) { // Exclude Actions column
+            if (td[j]) {
+              var txtValue = td[j].textContent || td[j].innerText;
+              if (txtValue.toUpperCase().indexOf(filter) > -1) {
+                found = true;
+                break;
+              }
+            }
+          }
+          
+          tr[i].style.display = found ? '' : 'none';
         }
       }
+
+      window.onclick = function(event) {
+        const modal = document.getElementById('editModal');
+        if (event.target == modal) { modal.classList.remove('active'); }
+        const dup = document.getElementById('dDupOverlay');
+        if (dup && event.target == dup) { dup.style.display = 'none'; }
+      }
+      {% endif %}
     </script>
 
+    {% if can_manage %}
     <!-- Duplicate validation modal -->
     <div id="dDupOverlay" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,0.45);z-index:9999;justify-content:center;align-items:center;">
       <div style="background:#fff;border-radius:8px;padding:28px 28px 22px;width:90%;max-width:440px;box-shadow:0 8px 32px rgba(0,0,0,0.2);">
@@ -377,5 +414,6 @@
         </div>
       </div>
     </div>
+    {% endif %}
   </body>
 </html>

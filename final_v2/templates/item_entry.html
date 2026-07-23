@@ -148,55 +148,64 @@
     </div>
     <div class="main">
       <div class="container">
-        <h2>Goods Receipt Note (GRN) via AI Invoice Extractor</h2>
-        <div
-          style="
-            margin-bottom: 25px;
-            background: #f8fafc;
-            padding: 15px;
-            border-radius: 6px;
-            border: 1px dashed #cbd5e1;
-          "
-        >
-          <label style="font-weight: bold; display: block; margin-bottom: 8px">
-    Upload Scanned Purchase Invoice (PDF)
-</label>
-
-<input type="file" id="invoiceFile" accept="application/pdf" />
-
-<div style="display: flex; gap: 10px; flex-wrap: wrap;">
-  <button
-      class="btn btn-add"
-      style="margin-top:10px"
-      onclick="uploadAndExtract()">
-      Process Invoice
-  </button>
-
-  <button
-      class="btn btn-add"
-      style="margin-top:10px; background: #6b21a8;"
-      onclick="startPhoneUpload()">
-      Scan with Phone
-  </button>
-</div>
-
-<span id="loadingMsg" class="loading">
-    Parsing document, extracting values...
-</span>
-
-<hr style="margin:20px 0">
-
-<div style="text-align:right">
-    <button
-        type="button"
-        class="btn btn-add"
-        onclick="addManualItem()">
-        + Add Manual Item
-    </button>
-</div>
-
+        <h2>📋 Goods Receipt Note (GRN) Entry</h2>
+        <p style="color: #64748b; font-size: 14px; margin: 10px 0 25px 0;">Choose how you want to create your GRN: upload invoice via AI extraction, scan with phone, or enter manually.</p>
+        
+        <!-- Step 1: Choose Entry Method -->
+        <div style="background: #f8fafc; padding: 20px; border-radius: 8px; border: 2px solid #cbd5e1; margin-bottom: 25px;">
+          <h3 style="margin: 0 0 15px 0; color: #1e293b; font-size: 16px;">
+            <span style="display: inline-block; width: 28px; height: 28px; background: #2563eb; color: white; border-radius: 50%; text-align: center; line-height: 28px; margin-right: 8px; font-size: 14px; font-weight: bold;">1</span>
+            Choose Entry Method
+          </h3>
+          
+          <div style="display: grid; grid-template-columns: repeat(3, 1fr); gap: 15px; margin-bottom: 15px;">
+            <!-- Option 1: AI Invoice -->
+            <div style="background: white; padding: 15px; border-radius: 8px; border: 2px solid #e2e8f0; cursor: pointer; transition: all 0.2s;" onmouseover="this.style.borderColor='#2563eb'; this.style.boxShadow='0 4px 12px rgba(37,99,235,0.15)'" onmouseout="this.style.borderColor='#e2e8f0'; this.style.boxShadow='none'">
+              <div style="text-align: center;">
+                <div style="font-size: 36px; margin-bottom: 10px;">🤖</div>
+                <div style="font-weight: bold; color: #1e293b; margin-bottom: 8px;">AI Invoice Upload</div>
+                <label style="display: block; margin-bottom: 10px; color: #64748b; font-size: 13px;">Select PDF Invoice:</label>
+                <input type="file" id="invoiceFile" accept="application/pdf" style="font-size: 12px; padding: 6px; width: 100%;" />
+                <button class="btn btn-add" style="margin-top: 10px; width: 100%;" onclick="uploadAndExtract()">
+                  📤 Process Invoice
+                </button>
+                <span id="loadingMsg" class="loading">⏳ Processing...</span>
+              </div>
+            </div>
+            
+            <!-- Option 2: Phone Scan -->
+            <div style="background: white; padding: 15px; border-radius: 8px; border: 2px solid #e2e8f0; cursor: pointer; transition: all 0.2s;" onmouseover="this.style.borderColor='#6b21a8'; this.style.boxShadow='0 4px 12px rgba(107,33,168,0.15)'" onmouseout="this.style.borderColor='#e2e8f0'; this.style.boxShadow='none'">
+              <div style="text-align: center;">
+                <div style="font-size: 36px; margin-bottom: 10px;">📱</div>
+                <div style="font-weight: bold; color: #1e293b; margin-bottom: 8px;">Scan with Phone</div>
+                <div style="color: #64748b; font-size: 13px; margin-bottom: 25px; min-height: 34px;">Scan QR code with your phone to upload invoice</div>
+                <button class="btn btn-add" style="background: #6b21a8; width: 100%;" onclick="startPhoneUpload()">
+                  📸 Start Phone Scan
+                </button>
+              </div>
+            </div>
+            
+            <!-- Option 3: Manual Entry -->
+            <div style="background: white; padding: 15px; border-radius: 8px; border: 2px solid #e2e8f0; cursor: pointer; transition: all 0.2s;" onmouseover="this.style.borderColor='#16a34a'; this.style.boxShadow='0 4px 12px rgba(22,163,74,0.15)'" onmouseout="this.style.borderColor='#e2e8f0'; this.style.boxShadow='none'">
+              <div style="text-align: center;">
+                <div style="font-size: 36px; margin-bottom: 10px;">✍️</div>
+                <div style="font-weight: bold; color: #1e293b; margin-bottom: 8px;">Manual Entry</div>
+                <div style="color: #64748b; font-size: 13px; margin-bottom: 25px; min-height: 34px;">Enter invoice details and items manually</div>
+                <button class="btn btn-add" style="background: #16a34a; width: 100%;" onclick="startManualEntry()">
+                  ➕ Start Manual Entry
+                </button>
+              </div>
+            </div>
+          </div>
         </div>
-</div>
+
+        <!-- Step 2: Invoice Header Details -->
+        <div id="invoiceHeaderSection" style="display: none; background: white; padding: 20px; border-radius: 8px; border: 2px solid #cbd5e1; margin-bottom: 25px;">
+          <h3 style="margin: 0 0 15px 0; color: #1e293b; font-size: 16px;">
+            <span style="display: inline-block; width: 28px; height: 28px; background: #2563eb; color: white; border-radius: 50%; text-align: center; line-height: 28px; margin-right: 8px; font-size: 14px; font-weight: bold;">2</span>
+            Invoice Header Details
+          </h3>
+          
         <div class="form-row">
           <div>
             <label>Invoice Number</label>
@@ -229,8 +238,20 @@
           </div>
 
         </div>
-        <hr style="border: 0; border-top: 1px solid #cbd5e1; margin: 20px 0" />
-        <h2>Line Items Inventory Register</h2>
+        </div>
+        
+        <!-- Step 3: Line Items -->
+        <div id="lineItemsSection" style="display: none; background: white; padding: 20px; border-radius: 8px; border: 2px solid #cbd5e1; margin-bottom: 25px;">
+          <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 15px;">
+            <h3 style="margin: 0; color: #1e293b; font-size: 16px;">
+              <span style="display: inline-block; width: 28px; height: 28px; background: #2563eb; color: white; border-radius: 50%; text-align: center; line-height: 28px; margin-right: 8px; font-size: 14px; font-weight: bold;">3</span>
+              Line Items
+            </h3>
+            <button type="button" id="addManualItemBtn" class="btn btn-add" style="background: #16a34a; display: none;" onclick="addManualItem()">
+              ➕ Add Item Manually
+            </button>
+          </div>
+          
         <table id="itemTable">
           <thead>
             <tr>
@@ -243,14 +264,34 @@
           </thead>
 
            <tbody id="lineItemsBody">
+             <tr>
+               <td colspan="5" style="text-align: center; color: #94a3b8; padding: 40px;">
+                 📦 No items yet. Use one of the methods above to add line items.
+               </td>
+             </tr>
            </tbody>
 
   
         </table>
+        </div>
+        
+        <!-- Step 4: Save & Confirm -->
+        <div id="saveSection" style="display: none; background: white; padding: 20px; border-radius: 8px; border: 2px solid #cbd5e1;">
+          <h3 style="margin: 0 0 15px 0; color: #1e293b; font-size: 16px;">
+            <span style="display: inline-block; width: 28px; height: 28px; background: #2563eb; color: white; border-radius: 50%; text-align: center; line-height: 28px; margin-right: 8px; font-size: 14px; font-weight: bold;">4</span>
+            Review & Confirm
+          </h3>
+          <div id="qcWarning" style="display: none; background: #fef3c7; border: 1px solid #f59e0b; color: #92400e; padding: 12px 16px; border-radius: 6px; margin-bottom: 15px; font-size: 14px;">
+            <strong>⚠️ QC Required:</strong> Please complete Quality Control inspection for all line items before posting GRN.
+          </div>
+          <p style="color: #64748b; font-size: 13px; margin-bottom: 15px;">
+            <strong>Important:</strong> Ensure all items have completed QC inspection (green "QC Confirmed" badge), then click the button below to post this GRN to inventory.
+          </p>
         <div class="right" style="margin-top: 15px">
           <button class="btn btn-save" onclick="saveInvoiceToDB()">
-            Confirm and Post GRN
+            ✅ Confirm and Post GRN
           </button>
+        </div>
         </div>
 
         <!-- Barcode strip shown after successful save -->
@@ -349,12 +390,42 @@
     <script>
       let extractedPayload = null;
 
+      // Show sections progressively
+      function showInvoiceHeaderSection() {
+        document.getElementById('invoiceHeaderSection').style.display = 'block';
+        document.getElementById('lineItemsSection').style.display = 'block';
+        document.getElementById('saveSection').style.display = 'block';
+        document.getElementById('invoiceHeaderSection').scrollIntoView({ behavior: 'smooth', block: 'start' });
+        
+        // Hide old QR codes and GRN info when starting new invoice
+        document.getElementById('barcodeStrip').style.display = 'none';
+        document.getElementById('grnInfo').style.display = 'none';
+      }
+
+      function startManualEntry() {
+        // Show all sections for manual entry
+        showInvoiceHeaderSection();
+        // Show the add manual item button only for manual entry mode
+        document.getElementById('addManualItemBtn').style.display = 'inline-block';
+        // Set current date
+        const today = new Date().toISOString().split('T')[0];
+        document.getElementById('invoice_date').value = today;
+        // Clear line items and show empty state
+        const body = document.getElementById("lineItemsBody");
+        body.innerHTML = '<tr><td colspan="5" style="text-align: center; color: #94a3b8; padding: 40px;">📝 Click "+ Add Item Manually" button above to add your first item.</td></tr>';
+      }
+
       function uploadAndExtract() {
         const fileInput = document.getElementById("invoiceFile");
         if (fileInput.files.length === 0) {
-          alert("Please select a file to process.");
+          alert("Please select a PDF file first.");
           return;
         }
+        
+        // Hide old QR codes and GRN info before processing new invoice
+        document.getElementById('barcodeStrip').style.display = 'none';
+        document.getElementById('grnInfo').style.display = 'none';
+        
         const formData = new FormData();
         formData.append("file", fileInput.files[0]);
 
@@ -371,6 +442,10 @@
               alert("Error: " + data.error);
               return;
             }
+            
+            // Show sections
+            showInvoiceHeaderSection();
+            
             extractedPayload = data;
             document.getElementById("invoice_number").value =
               data.invoice_number;
@@ -394,7 +469,8 @@
                 <td>${item.amount}</td>
 
                 <td>
-                  <button class="btn btn-add" type="button">QC</button>
+                  <button class="btn btn-add" type="button" style="margin-right: 5px;">QC</button>
+                  <button class="btn btn-delete" type="button" style="background: #dc2626; padding: 6px 12px; font-size: 12px;" onclick="removeExtractedItem(this)">🗑️ Remove</button>
                   <span id="qc-badge-${key}" class="qc-badge" style="display:none"></span>
                 </td>
               `;
@@ -404,6 +480,12 @@
               // update badge if QC exists for this item
               setTimeout(() => updateBadgeForKey(keyRaw), 0);
             });
+            
+            // Recalculate total after rendering AI-extracted items
+            setTimeout(() => {
+              recalcTotal();
+              updateQCWarning();
+            }, 100);
           })
           .catch((err) => {
             document.getElementById("loadingMsg").style.display = "none";
@@ -450,6 +532,43 @@ if (!extractedPayload) {
         if (!supplierId) {
           alert(
             "Error: You must select a supplier from the list before proceeding.",
+          );
+          return;
+        }
+
+        // ✅ NEW: Validate QC completion for all items
+        const allRows = document.querySelectorAll('#lineItemsBody tr');
+        let hasItems = false;
+        let allQCCompleted = true;
+        let incompleteItems = [];
+
+        allRows.forEach(row => {
+          const cells = row.querySelectorAll('td');
+          if (cells.length >= 4) {
+            hasItems = true;
+            const itemName = cells[0].textContent.trim();
+            const qcBadge = row.querySelector('.qc-badge');
+            
+            // Check if QC badge exists and is visible (has status)
+            if (!qcBadge || qcBadge.style.display === 'none' || !qcBadge.textContent) {
+              allQCCompleted = false;
+              incompleteItems.push(itemName);
+            }
+          }
+        });
+
+        if (!hasItems) {
+          alert("Error: Please add at least one line item before posting GRN.");
+          return;
+        }
+
+        if (!allQCCompleted) {
+          const itemList = incompleteItems.map(item => `  • ${item}`).join('\n');
+          alert(
+            `❌ QC Required for All Items\n\n` +
+            `Please complete QC inspection for the following items before posting GRN:\n\n` +
+            `${itemList}\n\n` +
+            `Click the "QC" button next to each item to perform quality inspection.`
           );
           return;
         }
@@ -631,7 +750,37 @@ if (!extractedPayload) {
           badge.style.display = 'inline-block';
           if (qc.status === 'confirmed') { badge.className = 'qc-badge qc-confirmed'; badge.textContent = 'QC Confirmed'; }
           else if (qc.status === 'rejected') { badge.className = 'qc-badge qc-rejected'; badge.textContent = 'QC Rejected'; }
+          
+          // Update QC warning banner
+          updateQCWarning();
         } catch(e){console.error(e);}      
+      }
+
+      function updateQCWarning() {
+        // Check if all items have QC status
+        const allRows = document.querySelectorAll('#lineItemsBody tr');
+        let hasItems = false;
+        let allCompleted = true;
+
+        allRows.forEach(row => {
+          const cells = row.querySelectorAll('td');
+          if (cells.length >= 4) {
+            hasItems = true;
+            const qcBadge = row.querySelector('.qc-badge');
+            if (!qcBadge || qcBadge.style.display === 'none' || !qcBadge.textContent) {
+              allCompleted = false;
+            }
+          }
+        });
+
+        const warningDiv = document.getElementById('qcWarning');
+        if (warningDiv) {
+          if (hasItems && !allCompleted) {
+            warningDiv.style.display = 'block';
+          } else {
+            warningDiv.style.display = 'none';
+          }
+        }
       }
 
       function qcApplyStatus(status) {
@@ -795,8 +944,6 @@ if (!extractedPayload) {
         });
       }
 
-      function escapeHtml(s) { return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;'); }
-
       async function fetchMatchedProductSpecs(itemName, previousQC) {
         try {
           const res = await fetch('/api/products');
@@ -917,7 +1064,8 @@ if (!extractedPayload) {
             <td>${item.unit_price}</td>
             <td>${item.amount}</td>
             <td>
-              <button class="btn btn-add" type="button">QC</button>
+              <button class="btn btn-add" type="button" style="margin-right: 5px;">QC</button>
+              <button class="btn btn-delete" type="button" style="background: #dc2626; padding: 6px 12px; font-size: 12px;" onclick="removeExtractedItem(this)">🗑️ Remove</button>
               <span id="qc-badge-${key}" class="qc-badge" style="display:none"></span>
             </td>
           `;
@@ -927,6 +1075,12 @@ if (!extractedPayload) {
           body.appendChild(row);
           setTimeout(() => updateBadgeForKey(keyRaw), 0);
         });
+        
+        // Recalculate total after rendering
+        setTimeout(() => {
+          recalcTotal();
+          updateQCWarning();
+        }, 100);
       }
 
       document.addEventListener('DOMContentLoaded', function() {
@@ -936,51 +1090,84 @@ if (!extractedPayload) {
 
   function recalcTotal() {
     var total = 0;
+    
+    // Calculate from all rows (both AI-extracted and manual)
     document.querySelectorAll('#lineItemsBody tr').forEach(function(row) {
+      // Check if it's a manual row with input fields
       var amountCell = row.querySelector('.manual-amount');
       if (amountCell) {
         total += parseFloat(amountCell.textContent) || 0;
+      } else {
+        // Check if it's an AI-extracted row with static amount
+        var cells = row.querySelectorAll('td');
+        if (cells.length >= 4) {
+          var amountText = cells[3].textContent.trim();
+          // Try to parse the amount (could be just number or with currency)
+          var amount = parseFloat(amountText.replace(/[^0-9.-]/g, ''));
+          if (!isNaN(amount)) {
+            total += amount;
+          }
+        }
       }
     });
+    
     var totalField = document.getElementById('total_amount');
-    if (totalField) totalField.value = total.toFixed(2);
+    if (totalField) {
+      totalField.value = total.toFixed(2);
+    }
   }
 
   function addManualItem() {
+    // Show sections if not visible (in case user starts with manual entry)
+    if (document.getElementById('invoiceHeaderSection').style.display === 'none') {
+      showInvoiceHeaderSection();
+    }
 
     const body = document.getElementById("lineItemsBody");
+    
+    // Remove empty state message if present
+    const emptyRow = body.querySelector('td[colspan="5"]');
+    if (emptyRow) {
+      emptyRow.closest('tr').remove();
+    }
 
     const row = document.createElement("tr");
 
     row.innerHTML = `
         <td>
-            <input class="manual-description"
+            <input class="manual-description" 
+                   style="width: 100%; padding: 8px; border: 1px solid #cbd5e1; border-radius: 4px;"
                    placeholder="Enter Item Name">
         </td>
 
         <td>
             <input class="manual-qty"
                    type="number"
+                   style="width: 80px; padding: 8px; border: 1px solid #cbd5e1; border-radius: 4px;"
                    value="1"
-                   min="1">
+                   min="0.01"
+                   step="0.01">
         </td>
 
         <td>
             <input class="manual-price"
                    type="number"
                    step="0.01"
+                   style="width: 100px; padding: 8px; border: 1px solid #cbd5e1; border-radius: 4px;"
                    value="0">
         </td>
 
-        <td class="manual-amount">
+        <td class="manual-amount" style="font-weight: bold; color: #1e293b;">
             0.00
         </td>
 
         <td>
-            <button class="btn btn-add" type="button">
+            <button class="btn btn-add" type="button" style="margin-right: 5px;">
                 QC
             </button>
-
+            <button class="btn btn-delete" type="button" style="background: #dc2626; padding: 6px 12px; font-size: 12px;" onclick="removeManualItem(this)">
+                🗑️ Remove
+            </button>
             <span class="qc-badge"
                   style="display:none"></span>
         </td>
@@ -994,23 +1181,21 @@ if (!extractedPayload) {
     const descInput = row.querySelector(".manual-description");
 
     function updateAmount() {
-
         const qty = parseFloat(qtyInput.value) || 0;
         const price = parseFloat(priceInput.value) || 0;
-
         amountCell.textContent = (qty * price).toFixed(2);
         recalcTotal();
     }
 
     qtyInput.addEventListener("input", updateAmount);
     priceInput.addEventListener("input", updateAmount);
+    descInput.addEventListener("input", updateAmount);
 
     updateAmount();
 
     const qcButton = row.querySelector("button");
 
     qcButton.onclick = function () {
-
         const description = descInput.value.trim();
 
         if (!description) {
@@ -1019,15 +1204,10 @@ if (!extractedPayload) {
         }
 
         const item = {
-
             description: description,
-
             qty: qtyInput.value,
-
             unit_price: priceInput.value,
-
             amount: amountCell.textContent
-
         };
 
         openQCForm(item);
@@ -1046,8 +1226,60 @@ if (!extractedPayload) {
 
         updateBadgeForKey(keyRaw);
     };
+  }
 
-}
+  function removeManualItem(btn) {
+    if (confirm('Remove this item?')) {
+      btn.closest('tr').remove();
+      recalcTotal();
+      
+      // Show empty state if no items left
+      const body = document.getElementById("lineItemsBody");
+      if (body.querySelectorAll('tr').length === 0) {
+        body.innerHTML = '<tr><td colspan="5" style="text-align: center; color: #94a3b8; padding: 40px;">📝 Click "+ Add Item Manually" button above to add items.</td></tr>';
+      }
+    }
+  }
+
+  function removeExtractedItem(btn) {
+    if (confirm('Remove this extracted item? This will also update the total.')) {
+      const row = btn.closest('tr');
+      row.remove();
+      recalcTotal();
+      
+      // Update extractedPayload to reflect removal
+      if (extractedPayload && extractedPayload.line_items) {
+        const remainingRows = document.querySelectorAll('#lineItemsBody tr');
+        const newLineItems = [];
+        
+        remainingRows.forEach((r) => {
+          const cells = r.querySelectorAll('td');
+          if (cells.length >= 4 && !r.querySelector('.manual-description')) {
+            // This is an extracted item still in the table
+            const description = cells[0].textContent.trim();
+            const qty = cells[1].textContent.trim();
+            const unitPrice = cells[2].textContent.trim();
+            const amount = cells[3].textContent.trim();
+            
+            newLineItems.push({
+              description: description,
+              qty: qty,
+              unit_price: unitPrice,
+              amount: amount
+            });
+          }
+        });
+        
+        extractedPayload.line_items = newLineItems;
+      }
+      
+      // Show empty state if no items left
+      const body = document.getElementById("lineItemsBody");
+      if (body.querySelectorAll('tr').length === 0) {
+        body.innerHTML = '<tr><td colspan="5" style="text-align: center; color: #94a3b8; padding: 40px;">📦 No items. Use "+ Add Item Manually" to add items.</td></tr>';
+      }
+    }
+  }
 
       function escapeHtml(str) {
         const div = document.createElement('div');
@@ -1059,6 +1291,10 @@ if (!extractedPayload) {
       let qrCodeInstance = null;
 
       function startPhoneUpload() {
+        // Hide old QR codes and GRN info before starting phone scan
+        document.getElementById('barcodeStrip').style.display = 'none';
+        document.getElementById('grnInfo').style.display = 'none';
+        
         document.getElementById("phoneStatusText").textContent = "Creating secure session...";
         document.getElementById("phoneUploadModalOverlay").style.display = "flex";
         
@@ -1117,6 +1353,9 @@ if (!extractedPayload) {
             
             const payload = data.payload;
             extractedPayload = payload;
+            
+            // Show sections
+            showInvoiceHeaderSection();
             
             // Sync with local storage
             localStorage.setItem('ai_inventory_extracted_payload', JSON.stringify(payload));

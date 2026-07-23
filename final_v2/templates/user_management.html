@@ -34,9 +34,10 @@
       .flash-err { color:#dc2626; font-weight:bold; font-size:14px; margin-bottom:12px; }
       .modal-overlay { display:none; position:fixed; inset:0; background:rgba(0,0,0,0.4); z-index:999; align-items:center; justify-content:center; }
       .modal-overlay.open { display:flex; }
-      .modal-box { background:white; border-radius:8px; padding:24px; width:340px; box-shadow:0 8px 32px rgba(0,0,0,0.2); }
+      .modal-box { background:white; border-radius:8px; padding:24px; width:360px; box-shadow:0 8px 32px rgba(0,0,0,0.2); }
       .modal-box h3 { margin-top:0; margin-bottom:16px; }
       .modal-actions { display:flex; gap:10px; margin-top:16px; justify-content:flex-end; }
+      .hint { font-size:11px; color:#94a3b8; margin-top:3px; }
     </style>
   </head>
   <body>
@@ -54,6 +55,7 @@
       <a href="{{ url_for('logout') }}" style="color: #ef4444">🚪 Sign Out</a>
     </div>
 
+    {% if can_manage %}
     <!-- Reset password modal -->
     <div class="modal-overlay" id="resetModal">
       <div class="modal-box">
@@ -62,8 +64,10 @@
           <input type="hidden" name="action" value="reset_password">
           <input type="hidden" name="user_id" id="resetUserId">
           <div class="form-group" style="margin-bottom:14px;">
-            <label>New Password</label>
-            <input type="text" name="new_password" id="newPasswordInput" required placeholder="Enter new password">
+            <label>New Password <span style="color:#94a3b8;font-weight:normal;">(min. 8 characters)</span></label>
+            <input type="password" name="new_password" id="newPasswordInput" required
+                   placeholder="Enter new password" autocomplete="new-password" minlength="8">
+            <span class="hint">At least 8 characters required.</span>
           </div>
           <div class="modal-actions">
             <button type="button" class="btn" style="background:#e5e7eb;" onclick="closeResetModal()">Cancel</button>
@@ -73,28 +77,66 @@
       </div>
     </div>
 
+    <!-- Edit Email modal -->
+    <div class="modal-overlay" id="emailModal">
+      <div class="modal-box">
+        <h3>Edit Email Address</h3>
+        <form action="{{ url_for('user_management') }}" method="POST">
+          <input type="hidden" name="action" value="edit_email">
+          <input type="hidden" name="user_id" id="emailUserId">
+          <div class="form-group" style="margin-bottom:14px;">
+            <label>Email Address</label>
+            <input type="email" name="email" id="emailInput"
+                   placeholder="e.g. user@company.com" autocomplete="email">
+            <span class="hint">Leave blank to remove the email.</span>
+          </div>
+          <div class="modal-actions">
+            <button type="button" class="btn" style="background:#e5e7eb;" onclick="closeEmailModal()">Cancel</button>
+            <button type="submit" class="btn btn-add">Save Email</button>
+          </div>
+        </form>
+      </div>
+    </div>
+    {% endif %}
+
     <div class="main">
       <div class="container">
         <h2>👤 Add New User</h2>
+
         {% with messages = get_flashed_messages(with_categories=true) %}
           {% for category, message in messages %}
             <p class="{{ 'flash-ok' if category == 'success' else 'flash-err' }}">{{ message }}</p>
           {% endfor %}
         {% endwith %}
+
+        {% if not can_manage %}
+        <div style="display:flex;align-items:center;gap:10px;background:#fef9c3;border:1px solid #fde047;border-radius:6px;padding:12px 16px;margin-bottom:20px;">
+          <span style="font-size:20px;">🔒</span>
+          <div>
+            <strong style="font-size:13px;color:#78350f;">View-Only Access</strong>
+            <p style="font-size:12px;color:#92400e;margin:2px 0 0;">
+              Your account role (<strong>{{ session.get('role','') | capitalize }}</strong>) does not have permission to manage users.
+              Contact an administrator if you need access.
+            </p>
+          </div>
+        </div>
+        {% endif %}
+
+        {% if can_manage %}
         <form action="{{ url_for('user_management') }}" method="POST" id="addUserForm">
           <input type="hidden" name="action" value="add">
-          <div class="form-grid">
+          <div class="form-grid" style="grid-template-columns: repeat(5, 1fr);">
             <div class="form-group">
               <label>Username *</label>
               <input type="text" name="username" placeholder="e.g. jdoe" required>
             </div>
             <div class="form-group">
-              <label>Password *</label>
-              <input type="text" name="password" placeholder="Enter password" required>
-            </div>
-            <div class="form-group">
               <label>Full Name</label>
               <input type="text" name="full_name" placeholder="e.g. John Doe">
+            </div>
+            <div class="form-group">
+              <label>Email *</label>
+              <input type="email" name="email" placeholder="e.g. jdoe@company.com" required autocomplete="email">
             </div>
             <div class="form-group">
               <label>Role</label>
@@ -104,9 +146,15 @@
                 <option value="viewer">Viewer</option>
               </select>
             </div>
+            <div class="form-group">
+              <label>Password * <span style="color:#94a3b8;font-weight:normal;">(min. 8)</span></label>
+              <input type="password" name="password" placeholder="Min. 8 characters" required
+                     autocomplete="new-password" minlength="8">
+            </div>
           </div>
           <button type="submit" class="btn btn-add">Create User</button>
         </form>
+        {% endif %}
       </div>
 
       <div class="container">
@@ -116,6 +164,7 @@
             <tr>
               <th>Username</th>
               <th>Full Name</th>
+              <th>Email</th>
               <th>Role</th>
               <th>Status</th>
               <th>Created</th>
@@ -127,6 +176,13 @@
             <tr>
               <td><strong>{{ user.username }}</strong></td>
               <td>{{ user.full_name or '—' }}</td>
+              <td style="font-size:12px;">
+                {% if user.email %}
+                  <span title="{{ user.email }}">{{ user.email }}</span>
+                {% else %}
+                  <span style="color:#94a3b8;">—</span>
+                {% endif %}
+              </td>
               <td>
                 <span class="badge badge-{{ user.role }}">{{ user.role }}</span>
               </td>
@@ -139,6 +195,7 @@
                 {{ user.created_at[:10] if user.created_at else '—' }}
               </td>
               <td style="display:flex; gap:8px; flex-wrap:wrap;">
+                {% if can_manage %}
                 <!-- Toggle active/inactive -->
                 <form action="{{ url_for('user_management') }}" method="POST" style="display:inline;">
                   <input type="hidden" name="action" value="toggle">
@@ -147,6 +204,11 @@
                     {{ 'Deactivate' if user.is_active else 'Activate' }}
                   </button>
                 </form>
+                <!-- Edit email -->
+                <button class="btn btn-sm" style="background:#0ea5e9; color:white;"
+                        onclick="openEmailModal({{ user.id }}, '{{ user.email or '' }}')">
+                  Edit Email
+                </button>
                 <!-- Reset password -->
                 <button class="btn btn-sm" style="background:#0f172a; color:white;"
                         onclick="openResetModal({{ user.id }})">
@@ -159,11 +221,14 @@
                   <input type="hidden" name="user_id" value="{{ user.id }}">
                   <button type="submit" class="btn btn-danger btn-sm">Delete</button>
                 </form>
+                {% else %}
+                <span style="font-size:12px;color:#94a3b8;font-style:italic;">View only</span>
+                {% endif %}
               </td>
             </tr>
             {% else %}
             <tr>
-              <td colspan="6" style="text-align:center; color:#94a3b8;">
+              <td colspan="7" style="text-align:center; color:#94a3b8;">
                 No users found in the database.
               </td>
             </tr>
@@ -174,6 +239,22 @@
     </div>
 
     <script>
+      {% if can_manage %}
+      function clearAddUserForm() {
+        var form = document.getElementById('addUserForm');
+        form.querySelector('[name="username"]').value  = '';
+        form.querySelector('[name="full_name"]').value = '';
+        form.querySelector('[name="email"]').value     = '';
+        form.querySelector('[name="password"]').value  = '';
+        form.querySelector('[name="role"]').value      = 'staff';
+        form.querySelector('[name="username"]').focus();
+      }
+
+      function closeDupModal() {
+        document.getElementById('uDupOverlay').style.display = 'none';
+        clearAddUserForm();
+      }
+
       function showDupModal(title, detail) {
         document.getElementById('uDupTitle').textContent = title;
         document.getElementById('uDupDetail').innerHTML  = detail;
@@ -182,18 +263,27 @@
 
       document.getElementById('addUserForm').addEventListener('submit', async function(e) {
         e.preventDefault();
-        var username = (this.querySelector('[name="username"]').value || '').trim();
-        if (!username) { this.submit(); return; }
+        var form     = this;
+        var username = (form.querySelector('[name="username"]').value || '').trim();
+        var email    = (form.querySelector('[name="email"]').value    || '').trim();
+        if (!username) { form.submit(); return; }
         try {
-          var r = await fetch('/api/check-duplicate', {
-            method: 'POST',
-            headers: {'Content-Type':'application/json'},
-            body: JSON.stringify({type:'username', value: username})
+          var r1 = await fetch('/api/check-duplicate', {
+            method: 'POST', headers: {'Content-Type':'application/json'},
+            body: JSON.stringify({type: 'username', value: username})
           });
-          var d = await r.json();
-          if (d.exists) { showDupModal('Username Already Taken', d.detail); return; }
+          var d1 = await r1.json();
+          if (d1.exists) { showDupModal('Username Already Taken', d1.detail); return; }
+          if (email) {
+            var r2 = await fetch('/api/check-duplicate', {
+              method: 'POST', headers: {'Content-Type':'application/json'},
+              body: JSON.stringify({type: 'email', value: email})
+            });
+            var d2 = await r2.json();
+            if (d2.exists) { showDupModal('Email Already Registered', d2.detail); return; }
+          }
         } catch(_) {}
-        this.submit();
+        form.submit();
       });
 
       function openResetModal(userId) {
@@ -207,8 +297,22 @@
       document.getElementById('resetModal').addEventListener('click', function(e) {
         if (e.target === this) closeResetModal();
       });
+
+      function openEmailModal(userId, currentEmail) {
+        document.getElementById('emailUserId').value = userId;
+        document.getElementById('emailInput').value  = currentEmail || '';
+        document.getElementById('emailModal').classList.add('open');
+      }
+      function closeEmailModal() {
+        document.getElementById('emailModal').classList.remove('open');
+      }
+      document.getElementById('emailModal').addEventListener('click', function(e) {
+        if (e.target === this) closeEmailModal();
+      });
+      {% endif %}
     </script>
 
+    {% if can_manage %}
     <!-- Duplicate validation modal -->
     <div id="uDupOverlay" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,0.45);z-index:9999;justify-content:center;align-items:center;">
       <div style="background:#fff;border-radius:8px;padding:28px 28px 22px;width:90%;max-width:440px;box-shadow:0 8px 32px rgba(0,0,0,0.2);">
@@ -218,9 +322,10 @@
         </div>
         <p id="uDupDetail" style="font-size:14px;color:#334155;margin:0 0 20px;line-height:1.6;"></p>
         <div style="display:flex;justify-content:flex-end;">
-          <button onclick="document.getElementById('uDupOverlay').style.display='none'" style="padding:9px 22px;background:#e5e7eb;border:none;border-radius:5px;font-size:14px;font-weight:600;cursor:pointer;">OK — Cancel</button>
+          <button onclick="closeDupModal()" style="padding:9px 22px;background:#e5e7eb;border:none;border-radius:5px;font-size:14px;font-weight:600;cursor:pointer;">OK — Cancel</button>
         </div>
       </div>
     </div>
+    {% endif %}
   </body>
 </html>

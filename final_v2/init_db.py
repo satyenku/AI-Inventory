@@ -15,6 +15,10 @@ CREATE TABLE IF NOT EXISTS users (
     full_name       TEXT,
     role            TEXT NOT NULL DEFAULT 'staff',   -- admin / staff / viewer
     is_active       INTEGER NOT NULL DEFAULT 1,
+    email           TEXT UNIQUE,
+    email_verified  INTEGER NOT NULL DEFAULT 0,
+    reset_token     TEXT,
+    token_expiry    REAL,
     created_at      TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
 
@@ -259,11 +263,13 @@ def init_db():
     cursor = conn.cursor()
     cursor.executescript(SCHEMA)
     
-    # Create a default test user (admin / admin123)
+    # Create a default admin user with a hashed password
     cursor.execute("SELECT id FROM users WHERE username = 'admin'")
     if not cursor.fetchone():
+        from werkzeug.security import generate_password_hash
         cursor.execute(
-            "INSERT INTO users (username, password_hash, full_name, role) VALUES ('admin', 'admin123', 'Administrator', 'admin')"
+            "INSERT INTO users (username, password_hash, full_name, role) VALUES ('admin', ?, 'Administrator', 'admin')",
+            (generate_password_hash('admin123'),)
         )
         
     # Create default departments

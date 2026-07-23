@@ -1,0 +1,139 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Access Denied — AI Inventory</title>
+    <style>
+        *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+        body {
+            font-family: Arial, sans-serif;
+            background: #0f172a;
+            min-height: 100vh;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            padding: 20px;
+        }
+
+        .card {
+            background: #ffffff;
+            border-radius: 10px;
+            padding: 48px 40px 40px;
+            max-width: 480px;
+            width: 100%;
+            text-align: center;
+            box-shadow: 0 20px 60px rgba(0, 0, 0, 0.4);
+        }
+
+        .icon {
+            width: 72px;
+            height: 72px;
+            background: #fef2f2;
+            border-radius: 50%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            margin: 0 auto 24px;
+            font-size: 34px;
+        }
+
+        h1 {
+            font-size: 22px;
+            color: #1e293b;
+            margin-bottom: 10px;
+            font-weight: 700;
+        }
+
+        .code {
+            display: inline-block;
+            font-size: 12px;
+            font-weight: 700;
+            letter-spacing: 1.5px;
+            color: #dc2626;
+            background: #fef2f2;
+            border: 1px solid #fecaca;
+            border-radius: 4px;
+            padding: 3px 10px;
+            margin-bottom: 20px;
+        }
+
+        p {
+            font-size: 14px;
+            color: #64748b;
+            line-height: 1.65;
+            margin-bottom: 12px;
+        }
+
+        .role-note {
+            background: #f8fafc;
+            border: 1px solid #e2e8f0;
+            border-radius: 6px;
+            padding: 12px 16px;
+            font-size: 13px;
+            color: #475569;
+            margin: 20px 0;
+            text-align: left;
+        }
+
+        .role-note strong {
+            color: #1e293b;
+        }
+
+        .btn-back {
+            display: inline-block;
+            background: #2563eb;
+            color: #ffffff;
+            text-decoration: none;
+            padding: 12px 28px;
+            border-radius: 5px;
+            font-size: 14px;
+            font-weight: 700;
+            margin-top: 8px;
+            transition: background 0.15s;
+        }
+
+        .btn-back:hover { background: #1d4ed8; }
+
+        .btn-dash {
+            display: inline-block;
+            background: #f1f5f9;
+            color: #475569;
+            text-decoration: none;
+            padding: 12px 28px;
+            border-radius: 5px;
+            font-size: 14px;
+            font-weight: 700;
+            margin-top: 8px;
+            margin-left: 10px;
+            transition: background 0.15s;
+        }
+
+        .btn-dash:hover { background: #e2e8f0; color: #1e293b; }
+    </style>
+</head>
+<body>
+    <div class="card">
+        <div class="icon">🔒</div>
+        <span class="code">ERROR 403 — FORBIDDEN</span>
+        <h1>Access Denied</h1>
+        <p>
+            You do not have permission to access this page.
+            This area is restricted to <strong>Admin</strong> accounts only.
+        </p>
+
+        <div class="role-note">
+            <strong>Your current role:</strong>
+            {{ session.get('role', 'Unknown') | capitalize }}<br><br>
+            If you believe this is a mistake, please contact your system administrator
+            to have your access level reviewed.
+        </div>
+
+        <div>
+            <a href="javascript:history.back()" class="btn-back">← Go Back</a>
+            <a href="{{ url_for('dashboard') }}" class="btn-dash">Dashboard</a>
+        </div>
+    </div>
+</body>
+</html>
