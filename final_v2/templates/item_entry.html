@@ -309,9 +309,9 @@
         </div>
         <div style="display:flex;gap:8px;justify-content:flex-end;margin-top:12px;">
           <button class="btn" onclick="document.getElementById('qcModalOverlay').style.display='none'">Close</button>
-          <button class="btn" style="background:#0f172a;color:white" onclick="qcExportToExcel()">Export to Excel</button>
-          <button class="btn" style="background:#dc2626;color:white" onclick="qcReject()">Reject</button>
-          <button class="btn" style="background:#16a34a;color:white" onclick="qcConfirm()">Confirm</button>
+          <button class="btn" id="qc_export_btn" style="background:#0f172a;color:white;display:none;" onclick="qcExportToExcel()">Export to Excel</button>
+          <button class="btn" id="qc_reject_btn" style="background:#dc2626;color:white" onclick="qcReject()">Reject</button>
+          <button class="btn" id="qc_confirm_btn" style="background:#16a34a;color:white" onclick="qcConfirm()">Confirm</button>
         </div>
       </div>
     </div>
@@ -602,6 +602,12 @@ if (!extractedPayload) {
         document.getElementById('qc_item_qty').textContent = item.qty || '';
         document.getElementById('qc_current_key').value = keyRaw;
         document.getElementById('qc_specs_container').innerHTML = 'Searching product master...';
+
+        // Reset button visibility: hide Export, show Reject & Confirm
+        document.getElementById('qc_export_btn').style.display = 'none';
+        document.getElementById('qc_reject_btn').style.display = 'inline-block';
+        document.getElementById('qc_confirm_btn').style.display = 'inline-block';
+
         document.getElementById('qcModalOverlay').style.display = 'flex';
         // attempt to find matching product and display specs
         fetchMatchedProductSpecs(item.description, qc);
@@ -695,11 +701,17 @@ if (!extractedPayload) {
         .then(j => {
           if (j && j.status === 'success') {
             updateBadgeForKey(key);
-            document.getElementById('qcModalOverlay').style.display = 'none';
+            if (status === 'confirmed') {
+              // Show Export to Excel, hide Reject & Confirm
+              document.getElementById('qc_export_btn').style.display = 'inline-block';
+              document.getElementById('qc_reject_btn').style.display = 'none';
+              document.getElementById('qc_confirm_btn').style.display = 'none';
+            } else {
+              // For reject or other statuses, close the modal
+              document.getElementById('qcModalOverlay').style.display = 'none';
+            }
             // refresh badges for all items (best-effort)
             setTimeout(() => {
-              const invoiceNum = document.getElementById('invoice_number').value || '';
-              // update all badges by re-rendering keys if payload present in localStorage
               const saved = loadSavedPayload();
               if (saved && saved.line_items) renderLineItems(saved.line_items);
             }, 300);
