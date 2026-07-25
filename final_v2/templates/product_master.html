@@ -115,18 +115,6 @@
         display: flex;
         gap: 8px;
       }
-      .btn-edit {
-        background: #16a34a;
-        padding: 6px 12px;
-        font-size: 12px;
-        border: none;
-        border-radius: 4px;
-        cursor: pointer;
-        color: white;
-      }
-      .btn-edit:hover {
-        background: #15803d;
-      }
       .btn-delete {
         background: #dc2626;
         padding: 6px 12px;
@@ -212,7 +200,7 @@
     <div class="main">
       {% if not can_write %}
       <div style="background: #fef3c7; border: 1px solid #f59e0b; color: #92400e; padding: 12px 20px; border-radius: 6px; margin-bottom: 20px; font-size: 14px;">
-        <strong>⚠️ Read-Only Access:</strong> You do not have permission to add, edit, or delete products.
+        <strong>⚠️ Read-Only Access:</strong> You do not have permission to add or delete products.
       </div>
       {% endif %}
       {% if can_write %}
@@ -229,7 +217,7 @@
         <form action="{{ url_for('product_master') }}" method="POST" id="productForm">
           <div class="form-grid">
             <div class="form-group">
-              <label>Item Code (SKU)</label>
+              <label>Item Code (SKU) <span style="color:red;">*</span></label>
               <input
                 type="text"
                 name="item_code"
@@ -238,7 +226,7 @@
               />
             </div>
             <div class="form-group">
-              <label>Item Name</label>
+              <label>Item Name <span style="color:red;">*</span></label>
               <input
                 type="text"
                 name="item_name"
@@ -247,8 +235,8 @@
               />
             </div>
             <div class="form-group">
-              <label>Item Category</label>
-              <select name="category">
+              <label>Item Category <span style="color:red;">*</span></label>
+              <select name="category" required>
                 <option value="Raw Material">Raw Material</option>
                 <option value="WIP">WIP</option>
                 <option value="Finished Goods">Finished Goods</option>
@@ -256,16 +244,17 @@
               </select>
             </div>
             <div class="form-group">
-              <label>Subcategory</label>
+              <label>Subcategory <span style="color:red;">*</span></label>
               <input
                 type="text"
                 name="subcategory"
                 placeholder="e.g. Metal Alloy"
+                required
               />
             </div>
             <div class="form-group">
-              <label>Unit of Measure</label>
-              <select name="unit">
+              <label>Unit of Measure <span style="color:red;">*</span></label>
+              <select name="unit" required>
                 <option value="Nos">Nos</option>
                 <option value="Kg">Kg</option>
                 <option value="Meters">Meters</option>
@@ -273,32 +262,33 @@
               </select>
             </div>
             <div class="form-group">
-              <label>Minimum Stock Threshold</label>
-              <input type="number" name="min_stock_level" value="0" />
+              <label>Minimum Stock Threshold <span style="color:red;">*</span></label>
+              <input type="number" name="min_stock_level" value="0" placeholder="e.g. 10" required />
             </div>
             <div class="form-group">
-              <label>Maximum Allowed Stock</label>
-              <input type="number" name="max_stock_level" value="0" />
+              <label>Maximum Allowed Stock <span style="color:red;">*</span></label>
+              <input type="number" name="max_stock_level" value="0" placeholder="e.g. 1000" required />
             </div>
             <div class="form-group">
-              <label>Reorder Limit Level</label>
-              <input type="number" name="reorder_level" value="0" />
+              <label>Reorder Limit Level <span style="color:red;">*</span></label>
+              <input type="number" name="reorder_level" value="0" placeholder="e.g. 50" required />
             </div>
             <div class="form-group">
-              <label>HSN / SAC Code</label>
-              <input type="text" name="hsn_sac_code" />
+              <label>HSN / SAC Code <span style="color:red;">*</span></label>
+              <input type="text" name="hsn_sac_code" placeholder="e.g. 30049099" required />
             </div>
             <div class="form-group">
-              <label>Physical Storage Area</label>
+              <label>Physical Storage Area <span style="color:red;">*</span></label>
               <input
                 type="text"
                 name="storage_location"
                 placeholder="e.g. Rack A / Shelf 3"
+                required
               />
             </div>
             <div class="form-group full-width">
-              <label>Product Specifications/Description</label>
-              <textarea rows="2" name="description"></textarea>
+              <label>Product Specifications/Description <span style="color:red;">*</span></label>
+              <textarea rows="2" name="description" placeholder="e.g. High-grade steel rod, corrosion-resistant, 6m length" required></textarea>
             </div>
             <div class="form-group full-width">
               <label>Inspection Properties (optional)</label>
@@ -408,15 +398,12 @@
               <td>{{ product.current_stock }}</td>
               <td>
                 <div class="action-buttons">
-                  {% if can_write %}
-                  <button class="btn-edit" onclick='openEditModal({{ product.id }})'>Edit</button>
-                  {% endif %}
                   {% if can_delete %}
                   <form action="{{ url_for('delete_product', product_id=product.id) }}" method="POST" style="display: inline;" onsubmit="return confirm('Are you sure you want to delete this product? This will also delete all inspection properties.');">
                     <button type="submit" class="btn-delete">Delete</button>
                   </form>
                   {% endif %}
-                  {% if not can_write and not can_delete %}
+                  {% if not can_delete %}
                   <span style="font-size:12px;color:#94a3b8;font-style:italic;">View only</span>
                   {% endif %}
                 </div>
@@ -427,100 +414,6 @@
         </table>
       </div>
     </div>
-
-    {% if can_write %}
-    <!-- Edit Modal — only rendered for admin/staff users -->
-    <div id="editModal" class="modal">
-      <div class="modal-content">
-        <span class="modal-close" onclick="closeEditModal()">&times;</span>
-        <div class="modal-header">Edit Product</div>
-        <form action="{{ url_for('edit_product') }}" method="POST" id="editProductForm">
-          <input type="hidden" name="product_id" id="editProductId" />
-          <div class="form-grid">
-            <div class="form-group">
-              <label>Item Code (SKU)</label>
-              <input type="text" name="item_code" id="editItemCode" required />
-            </div>
-            <div class="form-group">
-              <label>Item Name</label>
-              <input type="text" name="item_name" id="editItemName" required />
-            </div>
-            <div class="form-group">
-              <label>Item Category</label>
-              <select name="category" id="editCategory">
-                <option value="Raw Material">Raw Material</option>
-                <option value="WIP">WIP</option>
-                <option value="Finished Goods">Finished Goods</option>
-                <option value="Spare Parts">Spare Parts</option>
-              </select>
-            </div>
-            <div class="form-group">
-              <label>Subcategory</label>
-              <input type="text" name="subcategory" id="editSubcategory" />
-            </div>
-            <div class="form-group">
-              <label>Unit of Measure</label>
-              <select name="unit" id="editUnit">
-                <option value="Nos">Nos</option>
-                <option value="Kg">Kg</option>
-                <option value="Meters">Meters</option>
-                <option value="Liters">Liters</option>
-              </select>
-            </div>
-            <div class="form-group">
-              <label>Minimum Stock Threshold</label>
-              <input type="number" name="min_stock_level" id="editMinStock" />
-            </div>
-            <div class="form-group">
-              <label>Maximum Allowed Stock</label>
-              <input type="number" name="max_stock_level" id="editMaxStock" />
-            </div>
-            <div class="form-group">
-              <label>Reorder Limit Level</label>
-              <input type="number" name="reorder_level" id="editReorderLevel" />
-            </div>
-            <div class="form-group">
-              <label>HSN / SAC Code</label>
-              <input type="text" name="hsn_sac_code" id="editHsn" />
-            </div>
-            <div class="form-group">
-              <label>Physical Storage Area</label>
-              <input type="text" name="storage_location" id="editLocation" />
-            </div>
-            <div class="form-group full-width">
-              <label>Product Specifications/Description</label>
-              <textarea rows="2" name="description" id="editDescription"></textarea>
-            </div>
-            <div class="form-group full-width">
-              <label>Inspection Properties (optional)</label>
-              <div id="edit-properties-root">
-                <table id="edit-properties-table" style="width: 100%; border-collapse: collapse">
-                  <thead>
-                    <tr>
-                      <th style="text-align: left; padding: 6px">Property</th>
-                      <th style="text-align: left; padding: 6px">Min</th>
-                      <th style="text-align: left; padding: 6px">Max</th>
-                      <th style="text-align: left; padding: 6px">Method</th>
-                      <th style="padding: 6px"></th>
-                    </tr>
-                  </thead>
-                  <tbody id="edit-properties-body">
-                  </tbody>
-                </table>
-                <div style="margin-top: 8px; text-align: right">
-                  <button type="button" onclick="addEditPropertyRow()">+ Add Property</button>
-                </div>
-              </div>
-            </div>
-          </div>
-          <div class="actions">
-            <button type="button" class="btn-reset" onclick="closeEditModal()">Cancel</button>
-            <button type="submit" class="btn-save">Update Product</button>
-          </div>
-        </form>
-      </div>
-    </div>
-    {% endif %}
 
     <script>
       {% if can_write %}
@@ -553,90 +446,28 @@
         if (tr) tr.remove();
       }
 
-      function addEditPropertyRow() {
-        const tbody = document.getElementById("edit-properties-body");
-        const tr = document.createElement("tr");
-        tr.innerHTML = `
-          <td><input type="text" name="property_name[]" placeholder="e.g. OD"/></td>
-          <td><input type="number" step="any" name="property_min[]"/></td>
-          <td><input type="number" step="any" name="property_max[]"/></td>
-          <td><input type="text" name="property_method[]" placeholder="e.g. Vernier"/></td>
-          <td><button type="button" class="btn-remove" onclick="removeEditPropertyRow(this)">Remove</button></td>
-        `;
-        tbody.appendChild(tr);
-      }
-
-      function removeEditPropertyRow(btn) {
-        const tr = btn.closest("tr");
-        if (tr) tr.remove();
-      }
-
-      async function openEditModal(productId) {
-        // Fetch product details
-        try {
-          const response = await fetch(`/api/product/${productId}`);
-          const data = await response.json();
-          
-          if (data.error) {
-            alert('Error loading product: ' + data.error);
-            return;
-          }
-          
-          // Populate form fields
-          document.getElementById('editProductId').value = productId;
-          document.getElementById('editItemCode').value = data.item_code || '';
-          document.getElementById('editItemName').value = data.item_name || '';
-          document.getElementById('editCategory').value = data.category || 'Raw Material';
-          document.getElementById('editSubcategory').value = data.subcategory || '';
-          document.getElementById('editUnit').value = data.unit || 'Nos';
-          document.getElementById('editMinStock').value = data.min_stock_level || 0;
-          document.getElementById('editMaxStock').value = data.max_stock_level || 0;
-          document.getElementById('editReorderLevel').value = data.reorder_level || 0;
-          document.getElementById('editHsn').value = data.hsn_sac_code || '';
-          document.getElementById('editLocation').value = data.storage_location || '';
-          document.getElementById('editDescription').value = data.description || '';
-          
-          // Clear and populate inspection properties
-          const tbody = document.getElementById('edit-properties-body');
-          tbody.innerHTML = '';
-          
-          if (data.properties && data.properties.length > 0) {
-            data.properties.forEach(prop => {
-              const tr = document.createElement('tr');
-              tr.innerHTML = `
-                <td><input type="text" name="property_name[]" value="${prop.property_name || ''}" placeholder="e.g. OD"/></td>
-                <td><input type="number" step="any" name="property_min[]" value="${prop.min_value !== null ? prop.min_value : ''}"/></td>
-                <td><input type="number" step="any" name="property_max[]" value="${prop.max_value !== null ? prop.max_value : ''}"/></td>
-                <td><input type="text" name="property_method[]" value="${prop.test_method || ''}" placeholder="e.g. Vernier"/></td>
-                <td><button type="button" class="btn-remove" onclick="removeEditPropertyRow(this)">Remove</button></td>
-              `;
-              tbody.appendChild(tr);
-            });
-          } else {
-            // Add one empty row if no properties
-            addEditPropertyRow();
-          }
-          
-          // Show modal
-          document.getElementById('editModal').classList.add('active');
-        } catch (error) {
-          console.error('Error fetching product:', error);
-          alert('Failed to load product details');
-        }
-      }
-
-      function closeEditModal() {
-        document.getElementById('editModal').classList.remove('active');
-      }
-
       /* ── Duplicate validation on submit ── */
       document.getElementById('productForm').addEventListener('submit', async function(e) {
         e.preventDefault();
-        const form      = this;
-        const itemCode  = (form.querySelector('[name="item_code"]').value  || '').trim();
-        const itemName  = (form.querySelector('[name="item_name"]').value  || '').trim();
+        const form = this;
+        
+        // Get all required field values
+        const itemCode = (form.querySelector('[name="item_code"]').value || '').trim();
+        const itemName = (form.querySelector('[name="item_name"]').value || '').trim();
+        const category = (form.querySelector('[name="category"]').value || '').trim();
+        const subcategory = (form.querySelector('[name="subcategory"]').value || '').trim();
+        const unit = (form.querySelector('[name="unit"]').value || '').trim();
+        const hsn = (form.querySelector('[name="hsn_sac_code"]').value || '').trim();
+        const location = (form.querySelector('[name="storage_location"]').value || '').trim();
+        const description = (form.querySelector('[name="description"]').value || '').trim();
+        
+        // Validate all required fields
+        if (!itemCode || !itemName || !category || !subcategory || !unit || !hsn || !location || !description) {
+          alert('All fields are mandatory except Inspection Properties. Please fill in all required fields marked with *');
+          return;
+        }
 
-        // Check Item Code
+        // Check Item Code duplicate
         try {
           const r1 = await fetch('/api/check-duplicate', {
             method: 'POST',
@@ -650,7 +481,7 @@
           }
         } catch(_) {}
 
-        // Check Item Name
+        // Check Item Name duplicate
         try {
           const r2 = await fetch('/api/check-duplicate', {
             method: 'POST',

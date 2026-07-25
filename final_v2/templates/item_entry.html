@@ -108,6 +108,12 @@
         font-weight: bold;
         margin-top: 10px;
       }
+      .validation-error {
+        color: #dc2626;
+        font-size: 12px;
+        margin-top: 4px;
+        font-weight: 600;
+      }
       /* QC modal styles */
       .modal-overlay {
         position: fixed;
@@ -208,22 +214,25 @@
           
         <div class="form-row">
           <div>
-            <label>Invoice Number</label>
-            <input type="text" id="invoice_number" />
+            <label>Invoice Number <span style="color: #dc2626;">*</span></label>
+            <input type="text" id="invoice_number" required />
+            <div id="invoice_number_error" class="validation-error" style="display: none;"></div>
           </div>
           <div>
-            <label>Invoice Billing Date</label>
-            <input type="date" id="invoice_date" />
+            <label>Invoice Billing Date <span style="color: #dc2626;">*</span></label>
+            <input type="date" id="invoice_date" required />
+            <div id="invoice_date_error" class="validation-error" style="display: none;"></div>
           </div>
           <div>
             <label>Detected Vendor</label>
             <input type="text" id="vendor_name" />
           </div>
           <div>
-            <label>Total Invoice Value</label>
-            <input type="number" step="0.01" id="total_amount" />
+            <label>Total Invoice Value <span style="color: #dc2626;">*</span></label>
+            <input type="number" step="0.01" id="total_amount" required />
+            <div id="total_amount_error" class="validation-error" style="display: none;"></div>
           </div>
-          <div>
+          <div id="supplierFieldContainer">
             <label style="font-weight: bold; color: #dc2626"
               >Select Supplier <span style="color: #dc2626">*</span></label
             >
@@ -235,6 +244,8 @@
               </option>
               {% endfor %}
             </select>
+            <div id="supplier_id_error" class="validation-error" style="display: none;"></div>
+            <div id="supplierNotFoundMessage" style="display: none;"></div>
           </div>
 
         </div>
@@ -389,6 +400,86 @@
 
     <script>
       let extractedPayload = null;
+      let currentExtractedGST = null; // Track extracted GST for supplier matching
+
+      // Centralized supplier handling function for all entry methods
+      function handleSupplierMatching(data) {
+        const supplierDropdown = document.getElementById("supplier_id");
+        const messageDiv = document.getElementById("supplierNotFoundMessage");
+        
+        // Clear previous messages
+        messageDiv.style.display = 'none';
+        messageDiv.innerHTML = '';
+        supplierDropdown.style.borderColor = '#cbd5e1';
+        
+        // Store extracted GST for later use
+        if (data.extracted_gst || data.vendor_gst) {
+          currentExtractedGST = data.extracted_gst || data.vendor_gst;
+        }
+        
+        if (data.supplier_matched && data.supplier_id) {
+          // ✅ Supplier found - auto-select
+          supplierDropdown.value = data.supplier_id;
+          supplierDropdown.style.borderColor = '#16a34a';
+          console.log("✅ Supplier auto-selected:", data.supplier_name, "ID:", data.supplier_id);
+        } else if (data.supplier_not_found || !data.supplier_id) {
+          // ❌ Supplier NOT found - show "Add Supplier" option
+          supplierDropdown.value = "";
+          supplierDropdown.style.borderColor = '#f59e0b';
+          
+          const extractedInfo = [];
+          if (data.extracted_vendor_name || data.vendor_name) {
+            extractedInfo.push(`<strong>Name:</strong> ${escapeHtml(data.extracted_vendor_name || data.vendor_name || '')}`);
+          }
+          if (data.extracted_gst || data.vendor_gst) {
+            extractedInfo.push(`<strong>GST:</strong> ${escapeHtml(data.extracted_gst || data.vendor_gst || '')}`);
+          }
+          
+          messageDiv.style.cssText = `
+            display: block;
+            background: #fef3c7;
+            border: 1px solid #f59e0b;
+            border-radius: 6px;
+            padding: 12px 14px;
+            margin-top: 8px;
+            font-size: 13px;
+            color: #92400e;
+            line-height: 1.5;
+          `;
+          
+          messageDiv.innerHTML = `
+            <div style="display: flex; align-items: start; gap: 10px;">
+              <span style="font-size: 20px;">⚠️</span>
+              <div style="flex: 1;">
+                <div style="font-weight: bold; margin-bottom: 6px;">Supplier Not Found in Master</div>
+                <div style="margin-bottom: 8px;">
+                  ${extractedInfo.length > 0 ? 'Extracted: ' + extractedInfo.join(' • ') : 'Please add this supplier to continue'}
+                </div>
+                <button 
+                  onclick="openAddSupplierModalFromItemEntry('${escapeHtml(data.extracted_vendor_name || data.vendor_name || '')}', '${escapeHtml(data.extracted_gst || data.vendor_gst || '')}')"
+                  style="
+                    background: #2563eb;
+                    color: white;
+                    border: none;
+                    padding: 8px 14px;
+                    border-radius: 5px;
+                    font-size: 12px;
+                    font-weight: bold;
+                    cursor: pointer;
+                    transition: background 0.2s;
+                  "
+                  onmouseover="this.style.background='#1d4ed8'"
+                  onmouseout="this.style.background='#2563eb'"
+                >
+                  ➕ Add Supplier to Master
+                </button>
+              </div>
+            </div>
+          `;
+          
+          console.warn("❌ Supplier not found - GST:", data.extracted_gst || data.vendor_gst, "Name:", data.extracted_vendor_name || data.vendor_name);
+        }
+      }
 
       // Show sections progressively
       function showInvoiceHeaderSection() {
@@ -405,14 +496,44 @@
       function startManualEntry() {
         // Show all sections for manual entry
         showInvoiceHeaderSection();
+        
+        // Clear form fields for fresh manual entry
+        document.getElementById('invoice_number').value = '';
+        document.getElementById('vendor_name').value = '';
+        document.getElementById('total_amount').value = '';
+        document.getElementById('supplier_id').value = '';
+        
+        // Clear supplier message
+        const messageDiv = document.getElementById("supplierNotFoundMessage");
+        messageDiv.style.display = 'none';
+        messageDiv.innerHTML = '';
+        document.getElementById('supplier_id').style.borderColor = '#cbd5e1';
+        
         // Show the add manual item button only for manual entry mode
         document.getElementById('addManualItemBtn').style.display = 'inline-block';
+        
         // Set current date
         const today = new Date().toISOString().split('T')[0];
         document.getElementById('invoice_date').value = today;
+        
         // Clear line items and show empty state
         const body = document.getElementById("lineItemsBody");
         body.innerHTML = '<tr><td colspan="5" style="text-align: center; color: #94a3b8; padding: 40px;">📝 Click "+ Add Item Manually" button above to add your first item.</td></tr>';
+        
+        // Hide old QR codes and GRN info
+        document.getElementById('barcodeStrip').style.display = 'none';
+        document.getElementById('grnInfo').style.display = 'none';
+        
+        // Clear extracted payload
+        extractedPayload = null;
+        currentExtractedGST = null;
+        
+        // Clear localStorage
+        localStorage.removeItem('ai_inventory_extracted_payload');
+        localStorage.removeItem('ai_inventory_qc_map');
+        
+        // Show "Add Supplier" option for manual entry
+        handleSupplierMatching({ supplier_not_found: true, extracted_vendor_name: '', extracted_gst: '' });
       }
 
       function uploadAndExtract() {
@@ -421,6 +542,11 @@
           alert("Please select a PDF file first.");
           return;
         }
+        
+        // Clear old data before starting new extraction
+        extractedPayload = null;
+        localStorage.removeItem('ai_inventory_extracted_payload');
+        localStorage.removeItem('ai_inventory_qc_map');
         
         // Hide old QR codes and GRN info before processing new invoice
         document.getElementById('barcodeStrip').style.display = 'none';
@@ -438,53 +564,86 @@
           .then((res) => res.json())
           .then((data) => {
             document.getElementById("loadingMsg").style.display = "none";
+            
+            // ✅ Handle extraction errors
             if (data.error) {
               alert("Error: " + data.error);
               return;
             }
             
-            // Show sections
-            showInvoiceHeaderSection();
-            
-            extractedPayload = data;
-            document.getElementById("invoice_number").value =
-              data.invoice_number;
-            document.getElementById("invoice_date").value = data.invoice_date;
-            document.getElementById("vendor_name").value = data.vendor_name;
-            if(data.supplier_id){
-            document.getElementById("supplier_id").value = data.supplier_id;
+            // ✅ CRITICAL: Validate that we received invoice data and line items
+            if (!data.invoice_number && !data.line_items) {
+              alert("⚠️ Extraction returned empty data. Please try again or enter manually.");
+              console.error("Extraction result missing required data:", data);
+              return;
             }
-            document.getElementById("total_amount").value = data.total_amount;
-
-            const body = document.getElementById("lineItemsBody");
-            body.innerHTML = "";
-            data.line_items.forEach((item) => {
-              const row = document.createElement("tr");
-              const keyRaw = (data.invoice_number||'') + '|' + (item.description||'');
-              const key = sanitizeKey(keyRaw);
-              row.innerHTML = `
-                <td><strong>${item.description}</strong></td>
-                <td>${item.qty}</td>
-                <td>${item.unit_price}</td>
-                <td>${item.amount}</td>
-
-                <td>
-                  <button class="btn btn-add" type="button" style="margin-right: 5px;">QC</button>
-                  <button class="btn btn-delete" type="button" style="background: #dc2626; padding: 6px 12px; font-size: 12px;" onclick="removeExtractedItem(this)">🗑️ Remove</button>
-                  <span id="qc-badge-${key}" class="qc-badge" style="display:none"></span>
-                </td>
-              `;
-              const btn = row.querySelector("button");
-              btn.addEventListener("click", function () { openQCForm(item); });
-              body.appendChild(row);
-              // update badge if QC exists for this item
-              setTimeout(() => updateBadgeForKey(keyRaw), 0);
+            
+            // ✅ Log extraction result for debugging
+            console.log("✅ Extraction completed:", {
+              invoice: data.invoice_number,
+              items: data.line_items ? data.line_items.length : 0,
+              supplier_matched: data.supplier_matched,
+              supplier_not_found: data.supplier_not_found
             });
             
-            // Recalculate total after rendering AI-extracted items
+            // ✅ Show sections BEFORE populating to ensure UI is ready
+            showInvoiceHeaderSection();
+            
+            // ✅ Store extracted payload globally
+            extractedPayload = data;
+            
+            // ✅ Populate invoice header fields
+            document.getElementById("invoice_number").value = data.invoice_number || '';
+            document.getElementById("invoice_date").value = data.invoice_date || '';
+            document.getElementById("vendor_name").value = data.vendor_name || '';
+            document.getElementById("total_amount").value = data.total_amount || '';
+            
+            // ✅ Handle supplier matching using centralized function
+            handleSupplierMatching(data);
+
+            // ✅ CRITICAL: ALWAYS process line items regardless of supplier match
+            const body = document.getElementById("lineItemsBody");
+            body.innerHTML = "";
+            
+            // ✅ Validate line_items array exists
+            if (!data.line_items || !Array.isArray(data.line_items) || data.line_items.length === 0) {
+              console.warn("⚠️ No line items in extraction result");
+              body.innerHTML = '<tr><td colspan="5" style="text-align: center; color: #f59e0b; padding: 40px;">⚠️ No line items were extracted. Click "+ Add Item Manually" to add items.</td></tr>';
+            } else {
+              console.log("✅ Processing", data.line_items.length, "line items from extraction");
+              
+              // ✅ Render each line item
+              data.line_items.forEach((item, index) => {
+                console.log(`  Item ${index + 1}:`, item.description, "Qty:", item.qty, "Price:", item.unit_price);
+                
+                const row = document.createElement("tr");
+                const keyRaw = (data.invoice_number||'') + '|' + (item.description||'');
+                const key = sanitizeKey(keyRaw);
+                row.innerHTML = `
+                  <td><strong>${escapeHtml(item.description || 'Unknown Item')}</strong></td>
+                  <td>${escapeHtml(item.qty || '0')}</td>
+                  <td>${escapeHtml(item.unit_price || '0')}</td>
+                  <td>${escapeHtml(item.amount || '0')}</td>
+
+                  <td>
+                    <button class="btn btn-add" type="button" style="margin-right: 5px;">QC</button>
+                    <button class="btn btn-delete" type="button" style="background: #dc2626; padding: 6px 12px; font-size: 12px;" onclick="removeExtractedItem(this)">🗑️ Remove</button>
+                    <span id="qc-badge-${key}" class="qc-badge" style="display:none"></span>
+                  </td>
+                `;
+                const btn = row.querySelector("button");
+                btn.addEventListener("click", function () { openQCForm(item); });
+                body.appendChild(row);
+                // update badge if QC exists for this item
+                setTimeout(() => updateBadgeForKey(keyRaw), 0);
+              });
+            }
+            
+            // ✅ Recalculate total after rendering ALL items
             setTimeout(() => {
               recalcTotal();
               updateQCWarning();
+              console.log("✅ Invoice extraction and rendering complete");
             }, 100);
           })
           .catch((err) => {
@@ -493,40 +652,156 @@
           });
       }
 
-      function saveInvoiceToDB() {
-        if (!extractedPayload) {
-    extractedPayload = loadSavedPayload();
-}
+      // ✅ VALIDATION FUNCTION FOR MANDATORY FIELDS
+      function validateMandatoryFields() {
+        let isValid = true;
+        const fields = [
+          { id: 'supplier_id', name: 'Supplier' },
+          { id: 'invoice_number', name: 'Invoice Number' },
+          { id: 'invoice_date', name: 'Invoice Billing Date' },
+          { id: 'total_amount', name: 'Total Invoice Value' }
+        ];
 
-if (!extractedPayload) {
+        // Clear all previous error messages
+        fields.forEach(field => {
+          const errorDiv = document.getElementById(field.id + '_error');
+          if (errorDiv) {
+            errorDiv.style.display = 'none';
+            errorDiv.textContent = '';
+          }
+          const inputElement = document.getElementById(field.id);
+          if (inputElement) {
+            inputElement.style.borderColor = '#cbd5e1';
+          }
+        });
 
-    const manualItems = [];
+        // Validate each field
+        fields.forEach(field => {
+          const element = document.getElementById(field.id);
+          const errorDiv = document.getElementById(field.id + '_error');
+          
+          if (!element) return;
+          
+          let fieldValue = element.value ? element.value.trim() : '';
+          
+          if (!fieldValue) {
+            isValid = false;
+            element.style.borderColor = '#dc2626';
+            if (errorDiv) {
+              errorDiv.textContent = `${field.name} is required`;
+              errorDiv.style.display = 'block';
+            }
+          } else {
+            element.style.borderColor = '#16a34a'; // Green for valid
+          }
+        });
 
-    document.querySelectorAll("#lineItemsBody tr").forEach(row => {
+        // Show alert with all missing fields
+        if (!isValid) {
+          const missingFields = [];
+          fields.forEach(field => {
+            const element = document.getElementById(field.id);
+            if (element && (!element.value || !element.value.trim())) {
+              missingFields.push(field.name);
+            }
+          });
+          
+          alert(
+            '❌ Required Fields Missing\n\n' +
+            'Please fill in the following required fields:\n\n' +
+            missingFields.map(f => `  • ${f}`).join('\n') +
+            '\n\nAll fields marked with * are mandatory.'
+          );
+          
+          // Scroll to first error
+          const firstError = document.querySelector('input[style*="border-color: rgb(220, 38, 38)"], select[style*="border-color: rgb(220, 38, 38)"]');
+          if (firstError) {
+            firstError.scrollIntoView({ behavior: 'smooth', block: 'center' });
+            firstError.focus();
+          }
+        }
 
-        const desc = row.querySelector(".manual-description");
+        return isValid;
+      }
 
-        if (desc) {
-
-            manualItems.push({
-                description: desc.value,
+      async function saveInvoiceToDB() {
+        // ✅ VALIDATE ALL MANDATORY FIELDS FIRST
+        if (!validateMandatoryFields()) {
+          return; // Stop if validation fails
+        }
+        
+        // ✅ Collect ALL items from the table (both extracted and manual)
+        const allItems = [];
+        document.querySelectorAll("#lineItemsBody tr").forEach(row => {
+          const cells = row.querySelectorAll('td');
+          if (cells.length >= 4) {
+            // Check if it's a manual row with input fields
+            const descInput = row.querySelector(".manual-description");
+            if (descInput) {
+              // Manual item
+              allItems.push({
+                description: descInput.value.trim(),
                 qty: row.querySelector(".manual-qty").value,
                 unit_price: row.querySelector(".manual-price").value,
                 amount: row.querySelector(".manual-amount").textContent
-            });
+              });
+            } else {
+              // Extracted item (static cells)
+              allItems.push({
+                description: cells[0].textContent.trim(),
+                qty: cells[1].textContent.trim(),
+                unit_price: cells[2].textContent.trim(),
+                amount: cells[3].textContent.trim()
+              });
+            }
+          }
+        });
 
+        // ✅ Validate at least one line item exists
+        if (allItems.length === 0) {
+          alert(
+            '❌ No Line Items\n\n' +
+            'Please add at least one line item before posting GRN.\n\n' +
+            'Use "Process Invoice", "Scan with Phone", or click "+ Add Item Manually".'
+          );
+          return;
         }
 
-    });
+        // ✅ Validate each line item has required fields
+        for (let i = 0; i < allItems.length; i++) {
+          const item = allItems[i];
+          const lineNum = i + 1;
+          
+          if (!item.description || !item.description.trim()) {
+            alert(`❌ Line ${lineNum}: Item Name is required`);
+            return;
+          }
+          
+          const qty = parseFloat(item.qty);
+          if (!qty || qty <= 0) {
+            alert(`❌ Line ${lineNum}: Quantity must be greater than 0`);
+            return;
+          }
+          
+          const price = parseFloat(item.unit_price);
+          if (isNaN(price) || price < 0) {
+            alert(`❌ Line ${lineNum}: Unit Price must be a valid number`);
+            return;
+          }
+        }
 
-    extractedPayload = {
-        invoice_number: document.getElementById("invoice_number").value,
-        invoice_date: document.getElementById("invoice_date").value,
-        vendor_name: document.getElementById("vendor_name").value,
-        total_amount: parseFloat(document.getElementById("total_amount").value) || 0,
-        line_items: manualItems
-    };
-}
+        // ✅ Product Master validation removed - items will be auto-created/updated during GRN save
+        
+        // Build or update extractedPayload with ALL items
+        if (!extractedPayload) {
+          extractedPayload = {};
+        }
+        
+        extractedPayload.invoice_number = document.getElementById("invoice_number").value;
+        extractedPayload.invoice_date = document.getElementById("invoice_date").value;
+        extractedPayload.vendor_name = document.getElementById("vendor_name").value;
+        extractedPayload.total_amount = parseFloat(document.getElementById("total_amount").value) || 0;
+        extractedPayload.line_items = allItems; // ✅ Use all items from table
 
         const supplierId = document.getElementById("supplier_id").value;
         if (!supplierId) {
@@ -536,7 +811,22 @@ if (!extractedPayload) {
           return;
         }
 
-        // ✅ NEW: Validate QC completion for all items
+        // ✅ Validate selected supplier has required data
+        const supplierValidation = await validateSupplierData(supplierId);
+        if (!supplierValidation.valid) {
+          alert(
+            `❌ Supplier Data Incomplete\n\n` +
+            `The selected supplier is missing required information:\n\n` +
+            `${supplierValidation.missingFields.map(f => `  • ${f}`).join('\n')}\n\n` +
+            `Please update supplier "${supplierValidation.supplierName}" in Supplier Master with:\n` +
+            `  • Company Name\n` +
+            `  • Phone Number\n\n` +
+            `Then return here and try again.`
+          );
+          return;
+        }
+
+        // ✅ Validate QC completion for all items
         const allRows = document.querySelectorAll('#lineItemsBody tr');
         let hasItems = false;
         let allQCCompleted = true;
@@ -573,15 +863,6 @@ if (!extractedPayload) {
           return;
         }
 
-        extractedPayload.invoice_number =
-          document.getElementById("invoice_number").value;
-        extractedPayload.invoice_date =
-          document.getElementById("invoice_date").value;
-        extractedPayload.vendor_name =
-          document.getElementById("vendor_name").value;
-        extractedPayload.total_amount = parseFloat(
-          document.getElementById("total_amount").value,
-        );
         extractedPayload.supplier_id = parseInt(supplierId);
 
         // ── Invoice duplicate check ──
@@ -603,6 +884,169 @@ if (!extractedPayload) {
           .catch(() => _doSaveInvoice());
         } else {
           _doSaveInvoice();
+        }
+      }
+      
+      // ✅ NEW: Validate ALL items exist in Product Master with complete mandatory fields
+      async function validateAllItemsInProductMaster(items) {
+        try {
+          const res = await fetch('/api/products');
+          const data = await res.json();
+          const products = data.products || [];
+          
+          const missingItems = [];
+          const incompleteItems = [];
+          
+          for (const item of items) {
+            const itemName = item.description;
+            const lower = (itemName || '').toLowerCase().trim();
+            
+            // ✅ Find product using ULTRA STRICT matching
+            let found = null;
+            
+            // Strategy 1: Exact match
+            found = products.find(p => (p.item_name||'').toLowerCase().trim() === lower);
+            
+            // Strategy 2: SKU exact match
+            if (!found) {
+              found = products.find(p => (p.sku||'').toLowerCase().trim() === lower);
+            }
+            
+            // Strategy 3: Barcode exact match
+            if (!found) {
+              found = products.find(p => (p.barcode||'').toLowerCase().trim() === lower);
+            }
+            
+            // Strategy 4: Product name contains extracted (70% rule)
+            if (!found && lower.length >= 10) {
+              found = products.find(p => {
+                const productName = (p.item_name||'').toLowerCase().trim();
+                if (productName.includes(lower)) {
+                  const ratio = lower.length / productName.length;
+                  return ratio >= 0.7;
+                }
+                return false;
+              });
+            }
+            
+            // Strategy 5: Abbreviations (STRICT)
+            if (!found) {
+              const expandAbbreviations = (str) => {
+                return str.toLowerCase()
+                  .replace(/\btabs?\b/gi, 'tablets')
+                  .replace(/\bcaps?\b/gi, 'capsules')
+                  .replace(/\binj\b/gi, 'injection')
+                  .replace(/\s+/g, ' ')
+                  .trim();
+              };
+              
+              const expandedExtracted = expandAbbreviations(itemName);
+              const expandedLower = expandedExtracted.toLowerCase().trim();
+              
+              // Exact match with abbreviations
+              found = products.find(p => {
+                const expandedProduct = expandAbbreviations(p.item_name || '');
+                return expandedProduct === expandedLower;
+              });
+              
+              // Strict contains with 70% rule
+              if (!found && expandedLower.length >= 10) {
+                found = products.find(p => {
+                  const expandedProduct = expandAbbreviations(p.item_name || '');
+                  if (expandedProduct.includes(expandedLower)) {
+                    const ratio = expandedLower.length / expandedProduct.length;
+                    return ratio >= 0.7;
+                  }
+                  return false;
+                });
+              }
+            }
+            
+            if (!found) {
+              // ❌ Item NOT in Product Master
+              missingItems.push({ itemName });
+              continue;
+            }
+            
+            // ✅ Item found - now validate it has ALL required fields
+            const missingFields = [];
+            
+            if (!found.sku || !found.sku.trim()) {
+              missingFields.push('Item Code (SKU)');
+            }
+            if (!found.item_name || !found.item_name.trim()) {
+              missingFields.push('Item Name');
+            }
+            if (!found.category || !found.category.trim()) {
+              missingFields.push('Category');
+            }
+            if (!found.subcategory || !found.subcategory.trim()) {
+              missingFields.push('Subcategory');
+            }
+            if (!found.unit || !found.unit.trim()) {
+              missingFields.push('Unit of Measure');
+            }
+            if (found.reorder_level === null || found.reorder_level === undefined || found.reorder_level === '') {
+              missingFields.push('Reorder Limit Level');
+            }
+            if (!found.hsn_sac_code || !found.hsn_sac_code.trim()) {
+              missingFields.push('HSN/SAC Code');
+            }
+            if (!found.storage_location || !found.storage_location.trim()) {
+              missingFields.push('Physical Storage Area');
+            }
+            
+            if (missingFields.length > 0) {
+              incompleteItems.push({ 
+                itemName: found.item_name, 
+                missingFields 
+              });
+            }
+          }
+          
+          const valid = missingItems.length === 0 && incompleteItems.length === 0;
+          
+          return {
+            valid,
+            missingItems,
+            incompleteItems
+          };
+          
+        } catch (e) {
+          console.error('Product Master validation error:', e);
+          alert('⚠️ Unable to validate Product Master data. Please check your connection.');
+          return { valid: false, missingItems: [], incompleteItems: [] };
+        }
+      }
+      
+      // ✅ NEW: Validate selected supplier has required data (Company Name, Phone)
+      async function validateSupplierData(supplierId) {
+        try {
+          const res = await fetch(`/api/supplier/${supplierId}`);
+          if (!res.ok) {
+            throw new Error('Supplier not found');
+          }
+          
+          const supplier = await res.json();
+          const missingFields = [];
+          
+          if (!supplier.supplier_name || !supplier.supplier_name.trim()) {
+            missingFields.push('Company Name');
+          }
+          if (!supplier.phone || !supplier.phone.trim()) {
+            missingFields.push('Phone Number');
+          }
+          
+          return {
+            valid: missingFields.length === 0,
+            missingFields,
+            supplierName: supplier.supplier_name || 'Unknown'
+          };
+          
+        } catch (e) {
+          console.error('Supplier validation error:', e);
+          // If we can't validate, allow to proceed (backward compatibility)
+          return { valid: true, missingFields: [], supplierName: 'Unknown' };
         }
       }
 
@@ -791,6 +1235,26 @@ if (!extractedPayload) {
 
       function qcApplyStatus(status) {
         console.log("qcApplyStatus called:", status);
+        
+        // ✅ VALIDATION: Check if item exists in Product Master before confirming
+        if (status === 'confirmed') {
+          const productId = document.getElementById('qc_product_id').value;
+          const itemName = document.getElementById('qc_item_name').textContent || '';
+          
+          if (!productId) {
+            alert(
+              `❌ Item Not Found in Product Master\n\n` +
+              `Cannot confirm QC for "${itemName}" because it does not exist in the Product Master.\n\n` +
+              `Please add this item to Product Master first:\n` +
+              `1. Go to "Product Master" page\n` +
+              `2. Click "Add Product"\n` +
+              `3. Register "${itemName}" with required details\n` +
+              `4. Return here and retry QC confirmation`
+            );
+            return; // ✅ Block QC confirmation
+          }
+        }
+        
         const key = document.getElementById('qc_current_key').value;
         const details = [];
         const rows = document.querySelectorAll('.qc-spec-row');
@@ -961,14 +1425,99 @@ if (!extractedPayload) {
           const res = await fetch('/api/products');
           const data = await res.json();
           const products = data.products || [];
-          const lower = (itemName||'').toLowerCase();
-          let found = products.find(p => (p.item_name||'').toLowerCase() === lower);
-          if (!found) found = products.find(p => (p.item_name||'').toLowerCase().includes(lower));
+          const lower = (itemName||'').toLowerCase().trim();
+          
+          // ✅ ULTRA STRICT MATCHING - Only 4 reliable strategies
+          let found = null;
+          
+          // Strategy 1: Exact match (case-insensitive)
+          found = products.find(p => (p.item_name||'').toLowerCase().trim() === lower);
+          
+          // Strategy 2: SKU exact match
           if (!found) {
-            renderInteractiveSpecs([], previousQC);
+            found = products.find(p => (p.sku||'').toLowerCase().trim() === lower);
+          }
+          
+          // Strategy 3: Barcode exact match
+          if (!found) {
+            found = products.find(p => (p.barcode||'').toLowerCase().trim() === lower);
+          }
+          
+          // Strategy 4: Product Master name contains extracted name (STRICT - must be significant portion)
+          if (!found && lower.length >= 10) { // ✅ Only if extracted name is 10+ chars
+            found = products.find(p => {
+              const productName = (p.item_name||'').toLowerCase().trim();
+              // Product name must contain extracted name AND extracted must be at least 70% of product name
+              if (productName.includes(lower)) {
+                const ratio = lower.length / productName.length;
+                return ratio >= 0.7; // ✅ Extracted name must be at least 70% of product name length
+              }
+              return false;
+            });
+          }
+          
+          // Strategy 5: Handle ONLY common medical abbreviations (VERY STRICT)
+          if (!found) {
+            const expandAbbreviations = (str) => {
+              return str.toLowerCase()
+                .replace(/\btabs?\b/gi, 'tablets')
+                .replace(/\bcaps?\b/gi, 'capsules')
+                .replace(/\binj\b/gi, 'injection')
+                .replace(/\s+/g, ' ')
+                .trim();
+            };
+            
+            const expandedExtracted = expandAbbreviations(itemName);
+            const expandedLower = expandedExtracted.toLowerCase().trim();
+            
+            // Try exact match with expanded abbreviations
+            found = products.find(p => {
+              const expandedProduct = expandAbbreviations(p.item_name || '');
+              return expandedProduct === expandedLower;
+            });
+            
+            // Try strict contains match (70% rule) with expanded abbreviations
+            if (!found && expandedLower.length >= 10) {
+              found = products.find(p => {
+                const expandedProduct = expandAbbreviations(p.item_name || '');
+                if (expandedProduct.includes(expandedLower)) {
+                  const ratio = expandedLower.length / expandedProduct.length;
+                  return ratio >= 0.7;
+                }
+                return false;
+              });
+            }
+          }
+          
+          if (!found) {
+            // ✅ Show clear warning that item is not in Product Master
+            console.log('❌ STRICT MODE: No match found for:', itemName, '- Item NOT in Product Master');
+            document.getElementById('qc_specs_container').innerHTML = `
+              <div style="padding: 20px; text-align: center; background: #fef3c7; border: 2px solid #f59e0b; border-radius: 8px; color: #92400e;">
+                <div style="font-size: 32px; margin-bottom: 10px;">⚠️</div>
+                <div style="font-size: 16px; font-weight: bold; margin-bottom: 8px;">Item Not Found in Product Master</div>
+                <div style="font-size: 14px; margin-bottom: 12px;">
+                  <strong>"${escapeHtml(itemName)}"</strong> does not exist in the Product Master database.
+                </div>
+                <div style="font-size: 13px; line-height: 1.6; text-align: left; background: white; padding: 12px; border-radius: 6px; margin-bottom: 12px;">
+                  <strong>To perform QC inspection:</strong><br/>
+                  1. Go to <strong>Product Master</strong> page<br/>
+                  2. Click <strong>"Add Product"</strong><br/>
+                  3. Register this item with SKU, barcode, and inspection properties<br/>
+                  4. Return here and open QC form again
+                </div>
+                <div style="font-size: 12px; color: #78350f; font-style: italic;">
+                  ❌ QC Confirmation will be blocked until this item is registered in Product Master.
+                </div>
+              </div>
+            `;
             document.getElementById('qc_product_id').value = '';
             return;
           }
+          
+          // ✅ Match found - show which product was matched
+          console.log('✅ STRICT MODE matched:', found.item_name, '(ID:', found.id, ') for extracted name:', itemName);
+          
           document.getElementById('qc_product_id').value = found.id;
           const propsRes = await fetch(`/api/product-properties/${found.id}`);
           const propsData = await propsRes.json();
@@ -976,7 +1525,11 @@ if (!extractedPayload) {
           renderInteractiveSpecs(props, previousQC);
         } catch (e) {
           console.error(e);
-          document.getElementById('qc_specs_container').innerHTML = 'Failed to load product specs.';
+          document.getElementById('qc_specs_container').innerHTML = `
+            <div style="padding: 16px; background: #fee2e2; border: 1px solid #dc2626; border-radius: 6px; color: #991b1b;">
+              <strong>❌ Error:</strong> Failed to load product specifications. Please check your connection and try again.
+            </div>
+          `;
         }
       }
 
@@ -1076,14 +1629,119 @@ if (!extractedPayload) {
             <td>${item.unit_price}</td>
             <td>${item.amount}</td>
             <td>
-              <button class="btn btn-add" type="button" style="margin-right: 5px;">QC</button>
+              <button class="btn btn-add qc-btn-extracted" type="button" style="margin-right: 5px;" data-item-name="${escapeHtml(item.description)}" data-item-qty="${item.qty}" data-item-price="${item.unit_price}" data-item-amount="${item.amount}">QC</button>
               <button class="btn btn-delete" type="button" style="background: #dc2626; padding: 6px 12px; font-size: 12px;" onclick="removeExtractedItem(this)">🗑️ Remove</button>
               <span id="qc-badge-${key}" class="qc-badge" style="display:none"></span>
             </td>
           `;
-          row.querySelector("button").addEventListener("click", function () {
-            openQCForm(item);
+          
+          // ✅ Add click handler with Product Master validation
+          const qcBtn = row.querySelector(".qc-btn-extracted");
+          qcBtn.addEventListener("click", async function () {
+            const itemName = qcBtn.getAttribute('data-item-name');
+            
+            // ✅ Validate item exists in Product Master BEFORE opening QC modal
+            try {
+              const res = await fetch('/api/products');
+              const data = await res.json();
+              const products = data.products || [];
+              const lower = (itemName || '').toLowerCase().trim();
+              
+              // ✅ ULTRA STRICT MATCHING - Only 4 reliable strategies
+              let found = null;
+              
+              // Strategy 1: Exact match
+              found = products.find(p => (p.item_name||'').toLowerCase().trim() === lower);
+              
+              // Strategy 2: SKU exact match
+              if (!found) {
+                found = products.find(p => (p.sku||'').toLowerCase().trim() === lower);
+              }
+              
+              // Strategy 3: Barcode exact match
+              if (!found) {
+                found = products.find(p => (p.barcode||'').toLowerCase().trim() === lower);
+              }
+              
+              // Strategy 4: Product name contains extracted (STRICT - 70% rule)
+              if (!found && lower.length >= 10) {
+                found = products.find(p => {
+                  const productName = (p.item_name||'').toLowerCase().trim();
+                  if (productName.includes(lower)) {
+                    const ratio = lower.length / productName.length;
+                    return ratio >= 0.7;
+                  }
+                  return false;
+                });
+              }
+              
+              // Strategy 5: Abbreviations (STRICT)
+              if (!found) {
+                const expandAbbreviations = (str) => {
+                  return str.toLowerCase()
+                    .replace(/\btabs?\b/gi, 'tablets')
+                    .replace(/\bcaps?\b/gi, 'capsules')
+                    .replace(/\binj\b/gi, 'injection')
+                    .replace(/\s+/g, ' ')
+                    .trim();
+                };
+                
+                const expandedExtracted = expandAbbreviations(itemName);
+                const expandedLower = expandedExtracted.toLowerCase().trim();
+                
+                // Exact match with abbreviations
+                found = products.find(p => {
+                  const expandedProduct = expandAbbreviations(p.item_name || '');
+                  return expandedProduct === expandedLower;
+                });
+                
+                // Strict contains with 70% rule
+                if (!found && expandedLower.length >= 10) {
+                  found = products.find(p => {
+                    const expandedProduct = expandAbbreviations(p.item_name || '');
+                    if (expandedProduct.includes(expandedLower)) {
+                      const ratio = expandedLower.length / expandedProduct.length;
+                      return ratio >= 0.7;
+                    }
+                    return false;
+                  });
+                }
+              }
+              
+              if (!found) {
+                // ❌ Item NOT in Product Master - Block QC modal
+                console.log('❌ STRICT MODE: No match for:', itemName, '- Blocking QC');
+                alert(
+                  `❌ Item Not Found in Product Master\n\n` +
+                  `Cannot perform QC for "${itemName}" because it does not exist in the Product Master.\n\n` +
+                  `This item was extracted from the invoice but is not registered in your system.\n\n` +
+                  `Please add this item to Product Master first:\n` +
+                  `1. Go to "Product Master" page\n` +
+                  `2. Click "Add Product"\n` +
+                  `3. Register "${itemName}" with SKU, barcode, and inspection properties\n` +
+                  `4. Return here and click QC button again\n\n` +
+                  `All items must be registered before QC inspection.`
+                );
+                return; // ⛔ Block QC modal from opening
+              }
+              
+              // ✅ Item found - log match and proceed with QC
+              console.log('✅ STRICT MODE matched:', found.item_name, '(ID:', found.id, ') for extracted:', itemName);
+              
+              const itemObj = {
+                description: itemName,
+                qty: qcBtn.getAttribute('data-item-qty'),
+                unit_price: qcBtn.getAttribute('data-item-price'),
+                amount: qcBtn.getAttribute('data-item-amount')
+              };
+              openQCForm(itemObj);
+              
+            } catch (e) {
+              console.error('Product Master validation error:', e);
+              alert('⚠️ Unable to validate item. Please check your connection and try again.');
+            }
           });
+          
           body.appendChild(row);
           setTimeout(() => updateBadgeForKey(keyRaw), 0);
         });
@@ -1098,7 +1756,58 @@ if (!extractedPayload) {
       document.addEventListener('DOMContentLoaded', function() {
         localStorage.removeItem('ai_inventory_extracted_payload');
         localStorage.removeItem('ai_inventory_qc_map');
+        
+        // ✅ Add real-time validation for mandatory fields
+        const mandatoryFields = ['supplier_id', 'invoice_number', 'invoice_date', 'total_amount'];
+        
+        mandatoryFields.forEach(fieldId => {
+          const element = document.getElementById(fieldId);
+          if (element) {
+            element.addEventListener('blur', function() {
+              validateSingleField(fieldId);
+            });
+            element.addEventListener('input', function() {
+              // Clear error on input
+              const errorDiv = document.getElementById(fieldId + '_error');
+              if (errorDiv && element.value.trim()) {
+                errorDiv.style.display = 'none';
+                element.style.borderColor = '#cbd5e1';
+              }
+            });
+          }
+        });
       });
+      
+      // ✅ Validate single field
+      function validateSingleField(fieldId) {
+        const element = document.getElementById(fieldId);
+        const errorDiv = document.getElementById(fieldId + '_error');
+        
+        if (!element) return true;
+        
+        const value = element.value ? element.value.trim() : '';
+        
+        if (!value) {
+          element.style.borderColor = '#dc2626';
+          if (errorDiv) {
+            const fieldNames = {
+              'supplier_id': 'Supplier',
+              'invoice_number': 'Invoice Number',
+              'invoice_date': 'Invoice Billing Date',
+              'total_amount': 'Total Invoice Value'
+            };
+            errorDiv.textContent = `${fieldNames[fieldId]} is required`;
+            errorDiv.style.display = 'block';
+          }
+          return false;
+        } else {
+          element.style.borderColor = '#16a34a';
+          if (errorDiv) {
+            errorDiv.style.display = 'none';
+          }
+          return true;
+        }
+      }
 
   function recalcTotal() {
     var total = 0;
@@ -1148,8 +1857,12 @@ if (!extractedPayload) {
     row.innerHTML = `
         <td>
             <input class="manual-description" 
+                   list="productMasterList"
                    style="width: 100%; padding: 8px; border: 1px solid #cbd5e1; border-radius: 4px;"
-                   placeholder="Enter Item Name">
+                   placeholder="Enter Item Name (required) *"
+                   required>
+            <datalist id="productMasterList"></datalist>
+            <div class="manual-item-validation" style="display: none; margin-top: 4px; font-size: 11px;"></div>
         </td>
 
         <td>
@@ -1158,7 +1871,9 @@ if (!extractedPayload) {
                    style="width: 80px; padding: 8px; border: 1px solid #cbd5e1; border-radius: 4px;"
                    value="1"
                    min="0.01"
-                   step="0.01">
+                   step="0.01"
+                   placeholder="Qty *"
+                   required>
         </td>
 
         <td>
@@ -1166,7 +1881,10 @@ if (!extractedPayload) {
                    type="number"
                    step="0.01"
                    style="width: 100px; padding: 8px; border: 1px solid #cbd5e1; border-radius: 4px;"
-                   value="0">
+                   value="0"
+                   min="0"
+                   placeholder="Price *"
+                   required>
         </td>
 
         <td class="manual-amount" style="font-weight: bold; color: #1e293b;">
@@ -1191,6 +1909,28 @@ if (!extractedPayload) {
     const priceInput = row.querySelector(".manual-price");
     const amountCell = row.querySelector(".manual-amount");
     const descInput = row.querySelector(".manual-description");
+    const validationMsg = row.querySelector(".manual-item-validation");
+
+    // ✅ Load Product Master list for autocomplete
+    loadProductMasterForAutocomplete();
+
+    // ✅ Validate item exists in Product Master when user types
+    let validationTimeout = null;
+    descInput.addEventListener("input", function() {
+        clearTimeout(validationTimeout);
+        updateAmount();
+        
+        const itemName = descInput.value.trim();
+        if (!itemName) {
+            validationMsg.style.display = 'none';
+            descInput.style.borderColor = '#cbd5e1';
+            return;
+        }
+        
+        validationTimeout = setTimeout(() => {
+            validateItemInProductMaster(itemName, descInput, validationMsg);
+        }, 500); // Debounce validation
+    });
 
     function updateAmount() {
         const qty = parseFloat(qtyInput.value) || 0;
@@ -1201,7 +1941,6 @@ if (!extractedPayload) {
 
     qtyInput.addEventListener("input", updateAmount);
     priceInput.addEventListener("input", updateAmount);
-    descInput.addEventListener("input", updateAmount);
 
     updateAmount();
 
@@ -1215,29 +1954,169 @@ if (!extractedPayload) {
             return;
         }
 
-        const item = {
-            description: description,
-            qty: qtyInput.value,
-            unit_price: priceInput.value,
-            amount: amountCell.textContent
-        };
+        // ✅ Check if item exists in Product Master before opening QC
+        validateItemInProductMaster(description, descInput, validationMsg, function(isValid, productId) {
+            if (!isValid) {
+                alert(
+                    `❌ Item Not Found in Product Master\n\n` +
+                    `Cannot perform QC for "${description}" because it does not exist in the Product Master.\n\n` +
+                    `Please either:\n` +
+                    `1. Choose an existing item from the Product Master, OR\n` +
+                    `2. Go to "Product Master" page and add "${description}" first\n\n` +
+                    `Manual entry items must be registered in Product Master before QC.`
+                );
+                return;
+            }
 
-        openQCForm(item);
+            const item = {
+                description: description,
+                qty: qtyInput.value,
+                unit_price: priceInput.value,
+                amount: amountCell.textContent
+            };
 
-        // Save badge element for manual row
-        const invoiceNo =
-            document.getElementById("invoice_number").value || "MANUAL";
+            openQCForm(item);
 
-        const keyRaw = invoiceNo + "|" + description;
+            // Save badge element for manual row
+            const invoiceNo =
+                document.getElementById("invoice_number").value || "MANUAL";
 
-        document.getElementById("qc_current_key").value = keyRaw;
+            const keyRaw = invoiceNo + "|" + description;
 
-        const badge = row.querySelector(".qc-badge");
+            document.getElementById("qc_current_key").value = keyRaw;
 
-        badge.id = "qc-badge-" + sanitizeKey(keyRaw);
+            const badge = row.querySelector(".qc-badge");
 
-        updateBadgeForKey(keyRaw);
+            badge.id = "qc-badge-" + sanitizeKey(keyRaw);
+
+            updateBadgeForKey(keyRaw);
+        });
     };
+  }
+
+  // ✅ Load Product Master items for autocomplete dropdown
+  async function loadProductMasterForAutocomplete() {
+    try {
+      const res = await fetch('/api/products');
+      const data = await res.json();
+      const products = data.products || [];
+      
+      const datalist = document.getElementById('productMasterList');
+      if (datalist) {
+        datalist.innerHTML = '';
+        products.forEach(p => {
+          const option = document.createElement('option');
+          option.value = p.item_name;
+          datalist.appendChild(option);
+        });
+      }
+    } catch (e) {
+      console.error('Failed to load Product Master for autocomplete:', e);
+    }
+  }
+
+  // ✅ Validate if item exists in Product Master (ULTRA STRICT MODE)
+  async function validateItemInProductMaster(itemName, inputElement, validationMsgElement, callback) {
+    try {
+      const res = await fetch('/api/products');
+      const data = await res.json();
+      const products = data.products || [];
+      
+      const lower = (itemName || '').toLowerCase().trim();
+      
+      // ✅ ULTRA STRICT MATCHING - Only 4 reliable strategies
+      let found = null;
+      
+      // Strategy 1: Exact match
+      found = products.find(p => (p.item_name||'').toLowerCase().trim() === lower);
+      
+      // Strategy 2: SKU exact match
+      if (!found) {
+        found = products.find(p => (p.sku||'').toLowerCase().trim() === lower);
+      }
+      
+      // Strategy 3: Barcode exact match
+      if (!found) {
+        found = products.find(p => (p.barcode||'').toLowerCase().trim() === lower);
+      }
+      
+      // Strategy 4: Product name contains entered (STRICT - 70% rule)
+      if (!found && lower.length >= 10) {
+        found = products.find(p => {
+          const productName = (p.item_name||'').toLowerCase().trim();
+          if (productName.includes(lower)) {
+            const ratio = lower.length / productName.length;
+            return ratio >= 0.7;
+          }
+          return false;
+        });
+      }
+      
+      // Strategy 5: Abbreviations (STRICT)
+      if (!found) {
+        const expandAbbreviations = (str) => {
+          return str.toLowerCase()
+            .replace(/\btabs?\b/gi, 'tablets')
+            .replace(/\bcaps?\b/gi, 'capsules')
+            .replace(/\binj\b/gi, 'injection')
+            .replace(/\s+/g, ' ')
+            .trim();
+        };
+        
+        const expandedEntered = expandAbbreviations(itemName);
+        const expandedLower = expandedEntered.toLowerCase().trim();
+        
+        // Exact match with abbreviations
+        found = products.find(p => {
+          const expandedProduct = expandAbbreviations(p.item_name || '');
+          return expandedProduct === expandedLower;
+        });
+        
+        // Strict contains with 70% rule
+        if (!found && expandedLower.length >= 10) {
+          found = products.find(p => {
+            const expandedProduct = expandAbbreviations(p.item_name || '');
+            if (expandedProduct.includes(expandedLower)) {
+              const ratio = expandedLower.length / expandedProduct.length;
+              return ratio >= 0.7;
+            }
+            return false;
+          });
+        }
+      }
+      
+      if (found) {
+        // ✅ Item exists in Product Master
+        inputElement.style.borderColor = '#16a34a'; // Green border
+        validationMsgElement.style.display = 'block';
+        validationMsgElement.style.color = '#16a34a';
+        validationMsgElement.innerHTML = `✅ Found in Product Master: <strong>${escapeHtml(found.item_name)}</strong>`;
+        
+        console.log('✅ STRICT MODE: Manual entry matched:', found.item_name, '(ID:', found.id, ') for entered:', itemName);
+        
+        if (callback) callback(true, found.id);
+        return true;
+      } else {
+        // ❌ Item NOT in Product Master
+        inputElement.style.borderColor = '#dc2626'; // Red border
+        validationMsgElement.style.display = 'block';
+        validationMsgElement.style.color = '#dc2626';
+        validationMsgElement.innerHTML = `❌ Not found in Product Master. Add to Product Master first.`;
+        
+        console.log('❌ STRICT MODE: Manual entry NOT matched for:', itemName);
+        
+        if (callback) callback(false, null);
+        return false;
+      }
+    } catch (e) {
+      console.error('Validation error:', e);
+      validationMsgElement.style.display = 'block';
+      validationMsgElement.style.color = '#f59e0b';
+      validationMsgElement.innerHTML = `⚠️ Unable to validate. Check connection.`;
+      
+      if (callback) callback(false, null);
+      return false;
+    }
   }
 
   function removeManualItem(btn) {
@@ -1303,6 +2182,11 @@ if (!extractedPayload) {
       let qrCodeInstance = null;
 
       function startPhoneUpload() {
+        // Clear old data before starting phone scan
+        extractedPayload = null;
+        localStorage.removeItem('ai_inventory_extracted_payload');
+        localStorage.removeItem('ai_inventory_qc_map');
+        
         // Hide old QR codes and GRN info before starting phone scan
         document.getElementById('barcodeStrip').style.display = 'none';
         document.getElementById('grnInfo').style.display = 'none';
@@ -1376,10 +2260,10 @@ if (!extractedPayload) {
             document.getElementById("invoice_number").value = payload.invoice_number || '';
             document.getElementById("invoice_date").value = payload.invoice_date || '';
             document.getElementById("vendor_name").value = payload.vendor_name || '';
-            if (payload.supplier_id) {
-              document.getElementById("supplier_id").value = payload.supplier_id;
-            }
             document.getElementById("total_amount").value = payload.total_amount || '';
+            
+            // Handle supplier matching using centralized function
+            handleSupplierMatching(payload);
             
             // Render line items
             renderLineItems(payload.line_items || []);
@@ -1600,6 +2484,430 @@ if (!extractedPayload) {
 }
       
     </script>
+
+  <!-- Add Supplier Modal -->
+  <div id="addSupplierModal" style="display:none; position:fixed; inset:0; background:rgba(0,0,0,0.6); z-index:99999; align-items:center; justify-content:center;">
+    <div style="background:#fff; border-radius:12px; padding:28px; width:90%; max-width:540px; box-shadow:0 8px 32px rgba(0,0,0,0.3);">
+      <div style="display:flex; align-items:center; gap:12px; margin-bottom:18px;">
+        <span style="font-size:32px;">➕</span>
+        <h3 style="margin:0; font-size:20px; color:#1e293b;">Add Supplier to Master</h3>
+      </div>
+      
+      <form id="addSupplierForm" onsubmit="submitAddSupplier(event)">
+        <div style="display:grid; grid-template-columns:1fr 1fr; gap:14px; margin-bottom:14px;">
+          <div>
+            <label style="display:block; font-size:13px; color:#334155; margin-bottom:4px; font-weight:600;">
+              Supplier Name <span style="color:#dc2626;">*</span>
+            </label>
+            <input 
+              type="text" 
+              id="modal_supplier_name" 
+              required
+              placeholder="Enter company name"
+              style="width:100%; padding:10px; border:1px solid #cbd5e1; border-radius:6px; font-size:14px; box-sizing:border-box;"
+            />
+          </div>
+          
+          <div>
+            <label style="display:block; font-size:13px; color:#334155; margin-bottom:4px; font-weight:600;">
+              GST Number <span style="color:#dc2626;">*</span>
+            </label>
+            <input 
+              type="text" 
+              id="modal_gst_number" 
+              required
+              pattern="^[0-9]{2}[A-Z]{5}[0-9]{4}[A-Z]{1}[1-9A-Z]{1}Z[0-9A-Z]{1}$"
+              title="Enter valid 15-character GST number (e.g., 22AAAAA0000A1Z5)"
+              placeholder="22AAAAA0000A1Z5"
+              style="width:100%; padding:10px; border:1px solid #cbd5e1; border-radius:6px; font-size:14px; text-transform:uppercase; box-sizing:border-box;"
+            />
+          </div>
+        </div>
+        
+        <div style="margin-bottom:14px;">
+          <label style="display:block; font-size:13px; color:#334155; margin-bottom:4px; font-weight:600;">
+            Contact Person <span style="color:#dc2626;">*</span>
+          </label>
+          <input 
+            type="text" 
+            id="modal_contact_person"
+            required
+            placeholder="Enter contact person name"
+            style="width:100%; padding:10px; border:1px solid #cbd5e1; border-radius:6px; font-size:14px; box-sizing:border-box;"
+          />
+        </div>
+        
+        <div style="display:grid; grid-template-columns:1fr 1fr; gap:14px; margin-bottom:14px;">
+          <div>
+            <label style="display:block; font-size:13px; color:#334155; margin-bottom:4px; font-weight:600;">
+              Phone <span style="color:#dc2626;">*</span>
+            </label>
+            <input 
+              type="tel" 
+              id="modal_phone"
+              required
+              pattern="[0-9]{10,15}"
+              title="Enter valid phone number (10-15 digits)"
+              placeholder="Enter phone number"
+              style="width:100%; padding:10px; border:1px solid #cbd5e1; border-radius:6px; font-size:14px; box-sizing:border-box;"
+            />
+          </div>
+          
+          <div>
+            <label style="display:block; font-size:13px; color:#334155; margin-bottom:4px; font-weight:600;">
+              Email <span style="color:#dc2626;">*</span>
+            </label>
+            <input 
+              type="email" 
+              id="modal_email"
+              required
+              placeholder="supplier@example.com"
+              style="width:100%; padding:10px; border:1px solid #cbd5e1; border-radius:6px; font-size:14px; box-sizing:border-box;"
+            />
+          </div>
+        </div>
+        
+        <div style="margin-bottom:20px;">
+          <label style="display:block; font-size:13px; color:#334155; margin-bottom:4px; font-weight:600;">
+            Address <span style="color:#dc2626;">*</span>
+          </label>
+          <textarea 
+            id="modal_address"
+            rows="2"
+            required
+            placeholder="Enter complete address"
+            style="width:100%; padding:10px; border:1px solid #cbd5e1; border-radius:6px; font-size:14px; box-sizing:border-box; resize:vertical;"
+          ></textarea>
+        </div>
+        
+        <div style="display:flex; gap:10px; justify-content:flex-end;">
+          <button 
+            type="button"
+            onclick="closeAddSupplierModal()"
+            style="padding:10px 20px; background:#e5e7eb; color:#334155; border:none; border-radius:6px; font-size:14px; font-weight:600; cursor:pointer;"
+          >
+            Cancel
+          </button>
+          <button 
+            type="submit"
+            id="submitSupplierBtn"
+            style="padding:10px 20px; background:#16a34a; color:white; border:none; border-radius:6px; font-size:14px; font-weight:600; cursor:pointer;"
+          >
+            ✅ Add Supplier
+          </button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <script>
+    // Open Add Supplier Modal with pre-filled extracted data
+    function openAddSupplierModalFromItemEntry(supplierName, gstNumber) {
+      // Store current form state before opening modal
+      sessionStorage.setItem('itementry_preserve_state', JSON.stringify({
+        invoice_number: document.getElementById('invoice_number').value,
+        invoice_date: document.getElementById('invoice_date').value,
+        vendor_name: document.getElementById('vendor_name').value,
+        total_amount: document.getElementById('total_amount').value,
+        line_items_html: document.getElementById('lineItemsBody').innerHTML,
+        extracted_payload: extractedPayload,
+        qc_map: localStorage.getItem('ai_inventory_qc_map'),
+        extracted_gst: currentExtractedGST
+      }));
+      
+      document.getElementById('modal_supplier_name').value = supplierName || '';
+      document.getElementById('modal_gst_number').value = gstNumber || currentExtractedGST || '';
+      document.getElementById('modal_contact_person').value = '';
+      document.getElementById('modal_phone').value = '';
+      document.getElementById('modal_email').value = '';
+      document.getElementById('modal_address').value = '';
+      
+      document.getElementById('addSupplierModal').style.display = 'flex';
+    }
+
+    // Close Add Supplier Modal
+    function closeAddSupplierModal() {
+      document.getElementById('addSupplierModal').style.display = 'none';
+    }
+
+    // Submit Add Supplier Form
+    function submitAddSupplier(event) {
+      event.preventDefault();
+      
+      const submitBtn = document.getElementById('submitSupplierBtn');
+      const originalText = submitBtn.textContent;
+      submitBtn.disabled = true;
+      submitBtn.textContent = '⏳ Adding...';
+      
+      const formData = new FormData();
+      formData.append('supplier_name', document.getElementById('modal_supplier_name').value.trim());
+      formData.append('gst_number', document.getElementById('modal_gst_number').value.trim().toUpperCase());
+      formData.append('contact_person', document.getElementById('modal_contact_person').value.trim());
+      formData.append('phone', document.getElementById('modal_phone').value.trim());
+      formData.append('email', document.getElementById('modal_email').value.trim());
+      formData.append('address', document.getElementById('modal_address').value.trim());
+      
+      const gstNumber = document.getElementById('modal_gst_number').value.trim().toUpperCase();
+      
+      fetch('/suppliers', {
+        method: 'POST',
+        body: formData
+      })
+      .then(response => {
+        if (response.redirected || response.ok) {
+          // Success - supplier added, now restore state and auto-select
+          return restoreItemEntryStateAndSelectSupplier(gstNumber);
+        } else {
+          throw new Error('Failed to add supplier');
+        }
+      })
+      .then(() => {
+        closeAddSupplierModal();
+        alert('✅ Supplier added successfully and auto-selected!');
+      })
+      .catch(error => {
+        alert('❌ Failed to add supplier: ' + error.message + '\n\nPlease check for duplicate GST number or fill all required fields.');
+        submitBtn.disabled = false;
+        submitBtn.textContent = originalText;
+      });
+    }
+
+    // Restore Item Entry state and auto-select newly added supplier
+    async function restoreItemEntryStateAndSelectSupplier(gstNumber) {
+      try {
+        // Get preserved state
+        const preservedState = JSON.parse(sessionStorage.getItem('itementry_preserve_state') || '{}');
+        
+        // Refresh supplier dropdown
+        await refreshSupplierDropdownAndAutoSelect(gstNumber);
+        
+        // Restore all form fields
+        if (preservedState.invoice_number) {
+          document.getElementById('invoice_number').value = preservedState.invoice_number;
+        }
+        if (preservedState.invoice_date) {
+          document.getElementById('invoice_date').value = preservedState.invoice_date;
+        }
+        if (preservedState.vendor_name) {
+          document.getElementById('vendor_name').value = preservedState.vendor_name;
+        }
+        if (preservedState.total_amount) {
+          document.getElementById('total_amount').value = preservedState.total_amount;
+        }
+        
+        // Restore extracted payload BEFORE rendering line items
+        if (preservedState.extracted_payload) {
+          extractedPayload = preservedState.extracted_payload;
+        }
+        
+        // Restore QC map
+        if (preservedState.qc_map) {
+          localStorage.setItem('ai_inventory_qc_map', preservedState.qc_map);
+        }
+        
+        // ✅ CRITICAL: Use renderLineItems instead of innerHTML to restore event handlers
+        if (extractedPayload && extractedPayload.line_items) {
+          renderLineItems(extractedPayload.line_items);
+          
+          // Show add manual item button if needed
+          const hasManualItems = document.querySelector('.manual-description');
+          if (hasManualItems) {
+            document.getElementById('addManualItemBtn').style.display = 'inline-block';
+          }
+        } else if (preservedState.line_items_html) {
+          // Fallback: restore HTML (for manual items or mixed mode)
+          document.getElementById('lineItemsBody').innerHTML = preservedState.line_items_html;
+          
+          // Re-attach event listeners for QC buttons
+          reattachQCEventListeners();
+        }
+        
+        // Recalculate total and update QC warning
+        setTimeout(() => {
+          recalcTotal();
+          updateQCWarning();
+        }, 100);
+        
+        // Clear session storage
+        sessionStorage.removeItem('itementry_preserve_state');
+        
+        console.log('✅ Item Entry state restored after supplier addition');
+        
+      } catch (error) {
+        console.error('Failed to restore Item Entry state:', error);
+      }
+    }
+    
+    // ✅ NEW: Re-attach event listeners to QC buttons after innerHTML restore
+    function reattachQCEventListeners() {
+      const invoiceNum = document.getElementById('invoice_number').value || '';
+      
+      // Re-attach listeners for extracted items
+      document.querySelectorAll('.qc-btn-extracted').forEach(btn => {
+        const itemName = btn.getAttribute('data-item-name');
+        const itemQty = btn.getAttribute('data-item-qty');
+        const itemPrice = btn.getAttribute('data-item-price');
+        const itemAmount = btn.getAttribute('data-item-amount');
+        
+        btn.addEventListener('click', function() {
+          const item = {
+            description: itemName,
+            qty: itemQty,
+            unit_price: itemPrice,
+            amount: itemAmount
+          };
+          openQCForm(item);
+        });
+      });
+      
+      // Re-attach listeners for manual items
+      document.querySelectorAll('#lineItemsBody tr').forEach(row => {
+        const descInput = row.querySelector('.manual-description');
+        if (descInput) {
+          const qcBtn = row.querySelector('.btn-add');
+          if (qcBtn) {
+            qcBtn.onclick = function() {
+              const description = descInput.value.trim();
+              
+              if (!description) {
+                alert('Please enter Item Name first.');
+                return;
+              }
+              
+              const qtyInput = row.querySelector('.manual-qty');
+              const priceInput = row.querySelector('.manual-price');
+              const amountCell = row.querySelector('.manual-amount');
+              
+              const item = {
+                description: description,
+                qty: qtyInput.value,
+                unit_price: priceInput.value,
+                amount: amountCell.textContent
+              };
+              
+              openQCForm(item);
+              
+              const keyRaw = invoiceNum + '|' + description;
+              document.getElementById('qc_current_key').value = keyRaw;
+              
+              const badge = row.querySelector('.qc-badge');
+              badge.id = 'qc-badge-' + sanitizeKey(keyRaw);
+              
+              updateBadgeForKey(keyRaw);
+            };
+          }
+          
+          // Re-attach input listeners for manual items
+          const qtyInput = row.querySelector('.manual-qty');
+          const priceInput = row.querySelector('.manual-price');
+          const amountCell = row.querySelector('.manual-amount');
+          const validationMsg = row.querySelector('.manual-item-validation');
+          
+          if (qtyInput && priceInput && amountCell) {
+            function updateAmount() {
+              const qty = parseFloat(qtyInput.value) || 0;
+              const price = parseFloat(priceInput.value) || 0;
+              amountCell.textContent = (qty * price).toFixed(2);
+              recalcTotal();
+            }
+            
+            qtyInput.addEventListener('input', updateAmount);
+            priceInput.addEventListener('input', updateAmount);
+            
+            // Re-attach validation listener
+            if (validationMsg) {
+              let validationTimeout = null;
+              descInput.addEventListener('input', function() {
+                clearTimeout(validationTimeout);
+                updateAmount();
+                
+                const itemName = descInput.value.trim();
+                if (!itemName) {
+                  validationMsg.style.display = 'none';
+                  descInput.style.borderColor = '#cbd5e1';
+                  return;
+                }
+                
+                validationTimeout = setTimeout(() => {
+                  validateItemInProductMaster(itemName, descInput, validationMsg);
+                }, 500);
+              });
+            }
+          }
+        }
+      });
+      
+      // Update all QC badges
+      document.querySelectorAll('.qc-badge').forEach(badge => {
+        const badgeId = badge.id;
+        if (badgeId && badgeId.startsWith('qc-badge-')) {
+          const key = badgeId.replace('qc-badge-', '');
+          // Reconstruct raw key from sanitized key
+          const rows = document.querySelectorAll('#lineItemsBody tr');
+          rows.forEach(row => {
+            const cells = row.querySelectorAll('td');
+            if (cells.length >= 1) {
+              const itemName = cells[0].textContent.trim();
+              const keyRaw = invoiceNum + '|' + itemName;
+              if (sanitizeKey(keyRaw) === key) {
+                updateBadgeForKey(keyRaw);
+              }
+            }
+          });
+        }
+      });
+      
+      console.log('✅ QC event listeners re-attached');
+    }
+
+    // Refresh Supplier Dropdown and Auto-Select newly added supplier
+    async function refreshSupplierDropdownAndAutoSelect(gstNumber) {
+      try {
+        const currentDropdown = document.getElementById('supplier_id');
+        const messageDiv = document.getElementById("supplierNotFoundMessage");
+        
+        // Query backend for the newly created supplier
+        const response = await fetch(`/api/supplier-by-gst?gst=${encodeURIComponent(gstNumber)}`);
+        
+        if (response.ok) {
+          const data = await response.json();
+          
+          // Check if supplier already exists in dropdown
+          let optionExists = false;
+          for (let i = 0; i < currentDropdown.options.length; i++) {
+            if (currentDropdown.options[i].value == data.id) {
+              optionExists = true;
+              break;
+            }
+          }
+          
+          // Add new option if it doesn't exist
+          if (!optionExists) {
+            const newOption = new Option(
+              `${data.supplier_name} (${data.gst_number})`,
+              data.id
+            );
+            currentDropdown.add(newOption);
+          }
+          
+          // Auto-select the supplier
+          currentDropdown.value = data.id;
+          currentDropdown.style.borderColor = '#16a34a';
+          
+          // Clear "Supplier Not Found" message
+          messageDiv.style.display = 'none';
+          messageDiv.innerHTML = '';
+          
+          console.log('✅ Supplier added to dropdown and auto-selected:', data.supplier_name);
+        } else {
+          throw new Error('Supplier not found after creation');
+        }
+      } catch (error) {
+        console.error('Failed to refresh supplier dropdown:', error);
+        alert('✅ Supplier added! Please manually select it from the dropdown.');
+      }
+    }
+  </script>
 
   <!-- Invoice duplicate modal -->
   <div id="entryDupOverlay" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,0.5);z-index:99999;justify-content:center;align-items:center;">

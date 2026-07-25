@@ -283,6 +283,12 @@ def ensure_ledger_integrity():
                 (generate_password_hash(pu[1]), pu[0])
             )
 
+        # Migration: add grn_item_id column to inspection_entries for production traceability
+        inspection_cols = [row[1] for row in cur.execute("PRAGMA table_info(inspection_entries)").fetchall()]
+        if 'grn_item_id' not in inspection_cols:
+            cur.execute("ALTER TABLE inspection_entries ADD COLUMN grn_item_id INTEGER REFERENCES grn_items(id)")
+            logger.info("[Migration] Added grn_item_id column to inspection_entries for GRN traceability")
+
         conn.commit()
     except Exception:
         try:
@@ -327,6 +333,33 @@ def ensure_barcode_asset_exists(barcode_value):
         except Exception:
             return None
     return png_path
+
+
+@app.route('/generate_qr/<barcode_value>')
+@login_required
+def generate_qr(barcode_value):
+    """Generate QR code on-the-fly and return as PNG image"""
+    try:
+        qr = qrcode.QRCode(
+            version=1,
+            error_correction=qrcode.constants.ERROR_CORRECT_M,
+            box_size=8,
+            border=2
+        )
+        qr.add_data(barcode_value)
+        qr.make(fit=True)
+        img = qr.make_image(fill_color='black', back_color='white')
+        
+        # Save to BytesIO buffer
+        buffer = BytesIO()
+        img.save(buffer, format='PNG')
+        buffer.seek(0)
+        
+        return Response(buffer.getvalue(), mimetype='image/png')
+    except Exception as e:
+        logger.error(f"Error generating QR code for {barcode_value}: {e}")
+        # Return a 1x1 transparent PNG on error
+        return Response(b'', mimetype='image/png', status=500)
 
 
 def resolve_product_for_qc(cursor, product_id=None, item_name=None):
@@ -570,26 +603,142 @@ def logout():
 def dashboard():
     conn = get_db_connection()
     
-    # 1. Read Stock Alarm Counts
-    low_stock = conn.execute(
-        "SELECT COUNT(*) FROM products WHERE current_stock <= min_stock_level AND min_stock_level > 0"
-    ).fetchone()[0]
+    # 1. Total Products in Product Master
+    total_products = conn.execute("SELECT COUNT(*) FROM products").fetchone()[0]
     
-    # 2. Get Product Inventories
-    items = conn.execute("SELECT * FROM products ORDER BY item_code ASC").fetchall()
+    # 2. Total Suppliers
+    total_suppliers = conn.execute("SELECT COUNT(*) FROM suppliers").fetchone()[0]
     
-    # 3. Read Issued items — today only
-    issues = conn.execute("""
-        SELECT i.issue_date, i.issue_slip_no, p.item_code, p.item_name, i.issued_to, ii.quantity, p.unit
-        FROM item_issue_items ii
-        JOIN item_issues i ON ii.issue_id = i.id
-        JOIN products p ON ii.product_id = p.id
-        WHERE i.issue_date = DATE('now')
-        ORDER BY i.created_at DESC LIMIT 10
+    # 3. Total Departments
+    total_departments = conn.execute("SELECT COUNT(*) FROM departments").fetchone()[0]
+    
+    # 4. Total Inventory Items (sum of all current stock)
+    total_inventory_items = conn.execute("SELECT COALESCE(SUM(current_stock), 0) FROM products").fetchone()[0]
+    
+    # 5. Today's GRN Count (posted GRNs)
+    today_grn_count = conn.execute("""
+        SELECT COUNT(*) FROM grn 
+        WHERE DATE(posted_date) = DATE('now') AND status = 'Posted'
+    """).fetchone()[0]
+    
+    # 6. Today's Issue Count
+    today_issue_count = conn.execute("""
+        SELECT COUNT(*) FROM item_issues 
+        WHERE DATE(issue_date) = DATE('now')
+    """).fetchone()[0]
+    
+    # 7. Today's Return Count
+    today_return_count = conn.execute("""
+        SELECT COUNT(*) FROM inventory_returns 
+        WHERE DATE(return_date) = DATE('now')
+    """).fetchone()[0]
+    
+    # 8. Low Stock Items (count)
+    low_stock_count = conn.execute("""
+        SELECT COUNT(*) FROM products 
+        WHERE current_stock <= min_stock_level AND min_stock_level > 0
+    """).fetchone()[0]
+    
+    # 9. Total Stock Value (sum of current_stock * unit_price from latest GRN)
+    # Use average unit price from grn_items for each product
+    total_stock_value = conn.execute("""
+        SELECT COALESCE(SUM(p.current_stock * COALESCE(avg_price.avg_unit_price, 0)), 0)
+        FROM products p
+        LEFT JOIN (
+            SELECT product_id, AVG(unit_price) as avg_unit_price
+            FROM grn_items
+            WHERE unit_price > 0
+            GROUP BY product_id
+        ) avg_price ON p.id = avg_price.product_id
+    """).fetchone()[0]
+    
+    # 10. Current User Info
+    current_user = session.get('user', 'Guest')
+    current_role = session.get('role', 'viewer')
+    
+    # 11. Stock by Category (for pie chart)
+    stock_by_category = conn.execute("""
+        SELECT COALESCE(category, 'Uncategorized') as category, 
+               COUNT(*) as count
+        FROM products
+        GROUP BY category
+        ORDER BY count DESC
+    """).fetchall()
+    
+    # 12. Daily GRN vs Issues (last 7 days) for line chart
+    daily_stats = conn.execute("""
+        WITH RECURSIVE dates(date) AS (
+            SELECT DATE('now', '-6 days')
+            UNION ALL
+            SELECT DATE(date, '+1 day')
+            FROM dates
+            WHERE date < DATE('now')
+        )
+        SELECT 
+            d.date,
+            COALESCE(grn_count, 0) as grn_count,
+            COALESCE(issue_count, 0) as issue_count
+        FROM dates d
+        LEFT JOIN (
+            SELECT DATE(posted_date) as date, COUNT(*) as grn_count
+            FROM grn
+            WHERE status = 'Posted' AND DATE(posted_date) >= DATE('now', '-6 days')
+            GROUP BY DATE(posted_date)
+        ) g ON d.date = g.date
+        LEFT JOIN (
+            SELECT DATE(issue_date) as date, COUNT(*) as issue_count
+            FROM item_issues
+            WHERE DATE(issue_date) >= DATE('now', '-6 days')
+            GROUP BY DATE(issue_date)
+        ) i ON d.date = i.date
+        ORDER BY d.date
+    """).fetchall()
+    
+    # 13. Low Stock Items Details (for table)
+    low_stock_items = conn.execute("""
+        SELECT item_code, item_name, category, current_stock, min_stock_level, unit
+        FROM products
+        WHERE current_stock <= min_stock_level AND min_stock_level > 0
+        ORDER BY (current_stock / NULLIF(min_stock_level, 0)) ASC
+        LIMIT 10
+    """).fetchall()
+    
+    # 14. Recent Activity (last 10 stock movements)
+    recent_activity = conn.execute("""
+        SELECT 
+            sl.moved_at,
+            p.item_code,
+            p.item_name,
+            sl.movement_type,
+            sl.quantity_change,
+            sl.balance_after,
+            p.unit
+        FROM stock_ledger sl
+        JOIN products p ON sl.product_id = p.id
+        ORDER BY sl.moved_at DESC
+        LIMIT 10
     """).fetchall()
     
     conn.close()
-    return render_template('dashboard.html', low_stock=low_stock, items=items, issues=issues)
+    
+    return render_template(
+        'dashboard.html',
+        total_products=total_products,
+        total_suppliers=total_suppliers,
+        total_departments=total_departments,
+        total_inventory_items=total_inventory_items,
+        today_grn_count=today_grn_count,
+        today_issue_count=today_issue_count,
+        today_return_count=today_return_count,
+        low_stock_count=low_stock_count,
+        total_stock_value=total_stock_value,
+        current_user=current_user,
+        current_role=current_role,
+        stock_by_category=stock_by_category,
+        daily_stats=daily_stats,
+        low_stock_items=low_stock_items,
+        recent_activity=recent_activity
+    )
 
 @app.route('/products', methods=['GET', 'POST'])
 @login_required
@@ -604,17 +753,23 @@ def product_master():
             )
             return render_template('403.html'), 403
 
-        item_code = request.form.get('item_code')
-        item_name = request.form.get('item_name')
-        category = request.form.get('category')
-        subcategory = request.form.get('subcategory')
-        unit = request.form.get('unit')
+        item_code = request.form.get('item_code', '').strip()
+        item_name = request.form.get('item_name', '').strip()
+        category = request.form.get('category', '').strip()
+        subcategory = request.form.get('subcategory', '').strip()
+        unit = request.form.get('unit', '').strip()
         min_stock = float(request.form.get('min_stock_level') or 0)
         max_stock = float(request.form.get('max_stock_level') or 0)
         reorder_level = float(request.form.get('reorder_level') or 0)
-        hsn = request.form.get('hsn_sac_code')
-        location = request.form.get('storage_location')
-        description = request.form.get('description')
+        hsn = request.form.get('hsn_sac_code', '').strip()
+        location = request.form.get('storage_location', '').strip()
+        description = request.form.get('description', '').strip()
+
+        # Validate all required fields
+        if not all([item_code, item_name, category, subcategory, unit, hsn, location, description]):
+            flash("All fields are mandatory except Inspection Properties.", "error")
+            conn.close()
+            return redirect(url_for('product_master'))
 
         normalized_name = normalize_item_text(item_name)
         existing_product = conn.execute(
@@ -669,11 +824,11 @@ def product_master():
     can_write = is_write_allowed()
     can_delete = is_admin()  # Only admin can delete
     return render_template('product_master.html', products=products_list, can_write=can_write, can_delete=can_delete)
-
+print("===== EDIT PRODUCT ROUTE CALLED =====")
 @app.route('/product/edit', methods=['POST'])
 @login_required
 def edit_product():
-    # Staff and Admin can edit, Viewer cannot
+    print("EDIT PRODUCT ROUTE CALLED")
     if not is_write_allowed():
         logger.warning(
             "[RBAC] User '%s' (role=%s) attempted POST on /product/edit.",
@@ -685,17 +840,17 @@ def edit_product():
     cursor = conn.cursor()
     
     product_id = request.form.get('product_id')
-    item_code = request.form.get('item_code')
-    item_name = request.form.get('item_name')
+    item_code = request.form.get('item_code', '').strip()
+    item_name = request.form.get('item_name', '').strip()
     category = request.form.get('category')
-    subcategory = request.form.get('subcategory')
+    subcategory = request.form.get('subcategory', '').strip()
     unit = request.form.get('unit')
     min_stock = float(request.form.get('min_stock_level') or 0)
     max_stock = float(request.form.get('max_stock_level') or 0)
     reorder_level = float(request.form.get('reorder_level') or 0)
-    hsn = request.form.get('hsn_sac_code')
-    location = request.form.get('storage_location')
-    description = request.form.get('description')
+    hsn = request.form.get('hsn_sac_code', '').strip()
+    location = request.form.get('storage_location', '').strip()
+    description = request.form.get('description', '').strip()
     
     if not product_id or not item_code or not item_name:
         flash("Product ID, Item Code, and Item Name are required.", "error")
@@ -703,19 +858,47 @@ def edit_product():
         return redirect(url_for('product_master'))
     
     try:
-        # Check for duplicate item_code or item_name (excluding current product)
-        normalized_name = normalize_item_text(item_name)
-        existing = conn.execute("""
-            SELECT id FROM products 
-            WHERE (LOWER(item_code) = ? OR LOWER(item_name) = ?)
-            AND id != ?
-            LIMIT 1
-        """, (item_code.strip().lower(), normalized_name, product_id)).fetchone()
+        product_id = int(product_id)
+    except (ValueError, TypeError):
+        flash("Invalid product ID.", "error")
+        conn.close()
+        return redirect(url_for('product_master'))
+    
+    try:
+        # Get current product
+        current_product = cursor.execute(
+            "SELECT id, item_code, barcode FROM products WHERE id = ?", 
+            (product_id,)
+        ).fetchone()
         
-        if existing:
-            flash("Product Code or Product Name already exists.", "error")
+        if not current_product:
+            flash("Product not found.", "error")
             conn.close()
             return redirect(url_for('product_master'))
+        
+        current_item_code = current_product['item_code']
+        
+        # Only check duplicates if item_code is actually changing
+        if item_code != current_item_code:
+            duplicate = cursor.execute(
+                "SELECT id FROM products WHERE item_code = ? AND id != ?", 
+                (item_code, product_id)
+            ).fetchone()
+            
+            if duplicate:
+                flash("SKU already exists. Please use a different SKU.", "error")
+                conn.close()
+                return redirect(url_for('product_master'))
+            
+            duplicate_barcode = cursor.execute(
+                "SELECT id FROM products WHERE barcode = ? AND id != ?", 
+                (item_code, product_id)
+            ).fetchone()
+            
+            if duplicate_barcode:
+                flash("Barcode already exists. Please use a different barcode.", "error")
+                conn.close()
+                return redirect(url_for('product_master'))
         
         # Update product
         cursor.execute("""
@@ -727,40 +910,113 @@ def edit_product():
         """, (item_code, item_code, item_name, category, subcategory, unit, 
               min_stock, max_stock, reorder_level, hsn, location, description, product_id))
         
-        # Delete existing properties for this product
-        cursor.execute("DELETE FROM product_properties WHERE product_id = ?", (product_id,))
+        # Handle inspection properties update
+        # Check if any properties are being used in inspection_details
+        properties_in_use = cursor.execute("""
+            SELECT DISTINCT pp.id 
+            FROM product_properties pp
+            INNER JOIN inspection_details id ON id.product_property_id = pp.id
+            WHERE pp.product_id = ?
+        """, (product_id,)).fetchall()
         
-        # Insert updated inspection properties
+        properties_in_use_ids = [row['id'] for row in properties_in_use] if properties_in_use else []
+        
+        # Get new properties from form
         prop_names = request.form.getlist('property_name[]')
         prop_mins = request.form.getlist('property_min[]')
         prop_maxs = request.form.getlist('property_max[]')
         prop_methods = request.form.getlist('property_method[]')
         
+        # Get existing properties
+        existing_props = cursor.execute(
+            "SELECT id, property_name, min_value, max_value, method FROM product_properties WHERE product_id = ?",
+            (product_id,)
+        ).fetchall()
+        
+        existing_props_dict = {prop['id']: prop for prop in existing_props}
+        processed_ids = set()
+        
+        # Update or insert properties
         for idx, name in enumerate(prop_names):
             name = (name or '').strip()
             if not name:
                 continue
+            
+            min_val = None
+            max_val = None
             try:
-                min_val = float(prop_mins[idx]) if idx < len(prop_mins) and prop_mins[idx] not in (None, '') else None
-            except Exception:
-                min_val = None
+                if idx < len(prop_mins) and prop_mins[idx]:
+                    min_val = float(prop_mins[idx])
+            except:
+                pass
             try:
-                max_val = float(prop_maxs[idx]) if idx < len(prop_maxs) and prop_maxs[idx] not in (None, '') else None
-            except Exception:
-                max_val = None
+                if idx < len(prop_maxs) and prop_maxs[idx]:
+                    max_val = float(prop_maxs[idx])
+            except:
+                pass
             method = prop_methods[idx] if idx < len(prop_methods) else None
-            insert_product_property(cursor, product_id, name, min_val, max_val, method)
+            
+            # Try to find matching existing property by name
+            matching_prop = None
+            for prop_id, prop in existing_props_dict.items():
+                if prop['property_name'] == name and prop_id not in processed_ids:
+                    matching_prop = prop
+                    break
+            
+            if matching_prop:
+                # Update existing property
+                cursor.execute("""
+                    UPDATE product_properties 
+                    SET min_value = ?, max_value = ?, method = ?
+                    WHERE id = ?
+                """, (min_val, max_val, method, matching_prop['id']))
+                processed_ids.add(matching_prop['id'])
+            else:
+                # Insert new property
+                insert_product_property(cursor, product_id, name, min_val, max_val, method)
+        
+        # Delete properties that are no longer in the form (but only if not in use)
+        for prop_id in existing_props_dict.keys():
+            if prop_id not in processed_ids:
+                if prop_id not in properties_in_use_ids:
+                    cursor.execute("DELETE FROM product_properties WHERE id = ?", (prop_id,))
+                else:
+                    logger.warning(
+                        "[edit_product] Cannot delete property ID %s - it's referenced in inspection_details", 
+                        prop_id
+                    )
         
         conn.commit()
         ensure_barcode_asset_exists(item_code)
         flash("Product updated successfully!", "success")
-    except sqlite3.IntegrityError:
-        flash("Product Code or Barcode already exists.", "error")
+        logger.info("[edit_product] Product ID %s updated by user '%s'", product_id, session.get('user'))
+        
+    except sqlite3.IntegrityError as e:
+          import traceback
+          traceback.print_exc()
+          print("ACTUAL SQLITE ERROR:", e)
+
+          conn.rollback()
+
+          error_msg = str(e).lower()
+
+          if "unique" in error_msg or "item_code" in error_msg:
+               flash("SKU already exists. Please use a different SKU.", "error")
+          elif "barcode" in error_msg:
+              flash("Barcode already exists. Please use a different barcode.", "error")
+          elif "foreign key" in error_msg:
+              flash("Cannot update: Related records exist.", "error")
+          else:
+              flash(str(e), "error")
+
+          logger.error("[edit_product] IntegrityError: %s", str(e), exc_info=True)
     except Exception as e:
-        logger.error("[edit_product] Error: %s", e, exc_info=True)
-        flash("An error occurred while updating the product. Please try again.", "error")
+        conn.rollback()
+        logger.error("[edit_product] Error: %s", str(e), exc_info=True)
+        flash("An error occurred while updating the product.", "error")
+    finally:
+        conn.close()
     
-    conn.close()
     return redirect(url_for('product_master'))
 
 @app.route('/product/delete/<int:product_id>', methods=['POST'])
@@ -807,9 +1063,9 @@ def get_product_details(product_id):
             conn.close()
             return jsonify({"error": "Product not found"}), 404
         
-        # Get inspection properties
+        # ✅ Fixed: Column name is 'method' not 'test_method'
         properties = cursor.execute("""
-            SELECT property_name, min_value, max_value, test_method
+            SELECT property_name, min_value, max_value, method
             FROM product_properties
             WHERE product_id = ?
             ORDER BY id
@@ -1094,39 +1350,76 @@ def api_extract_data():
     file.save(file_path)
 
     try:
-        # AI Extraction
+        # ✅ STEP 1: AI Extraction - ALWAYS extract invoice data first
+        logger.info("[api_extract_data] Starting AI extraction from file: %s", safe_name)
         extracted = ai.extract_invoice_data(file_path)
-
         result = extracted.model_dump()
+        logger.info("[api_extract_data] AI extraction completed. Invoice: %s, Items: %d", 
+                   extracted.invoice_number, len(extracted.line_items))
 
-        # Database Connection
+        # ✅ STEP 2: Search Supplier Master (non-blocking lookup only)
         conn = get_db_connection()
-
-        supplier = conn.execute("""
-            SELECT id, supplier_name
-            FROM suppliers
-            WHERE gst_number = ?
-        """, (extracted.vendor_gst,)).fetchone()
-
+        supplier = None
+        
+        # Try match by GST first (preferred method)
+        if extracted.vendor_gst:
+            logger.info("[api_extract_data] Searching supplier by GST: %s", extracted.vendor_gst)
+            supplier = conn.execute("""
+                SELECT id, supplier_name, gst_number
+                FROM suppliers
+                WHERE UPPER(TRIM(gst_number)) = UPPER(TRIM(?))
+            """, (extracted.vendor_gst,)).fetchone()
+        
+        # If no GST match, try by supplier name (fallback)
+        if not supplier and extracted.vendor_name:
+            logger.info("[api_extract_data] No GST match, trying by name: %s", extracted.vendor_name)
+            supplier = conn.execute("""
+                SELECT id, supplier_name, gst_number
+                FROM suppliers
+                WHERE LOWER(TRIM(supplier_name)) = LOWER(TRIM(?))
+            """, (extracted.vendor_name,)).fetchone()
+        
         conn.close()
 
+        # ✅ STEP 3: Build response with ALL extracted data + supplier match status
+        # CRITICAL: Always include line_items regardless of supplier match
         if supplier:
             result["supplier_id"] = supplier["id"]
             result["supplier_name"] = supplier["supplier_name"]
+            result["supplier_matched"] = True
+            result["supplier_match_method"] = "gst" if extracted.vendor_gst else "name"
+            result["supplier_not_found"] = False
+            logger.info("[api_extract_data] ✅ Supplier matched: %s (ID: %s)", 
+                       supplier["supplier_name"], supplier["id"])
         else:
-            result["supplier_id"] = ""
-            result["supplier_name"] = ""
+            result["supplier_id"] = None
+            result["supplier_name"] = None
+            result["supplier_matched"] = False
+            result["supplier_not_found"] = True
+            result["extracted_gst"] = extracted.vendor_gst or ""
+            result["extracted_vendor_name"] = extracted.vendor_name or ""
+            logger.warning("[api_extract_data] ❌ Supplier NOT found - GST: %s, Name: %s. " 
+                         "Returning all extracted data anyway.",
+                         extracted.vendor_gst, extracted.vendor_name)
 
-        # Always return the result
+        # ✅ STEP 4: Return complete extraction result
+        # This MUST include: invoice_number, invoice_date, vendor_name, vendor_gst, 
+        # line_items[], total_amount, and supplier matching flags
+        logger.info("[api_extract_data] Returning response with %d line items (supplier_matched=%s)", 
+                   len(result.get('line_items', [])), result.get('supplier_matched', False))
         return result
 
     except Exception as e:
-        logger.error(f"[api_extract_data] Error: {e}", exc_info=True)
+        logger.error("[api_extract_data] Extraction failed: %s", e, exc_info=True)
         return {"error": "Invoice extraction failed. Please try again or enter details manually."}, 500
 
     finally:
         if os.path.exists(file_path):
-            os.remove(file_path)
+            try:
+                os.remove(file_path)
+                logger.info("[api_extract_data] Cleaned up temp file: %s", safe_name)
+            except Exception as cleanup_err:
+                logger.warning("[api_extract_data] Failed to cleanup temp file: %s", cleanup_err)
 
 @app.route('/api/save', methods=['POST'])
 
@@ -2426,16 +2719,35 @@ def save_inspection():
         conn = get_db_connection()
         cursor = conn.cursor()
 
+        product_id = data.get("product_id")
+        grn_item_id = data.get("grn_item_id")  # NEW: capture grn_item_id
+        inspection_date = data.get("inspection_date")
+
+        # NEW: If grn_item_id not provided but product_id is, try to find latest grn_item
+        if not grn_item_id and product_id:
+            try:
+                gi_row = cursor.execute(
+                    "SELECT id FROM grn_items WHERE product_id = ? ORDER BY id DESC LIMIT 1",
+                    (product_id,)
+                ).fetchone()
+                if gi_row:
+                    grn_item_id = gi_row[0] if isinstance(gi_row, (tuple, list)) else gi_row['id']
+                    logger.info("[save_inspection] Auto-resolved grn_item_id=%s for product_id=%s", grn_item_id, product_id)
+            except Exception as e:
+                logger.warning("[save_inspection] Could not auto-resolve grn_item_id: %s", e)
+
         cursor.execute("""
             INSERT INTO inspection_entries
             (
                 product_id,
+                grn_item_id,
                 inspection_date
             )
-            VALUES (?, ?)
+            VALUES (?, ?, ?)
         """, (
-            data.get("product_id"),
-            data.get("inspection_date")
+            product_id,
+            grn_item_id,
+            inspection_date
         ))
 
         inspection_id = cursor.lastrowid
@@ -2448,12 +2760,12 @@ def save_inspection():
             if not prop_id:
                 # try find any property for this product
                 try:
-                    row = cursor.execute("SELECT id FROM product_properties WHERE product_id = ? LIMIT 1", (data.get("product_id"),)).fetchone()
+                    row = cursor.execute("SELECT id FROM product_properties WHERE product_id = ? LIMIT 1", (product_id,)).fetchone()
                     if row:
                         prop_id = row[0]
                     else:
                         # create a generic property so NOT NULL constraint is satisfied
-                        cursor.execute("INSERT INTO product_properties (product_id, property_name) VALUES (?, ?)", (data.get("product_id"), 'General'))
+                        cursor.execute("INSERT INTO product_properties (product_id, property_name) VALUES (?, ?)", (product_id, 'General'))
                         prop_id = cursor.lastrowid
                 except Exception:
                     prop_id = None
@@ -2487,7 +2799,9 @@ def save_inspection():
 
         return jsonify({
             "status": "success",
-            "message": "Inspection saved successfully."
+            "message": "Inspection saved successfully.",
+            "inspection_id": inspection_id,
+            "grn_item_id": grn_item_id  # NEW: return for reference
         })
 
     except Exception as e:
@@ -2505,19 +2819,23 @@ def qc_sheet():
     invoice_number = request.args.get('invoice_number', '').strip()
     invoice_date = request.args.get('invoice_date', '').strip()
     qty = request.args.get('qty', '').strip()
+    grn_item_id = request.args.get('grn_item_id', type=int)  # NEW: accept grn_item_id parameter
 
     conn = get_db_connection()
     product = resolve_product_for_qc(conn, product_id=product_id, item_name=item_name)
     specs = []
     last_inspection_date = None
     latest_inspection_id = None
+    latest_grn_item_id = None  # NEW: track grn_item_id from latest inspection
+    
     if product:
         latest = conn.execute(
-            "SELECT id, inspection_date FROM inspection_entries WHERE product_id = ? ORDER BY inspection_date DESC, id DESC LIMIT 1",
+            "SELECT id, inspection_date, grn_item_id FROM inspection_entries WHERE product_id = ? ORDER BY inspection_date DESC, id DESC LIMIT 1",
             (product["id"],)
         ).fetchone()
         latest_inspection_id = latest["id"] if latest else None
         last_inspection_date = latest["inspection_date"] if latest else None
+        latest_grn_item_id = latest["grn_item_id"] if latest else None  # NEW: get grn_item_id
 
         if latest_inspection_id:
             rows = conn.execute("""
@@ -2548,6 +2866,20 @@ def qc_sheet():
                 ORDER BY id
             """, (product["id"],))
         specs = [dict(row) for row in rows]
+
+    # NEW: If grn_item_id not provided but invoice_number is, try to resolve it
+    if not grn_item_id and invoice_number and product:
+        try:
+            inv = conn.execute("SELECT id FROM invoices WHERE invoice_number = ?", (invoice_number,)).fetchone()
+            if inv:
+                grn_row = conn.execute("SELECT id FROM grn WHERE invoice_id = ? ORDER BY id DESC LIMIT 1", (inv['id'],)).fetchone()
+                if grn_row:
+                    gi_row = conn.execute("SELECT id FROM grn_items WHERE grn_id = ? AND product_id = ? ORDER BY id DESC LIMIT 1", (grn_row['id'], product["id"])).fetchone()
+                    if gi_row:
+                        grn_item_id = gi_row['id']
+        except Exception:
+            pass
+
     conn.close()
 
     return render_template(
@@ -2557,6 +2889,7 @@ def qc_sheet():
         invoice_number=invoice_number,
         invoice_date=invoice_date,
         qty=qty,
+        grn_item_id=grn_item_id or latest_grn_item_id,  # NEW: pass grn_item_id to template
         specs=specs,
         last_inspection_date=last_inspection_date,
         latest_inspection_id=latest_inspection_id,
@@ -2915,6 +3248,7 @@ def api_save_qc():
     data = request.json or {}
     item_name = (data.get('item_name') or '').strip()
     product_id = data.get('product_id')
+    grn_item_id = data.get('grn_item_id')  # NEW: capture grn_item_id from request
     invoice_number = (data.get('invoice_number') or '').strip()
     invoice_date = (data.get('invoice_date') or '').strip()
     qty = parse_decimal(data.get('qty'), 0.0)
@@ -2943,10 +3277,26 @@ def api_save_qc():
             else:
                 product_id = product['id']
 
+            # NEW: If grn_item_id not provided, try to find it from invoice_number + product_id
+            if not grn_item_id and invoice_number and product_id:
+                try:
+                    inv = cursor.execute("SELECT id FROM invoices WHERE invoice_number = ?", (invoice_number,)).fetchone()
+                    if inv:
+                        grn_row = cursor.execute("SELECT id FROM grn WHERE invoice_id = ? ORDER BY id DESC LIMIT 1", (inv['id'],)).fetchone()
+                        if grn_row:
+                            grn_id = grn_row['id']
+                            gi_row = cursor.execute("SELECT id FROM grn_items WHERE grn_id = ? AND product_id = ? ORDER BY id DESC LIMIT 1", (grn_id, product_id)).fetchone()
+                            if gi_row:
+                                grn_item_id = gi_row['id']
+                                logger.info("[api_save_qc] Auto-resolved grn_item_id=%s for product_id=%s, invoice=%s", grn_item_id, product_id, invoice_number)
+                except Exception as e:
+                    logger.warning("[api_save_qc] Could not auto-resolve grn_item_id: %s", e)
+
+            # NEW: Insert inspection with grn_item_id for full traceability
             cursor.execute("""
-                INSERT INTO inspection_entries (product_id, inspection_date)
-                VALUES (?, ?)
-            """, (product_id, inspection_date))
+                INSERT INTO inspection_entries (product_id, grn_item_id, inspection_date)
+                VALUES (?, ?, ?)
+            """, (product_id, grn_item_id, inspection_date))
             inspection_id = cursor.lastrowid
 
             for detail in details:
@@ -3010,7 +3360,10 @@ def api_save_qc():
                             if 'qc_status' not in gi_cols:
                                 cursor.execute("ALTER TABLE grn_items ADD COLUMN qc_status TEXT DEFAULT 'Pending'")
 
-                            if product_id:
+                            if grn_item_id:
+                                # Update specific grn_item by ID (most precise)
+                                cursor.execute("UPDATE grn_items SET qc_status = ? WHERE id = ?", (s_val, grn_item_id))
+                            elif product_id:
                                 cursor.execute("UPDATE grn_items SET qc_status = ? WHERE grn_id = ? AND product_id = ?", (s_val, grn_id, product_id))
                             else:
                                 # try match by item_name through products
@@ -3025,6 +3378,7 @@ def api_save_qc():
             "message": "QC inspection saved successfully.",
             "inspection_id": inspection_id,
             "product_id": product_id,
+            "grn_item_id": grn_item_id,  # NEW: return grn_item_id for reference
         })
     except Exception as e:
         logger.error("[api_save_qc] Error: %s", traceback.format_exc())
@@ -3117,6 +3471,162 @@ def qc_data(product_id):
         "product_name": product["item_name"] if product else "",
         "specs": [dict(s) for s in specs]
     })
+
+
+# NEW: QC Inspection Traceability API
+@app.route('/api/qc-traceability/<int:inspection_id>', methods=['GET'])
+@login_required
+def api_qc_traceability(inspection_id):
+    """
+    Retrieve full traceability information for a QC inspection.
+    Returns: GRN details, Invoice details, Supplier info, Product info
+    """
+    conn = get_db_connection()
+    try:
+        # Fetch inspection with full join chain to GRN -> Invoice -> Supplier
+        inspection = conn.execute("""
+            SELECT
+                ie.id AS inspection_id,
+                ie.inspection_date,
+                ie.product_id,
+                ie.grn_item_id,
+                p.item_code,
+                p.item_name,
+                p.barcode,
+                gi.quantity AS grn_quantity,
+                gi.batch_no,
+                gi.expiry_date,
+                gi.unit_price,
+                gi.qc_status,
+                g.grn_no,
+                g.received_date,
+                g.status AS grn_status,
+                inv.invoice_number,
+                inv.invoice_date,
+                inv.vendor_name,
+                inv.total_amount,
+                s.id AS supplier_id,
+                s.supplier_name,
+                s.gst_number,
+                s.contact_person,
+                s.phone,
+                s.email,
+                s.address
+            FROM inspection_entries ie
+            JOIN products p ON ie.product_id = p.id
+            LEFT JOIN grn_items gi ON ie.grn_item_id = gi.id
+            LEFT JOIN grn g ON gi.grn_id = g.id
+            LEFT JOIN invoices inv ON g.invoice_id = inv.id
+            LEFT JOIN suppliers s ON inv.supplier_id = s.id
+            WHERE ie.id = ?
+        """, (inspection_id,)).fetchone()
+
+        if not inspection:
+            return jsonify({"error": "Inspection not found"}), 404
+
+        # Fetch inspection details
+        details = conn.execute("""
+            SELECT
+                id.obs1, id.obs2, id.obs3, id.obs4, id.obs5, id.remarks,
+                pp.property_name, pp.min_value, pp.max_value, pp.method
+            FROM inspection_details id
+            JOIN product_properties pp ON id.product_property_id = pp.id
+            WHERE id.inspection_id = ?
+            ORDER BY pp.id
+        """, (inspection_id,)).fetchall()
+
+        result = {
+            "inspection": dict(inspection),
+            "details": [dict(d) for d in details],
+            "traceability": {
+                "has_grn_link": inspection['grn_item_id'] is not None,
+                "grn_no": inspection['grn_no'],
+                "invoice_number": inspection['invoice_number'],
+                "supplier_name": inspection['supplier_name'],
+                "supplier_gst": inspection['gst_number'],
+                "received_date": inspection['received_date'],
+            }
+        }
+
+        return jsonify(result)
+
+    except Exception as e:
+        logger.error("[api_qc_traceability] Error: %s", e, exc_info=True)
+        return jsonify({"error": "Failed to fetch traceability data"}), 500
+    finally:
+        conn.close()
+
+
+# NEW: List QC Inspections with Traceability
+@app.route('/api/qc-inspections', methods=['GET'])
+@login_required
+def api_qc_inspections():
+    """
+    List all QC inspections with basic traceability info.
+    Optional query params: product_id, grn_id, supplier_id, from_date, to_date
+    """
+    product_id = request.args.get('product_id', type=int)
+    grn_id = request.args.get('grn_id', type=int)
+    supplier_id = request.args.get('supplier_id', type=int)
+    from_date = request.args.get('from_date', '').strip()
+    to_date = request.args.get('to_date', '').strip()
+
+    conn = get_db_connection()
+    try:
+        query = """
+            SELECT
+                ie.id AS inspection_id,
+                ie.inspection_date,
+                p.item_code,
+                p.item_name,
+                gi.qc_status,
+                g.grn_no,
+                inv.invoice_number,
+                s.supplier_name
+            FROM inspection_entries ie
+            JOIN products p ON ie.product_id = p.id
+            LEFT JOIN grn_items gi ON ie.grn_item_id = gi.id
+            LEFT JOIN grn g ON gi.grn_id = g.id
+            LEFT JOIN invoices inv ON g.invoice_id = inv.id
+            LEFT JOIN suppliers s ON inv.supplier_id = s.id
+            WHERE 1=1
+        """
+        params = []
+
+        if product_id:
+            query += " AND ie.product_id = ?"
+            params.append(product_id)
+
+        if grn_id:
+            query += " AND gi.grn_id = ?"
+            params.append(grn_id)
+
+        if supplier_id:
+            query += " AND inv.supplier_id = ?"
+            params.append(supplier_id)
+
+        if from_date:
+            query += " AND ie.inspection_date >= ?"
+            params.append(from_date)
+
+        if to_date:
+            query += " AND ie.inspection_date <= ?"
+            params.append(to_date)
+
+        query += " ORDER BY ie.inspection_date DESC, ie.id DESC"
+
+        inspections = conn.execute(query, params).fetchall()
+
+        return jsonify({
+            "inspections": [dict(i) for i in inspections]
+        })
+
+    except Exception as e:
+        logger.error("[api_qc_inspections] Error: %s", e, exc_info=True)
+        return jsonify({"error": "Failed to fetch inspections"}), 500
+    finally:
+        conn.close()
+
     
 # ===========================
 # BARCODE SEARCH API
@@ -3374,9 +3884,11 @@ def confirm_grn(grn_id):
 def forgot_password():
     """
     Password recovery — step 1.
-    Accepts an email address, generates a one-time token, stores it with a
-    15-minute expiry, and dispatches the reset link.  The response is always
-    generic so we never leak whether the email exists in the database.
+    Accepts an email address. If a user with that email exists, generates a 
+    one-time token, stores it with a 15-minute expiry, and sends the reset link.
+    The response is always generic to prevent email enumeration.
+    
+    IMPORTANT: Token is ONLY generated and email is ONLY sent if the user exists.
     """
     if request.method == 'POST':
         raw_email = request.form.get('email', '').strip().lower()
@@ -3384,7 +3896,7 @@ def forgot_password():
         # Basic format validation (server-side guard)
         email_pattern = re.compile(r'^[^@\s]+@[^@\s]+\.[^@\s]+$')
         if not raw_email or not email_pattern.match(raw_email):
-            # Still show the generic message — don't help enumerate accounts
+            # Show generic message — don't help enumerate accounts
             flash(
                 "If an account exists for this email, a password reset link has been sent.",
                 "info"
@@ -3393,33 +3905,52 @@ def forgot_password():
 
         try:
             with get_db_connection() as conn:
+                # ✅ CRITICAL: First check if user exists with this email
                 user = conn.execute(
-                    "SELECT id, username FROM users WHERE LOWER(email) = ?",
+                    "SELECT id, username, email FROM users WHERE LOWER(email) = ?",
                     (raw_email,)
                 ).fetchone()
 
+                # ✅ ONLY generate token and send email if user exists
                 if user:
-                    token      = secrets.token_urlsafe(32)
-                    expiry     = time.time() + 15 * 60  # 15 minutes from now
+                    # User exists - proceed with token generation
+                    token  = secrets.token_urlsafe(32)
+                    expiry = time.time() + 15 * 60  # 15 minutes from now
 
+                    # Store token in database
                     conn.execute(
                         "UPDATE users SET reset_token = ?, token_expiry = ? WHERE id = ?",
                         (token, expiry, user['id'])
                     )
                     conn.commit()
 
+                    # Send reset email ONLY to registered users
                     reset_link = url_for('reset_password', token=token, _external=True)
                     sent = send_recovery_email(raw_email, user['username'], reset_link)
-                    if not sent:
+                    
+                    if sent:
+                        logger.info(
+                            "[forgot_password] Reset link sent to registered user: %s (id=%s)",
+                            user['username'], user['id']
+                        )
+                    else:
                         logger.warning(
                             "[forgot_password] Email delivery failed for user id=%s — "
                             "token was stored but email was not sent.", user['id']
                         )
-                # Always show the same message regardless of whether the email was found
+                else:
+                    # ✅ User does NOT exist - do nothing (no token, no email)
+                    logger.info(
+                        "[forgot_password] No user found with email: %s — no email sent",
+                        raw_email
+                    )
+                
+                # ✅ ALWAYS show the same generic message (prevents email enumeration)
                 flash(
                     "If an account exists for this email, a password reset link has been sent.",
                     "info"
                 )
+                
         except Exception:
             logger.error("[forgot_password] Unhandled error", exc_info=True)
             flash(
@@ -3807,6 +4338,68 @@ def api_check_stock():
         conn.close()
 
     return jsonify({'ok': len(errors) == 0, 'errors': errors})
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# SUPPLIER LOOKUP API  –  fetch supplier by GST number
+# ─────────────────────────────────────────────────────────────────────────────
+@app.route('/api/supplier-by-gst', methods=['GET'])
+@login_required
+def api_supplier_by_gst():
+    """
+    Fetch supplier details by GST number.
+    Query param: gst (required)
+    Returns: { "id", "supplier_name", "gst_number", "contact_person", "phone", "email", "address" }
+    """
+    gst = request.args.get('gst', '').strip().upper()
+    if not gst:
+        return jsonify({'error': 'GST number required'}), 400
+
+    conn = get_db_connection()
+    try:
+        supplier = conn.execute("""
+            SELECT id, supplier_name, gst_number, contact_person, phone, email, address
+            FROM suppliers
+            WHERE UPPER(TRIM(gst_number)) = ?
+        """, (gst,)).fetchone()
+
+        if supplier:
+            return jsonify(dict(supplier))
+        else:
+            return jsonify({'error': 'Supplier not found'}), 404
+    except Exception as e:
+        logger.error("[api_supplier_by_gst] Error: %s", e, exc_info=True)
+        return jsonify({'error': 'Failed to fetch supplier'}), 500
+    finally:
+        conn.close()
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+@app.route('/api/supplier/<int:supplier_id>', methods=['GET'])
+@login_required
+def api_supplier_by_id(supplier_id):
+    """
+    Fetch supplier details by ID.
+    Returns: { "id", "supplier_name", "gst_number", "contact_person", "phone", "email", "address" }
+    """
+    conn = get_db_connection()
+    try:
+        supplier = conn.execute("""
+            SELECT id, supplier_name, gst_number, contact_person, phone, email, address
+            FROM suppliers
+            WHERE id = ?
+        """, (supplier_id,)).fetchone()
+
+        if supplier:
+            return jsonify(dict(supplier))
+        else:
+            return jsonify({'error': 'Supplier not found'}), 404
+    except Exception as e:
+        logger.error("[api_supplier_by_id] Error: %s", e, exc_info=True)
+        return jsonify({'error': 'Failed to fetch supplier'}), 500
+    finally:
+        conn.close()
+
 
 
 if __name__ == '__main__':

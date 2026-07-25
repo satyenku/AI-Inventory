@@ -224,12 +224,17 @@ CREATE TABLE IF NOT EXISTS inspection_entries (
 
     product_id INTEGER NOT NULL,
 
+    grn_item_id INTEGER,
+
     inspection_date TEXT,
 
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
 
     FOREIGN KEY(product_id)
-    REFERENCES products(id)
+    REFERENCES products(id),
+    
+    FOREIGN KEY(grn_item_id)
+    REFERENCES grn_items(id)
 );
 
 -- Included here from update_db.py so fresh database initialization

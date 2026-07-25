@@ -274,8 +274,8 @@
               />
             </div>
             <div>
-              <label>Requesting Unit / Dept</label>
-              <select name="issued_to" required>
+              <label>Requesting Unit / Dept <span style="color: #dc2626;">*</span></label>
+              <select name="issued_to" id="department_dropdown" required>
                 <option value="" disabled selected>Select Department</option>
                 {% for dept in departments %}
                 <option value="{{ dept.dept_name }}">
@@ -283,6 +283,7 @@
                 </option>
                 {% endfor %}
               </select>
+              <div id="departmentNotFoundMessage" style="display: none; margin-top: 8px;"></div>
             </div>
             <div>
               <label>Work Order Ref Number</label>
@@ -729,6 +730,54 @@
       function escHtmlIssue(s) {
         return String(s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
       }
+
+      // ✅ Show "Department not found? Add Department" button
+      function showAddDepartmentOption() {
+        const messageDiv = document.getElementById('departmentNotFoundMessage');
+        messageDiv.style.cssText = `
+          display: block;
+          background: #fef3c7;
+          border: 1px solid #f59e0b;
+          border-radius: 6px;
+          padding: 10px 12px;
+          font-size: 13px;
+          color: #92400e;
+          line-height: 1.5;
+        `;
+        
+        messageDiv.innerHTML = `
+          <div style="display: flex; align-items: center; gap: 10px;">
+            <span style="font-size: 18px;">⚠️</span>
+            <div style="flex: 1;">
+              <div style="font-weight: bold; margin-bottom: 4px;">Department not found?</div>
+              <button 
+                onclick="openAddDepartmentModal()"
+                type="button"
+                style="
+                  background: #2563eb;
+                  color: white;
+                  border: none;
+                  padding: 6px 12px;
+                  border-radius: 5px;
+                  font-size: 12px;
+                  font-weight: bold;
+                  cursor: pointer;
+                  transition: background 0.2s;
+                "
+                onmouseover="this.style.background='#1d4ed8'"
+                onmouseout="this.style.background='#2563eb'"
+              >
+                ➕ Add Department
+              </button>
+            </div>
+          </div>
+        `;
+      }
+
+      // Show "Add Department" option on page load
+      document.addEventListener('DOMContentLoaded', function() {
+        showAddDepartmentOption();
+      });
     </script>
 
     <!-- Stock shortage modal -->
@@ -745,5 +794,275 @@
         </div>
       </div>
     </div>
+
+    <!-- Add Department Modal -->
+    <div id="addDepartmentModal" style="display:none; position:fixed; inset:0; background:rgba(0,0,0,0.6); z-index:99999; align-items:center; justify-content:center;">
+      <div style="background:#fff; border-radius:12px; padding:28px; width:90%; max-width:480px; box-shadow:0 8px 32px rgba(0,0,0,0.3);">
+        <div style="display:flex; align-items:center; gap:12px; margin-bottom:18px;">
+          <span style="font-size:32px;">🏢</span>
+          <h3 style="margin:0; font-size:20px; color:#1e293b;">Add Department</h3>
+        </div>
+        
+        <form id="addDepartmentForm" onsubmit="submitAddDepartment(event)">
+          <div style="margin-bottom:14px;">
+            <label style="display:block; font-size:13px; color:#334155; margin-bottom:4px; font-weight:600;">
+              Department Name <span style="color:#dc2626;">*</span>
+            </label>
+            <input 
+              type="text" 
+              id="modal_dept_name" 
+              required
+              placeholder="e.g. Production, Quality Control"
+              style="width:100%; padding:10px; border:1px solid #cbd5e1; border-radius:6px; font-size:14px; box-sizing:border-box;"
+            />
+          </div>
+          
+          <div style="margin-bottom:20px;">
+            <label style="display:block; font-size:13px; color:#334155; margin-bottom:4px; font-weight:600;">
+              Department ID (Optional)
+            </label>
+            <input 
+              type="text" 
+              id="modal_dept_id"
+              placeholder="e.g. PROD-01 (auto-generated if left blank)"
+              style="width:100%; padding:10px; border:1px solid #cbd5e1; border-radius:6px; font-size:14px; box-sizing:border-box;"
+            />
+            <p style="font-size:11px; color:#64748b; margin:4px 0 0;">Leave blank to auto-generate based on department name</p>
+          </div>
+          
+          <div style="display:flex; gap:10px; justify-content:flex-end;">
+            <button 
+              type="button"
+              onclick="closeAddDepartmentModal()"
+              style="padding:10px 20px; background:#e5e7eb; color:#334155; border:none; border-radius:6px; font-size:14px; font-weight:600; cursor:pointer;"
+            >
+              Cancel
+            </button>
+            <button 
+              type="submit"
+              id="submitDepartmentBtn"
+              style="padding:10px 20px; background:#16a34a; color:white; border:none; border-radius:6px; font-size:14px; font-weight:600; cursor:pointer;"
+            >
+              ✅ Add Department
+            </button>
+          </div>
+        </form>
+      </div>
+    </div>
+
+    <script>
+      // Open Add Department Modal
+      function openAddDepartmentModal() {
+        // Store current form state before opening modal
+        const issueForm = document.querySelector('form[action*="item-issue"]');
+        if (issueForm) {
+          const formState = {
+            issue_slip_no: document.querySelector('input[name="issue_slip_no"]').value,
+            issue_date: document.querySelector('input[name="issue_date"]').value,
+            work_order_no: document.querySelector('input[name="work_order_no"]').value,
+            items: []
+          };
+          
+          // Save all item rows
+          document.querySelectorAll('.item-row').forEach((row, index) => {
+            const productSelect = row.querySelector('.product-select');
+            const qtyInput = row.querySelector('input[name="qty[]"]');
+            
+            formState.items.push({
+              product_id: productSelect ? productSelect.value : '',
+              qty: qtyInput ? qtyInput.value : ''
+            });
+          });
+          
+          sessionStorage.setItem('itemissue_preserve_state', JSON.stringify(formState));
+        }
+        
+        document.getElementById('modal_dept_name').value = '';
+        document.getElementById('modal_dept_id').value = '';
+        document.getElementById('addDepartmentModal').style.display = 'flex';
+      }
+
+      // Close Add Department Modal
+      function closeAddDepartmentModal() {
+        document.getElementById('addDepartmentModal').style.display = 'none';
+      }
+
+      // Submit Add Department Form
+      function submitAddDepartment(event) {
+        event.preventDefault();
+        
+        const submitBtn = document.getElementById('submitDepartmentBtn');
+        const originalText = submitBtn.textContent;
+        submitBtn.disabled = true;
+        submitBtn.textContent = '⏳ Adding...';
+        
+        const formData = new FormData();
+        const deptName = document.getElementById('modal_dept_name').value.trim();
+        let deptId = document.getElementById('modal_dept_id').value.trim();
+        
+        // Auto-generate dept_id if not provided
+        if (!deptId) {
+          deptId = 'DEPT-' + deptName.substring(0, 4).toUpperCase() + '-' + Date.now().toString().slice(-4);
+        }
+        
+        formData.append('dept_id', deptId);
+        formData.append('dept_name', deptName);
+        
+        fetch('/departments', {
+          method: 'POST',
+          body: formData
+        })
+        .then(response => {
+          if (response.redirected || response.ok) {
+            // Success - department added
+            return restoreItemIssueStateAndSelectDepartment(deptName);
+          } else {
+            throw new Error('Failed to add department');
+          }
+        })
+        .then(() => {
+          closeAddDepartmentModal();
+          alert('✅ Department added successfully and auto-selected!');
+        })
+        .catch(error => {
+          alert('❌ Failed to add department: ' + error.message + '\n\nPlease check for duplicate department name.');
+          submitBtn.disabled = false;
+          submitBtn.textContent = originalText;
+        });
+      }
+
+      // Restore Item Issue state and auto-select newly added department
+      async function restoreItemIssueStateAndSelectDepartment(deptName) {
+        try {
+          // Get preserved state
+          const preservedState = JSON.parse(sessionStorage.getItem('itemissue_preserve_state') || '{}');
+          
+          // Refresh department dropdown
+          await refreshDepartmentDropdownAndAutoSelect(deptName);
+          
+          // Restore form fields
+          if (preservedState.issue_slip_no) {
+            document.querySelector('input[name="issue_slip_no"]').value = preservedState.issue_slip_no;
+          }
+          if (preservedState.issue_date) {
+            document.querySelector('input[name="issue_date"]').value = preservedState.issue_date;
+          }
+          if (preservedState.work_order_no) {
+            document.querySelector('input[name="work_order_no"]').value = preservedState.work_order_no;
+          }
+          
+          // Restore item rows if they exist
+          if (preservedState.items && preservedState.items.length > 0) {
+            const itemsContainer = document.getElementById('itemsContainer');
+            const existingRows = itemsContainer.querySelectorAll('.item-row');
+            
+            // Only clear and restore if we have saved items
+            preservedState.items.forEach((item, index) => {
+              let targetRow;
+              
+              if (index < existingRows.length) {
+                // Use existing row
+                targetRow = existingRows[index];
+              } else {
+                // Need to add new row
+                addNewRow();
+                const allRows = itemsContainer.querySelectorAll('.item-row');
+                targetRow = allRows[allRows.length - 1];
+              }
+              
+              // Restore values in the row
+              const productSelect = targetRow.querySelector('.product-select');
+              const qtyInput = targetRow.querySelector('input[name="qty[]"]');
+              
+              if (productSelect && item.product_id) {
+                productSelect.value = item.product_id;
+                productSelect.dispatchEvent(new Event('change'));
+              }
+              if (qtyInput && item.qty) {
+                qtyInput.value = item.qty;
+              }
+            });
+            
+            // Remove extra rows if saved state has fewer items
+            const finalRows = itemsContainer.querySelectorAll('.item-row');
+            for (let i = preservedState.items.length; i < finalRows.length; i++) {
+              finalRows[i].remove();
+            }
+            
+            updateRemoveButtons();
+          }
+          // If no items were saved, keep the existing default empty row - don't touch it
+          
+          // Clear session storage
+          sessionStorage.removeItem('itemissue_preserve_state');
+          
+          console.log('✅ Item Issue state restored after department addition');
+          
+        } catch (error) {
+          console.error('Failed to restore Item Issue state:', error);
+          // On error, at least ensure we have one row visible
+          const itemsContainer = document.getElementById('itemsContainer');
+          const rows = itemsContainer.querySelectorAll('.item-row');
+          if (rows.length === 0) {
+            // If all rows disappeared, we need to reload the page
+            console.warn('⚠️ Item rows disappeared, reloading page to restore form');
+            window.location.reload();
+          }
+        }
+      }
+
+      // Refresh Department Dropdown and Auto-Select newly added department
+      async function refreshDepartmentDropdownAndAutoSelect(deptName) {
+        try {
+          const currentDropdown = document.getElementById('department_dropdown');
+          const messageDiv = document.getElementById('departmentNotFoundMessage');
+          
+          // Reload page to get fresh department list
+          const response = await fetch('/item-issue');
+          const html = await response.text();
+          
+          // Parse HTML to extract department options
+          const parser = new DOMParser();
+          const doc = parser.parseFromString(html, 'text/html');
+          const selectElement = doc.querySelector('select[name="issued_to"]');
+          
+          if (selectElement) {
+            // Clear current options except first "Select" option
+            while (currentDropdown.options.length > 1) {
+              currentDropdown.remove(1);
+            }
+            
+            // Add fresh options from server
+            Array.from(selectElement.options).forEach((opt, index) => {
+              if (index > 0) { // Skip the first "Select" option
+                currentDropdown.add(new Option(opt.text, opt.value));
+              }
+            });
+            
+            // Find and auto-select the newly added department by name
+            let matched = false;
+            for (let i = 0; i < currentDropdown.options.length; i++) {
+              if (currentDropdown.options[i].value === deptName || 
+                  currentDropdown.options[i].text.includes(deptName)) {
+                currentDropdown.selectedIndex = i;
+                currentDropdown.style.borderColor = '#16a34a';
+                matched = true;
+                break;
+              }
+            }
+            
+            // Hide "Add Department" message after successful addition
+            if (matched) {
+              messageDiv.style.display = 'none';
+            }
+            
+            console.log('✅ Department dropdown refreshed and auto-selected:', matched);
+          }
+        } catch (error) {
+          console.error('Failed to refresh department dropdown:', error);
+          alert('✅ Department added! Please manually select it from the dropdown.');
+        }
+      }
+    </script>
   </body>
 </html>

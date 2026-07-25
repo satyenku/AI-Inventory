@@ -327,11 +327,11 @@
           </div>
           <div>
             {% if product.barcode %}
-            <p><strong>Product Barcode Label:</strong></p>
+            <p><strong>Product QR Code:</strong></p>
             <img
               class="barcode-img"
-              src="/static/barcodes/{{ product.barcode }}.png"
-              alt="Product Barcode"
+              src="/generate_qr/{{ product.barcode }}"
+              alt="Product QR Code"
               onerror="this.style.display = 'none'"
             />
             <p style="font-size: 11px; color: #64748b; text-align: center">

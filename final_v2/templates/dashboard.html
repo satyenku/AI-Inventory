@@ -2,11 +2,17 @@
 <html lang="en">
   <head>
     <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>Inventory Dashboard</title>
+    <!-- Chart.js for data visualization -->
+    <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
     <style>
+      * {
+        box-sizing: border-box;
+      }
       body {
         margin: 0;
-        font-family: Arial, sans-serif;
+        font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
         background: #f1f5f9;
         display: flex;
       }
@@ -16,6 +22,11 @@
         color: #fff;
         min-height: 100vh;
         padding-top: 20px;
+        position: fixed;
+        left: 0;
+        top: 0;
+        bottom: 0;
+        overflow-y: auto;
       }
       .sidebar h2 {
         text-align: center;
@@ -28,54 +39,121 @@
         color: #cbd5e1;
         text-decoration: none;
         font-size: 15px;
+        transition: all 0.2s;
       }
       .sidebar a:hover {
         background: #1e293b;
         color: #fff;
       }
       .main {
+        margin-left: 240px;
         flex: 1;
         padding: 25px;
+        width: calc(100% - 240px);
       }
       .header {
-        background: #ffffff;
-        padding: 15px;
-        border-radius: 6px;
-        box-shadow: 0 2px 6px rgba(0, 0, 0, 0.08);
+        background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+        padding: 25px;
+        border-radius: 8px;
+        box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
         margin-bottom: 25px;
+        color: white;
       }
       .header h1 {
         margin: 0;
-        color: #1e293b;
+        font-size: 32px;
+        font-weight: 600;
       }
-      .cards {
-        display: grid;
-        grid-template-columns: repeat(2, 1fr);
-        gap: 20px;
-        margin-bottom: 25px;
+      .header p {
+        font-size: 14px;
+        margin: 8px 0 0 0;
+        opacity: 0.9;
       }
-      .card {
-        background: #ffffff;
-        padding: 20px;
+      .refresh-notice {
+        background: #fef3c7;
+        border-left: 4px solid #f59e0b;
+        padding: 12px 16px;
         border-radius: 6px;
-        box-shadow: 0 2px 6px rgba(0, 0, 0, 0.08);
+        margin-bottom: 20px;
+        font-size: 14px;
+        color: #92400e;
       }
-      .card h3 {
+      .metrics-grid {
+        display: grid;
+        grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+        gap: 20px;
+        margin-bottom: 30px;
+      }
+      .metric-card {
+        background: #ffffff;
+        padding: 24px;
+        border-radius: 8px;
+        box-shadow: 0 2px 8px rgba(0, 0, 0, 0.08);
+        border-left: 4px solid #3b82f6;
+        transition: transform 0.2s, box-shadow 0.2s;
+      }
+      .metric-card:hover {
+        transform: translateY(-2px);
+        box-shadow: 0 4px 16px rgba(0, 0, 0, 0.12);
+      }
+      .metric-card.warning {
+        border-left-color: #ef4444;
+      }
+      .metric-card.success {
+        border-left-color: #10b981;
+      }
+      .metric-card.info {
+        border-left-color: #8b5cf6;
+      }
+      .metric-card h3 {
+        margin: 0 0 12px 0;
+        font-size: 13px;
+        color: #64748b;
+        text-transform: uppercase;
+        letter-spacing: 0.5px;
+        font-weight: 600;
+      }
+      .metric-card .value {
+        font-size: 36px;
         margin: 0;
-        font-size: 15px;
-        color: #475569;
-      }
-      .card p {
-        font-size: 28px;
-        margin: 10px 0 0;
         color: #0f172a;
+        font-weight: 700;
+      }
+      .metric-card .subtext {
+        font-size: 12px;
+        color: #94a3b8;
+        margin-top: 8px;
+      }
+      .charts-container {
+        display: grid;
+        grid-template-columns: 1fr 1fr;
+        gap: 20px;
+        margin-bottom: 30px;
+      }
+      .chart-box {
+        background: #ffffff;
+        padding: 24px;
+        border-radius: 8px;
+        box-shadow: 0 2px 8px rgba(0, 0, 0, 0.08);
+      }
+      .chart-box h3 {
+        margin: 0 0 20px 0;
+        color: #1e293b;
+        font-size: 18px;
+        font-weight: 600;
       }
       .table-box {
         background: #ffffff;
-        padding: 20px;
-        border-radius: 6px;
-        box-shadow: 0 2px 6px rgba(0, 0, 0, 0.08);
+        padding: 24px;
+        border-radius: 8px;
+        box-shadow: 0 2px 8px rgba(0, 0, 0, 0.08);
         margin-bottom: 25px;
+      }
+      .table-box h3 {
+        margin: 0 0 16px 0;
+        color: #1e293b;
+        font-size: 18px;
+        font-weight: 600;
       }
       table {
         width: 100%;
@@ -90,10 +168,91 @@
       }
       th {
         background: #f8fafc;
+        font-weight: 600;
+        color: #475569;
       }
       .low {
         color: #dc2626;
         font-weight: bold;
+      }
+      .positive {
+        color: #16a34a;
+        font-weight: bold;
+      }
+      .negative {
+        color: #dc2626;
+        font-weight: bold;
+      }
+      .badge {
+        padding: 4px 10px;
+        border-radius: 12px;
+        font-size: 12px;
+        font-weight: 600;
+        display: inline-block;
+      }
+      .badge-success {
+        background: #dcfce7;
+        color: #166534;
+      }
+      .badge-warning {
+        background: #fef3c7;
+        color: #92400e;
+      }
+      .badge-danger {
+        background: #fee2e2;
+        color: #991b1b;
+      }
+      .badge-info {
+        background: #dbeafe;
+        color: #1e40af;
+      }
+      .user-info {
+        display: flex;
+        align-items: center;
+        gap: 12px;
+      }
+      .user-avatar {
+        width: 48px;
+        height: 48px;
+        border-radius: 50%;
+        background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        color: white;
+        font-size: 20px;
+        font-weight: 700;
+      }
+      .user-details {
+        flex: 1;
+      }
+      .user-name {
+        font-size: 18px;
+        font-weight: 600;
+        color: #0f172a;
+        margin: 0;
+      }
+      .user-role {
+        font-size: 13px;
+        color: #64748b;
+        text-transform: capitalize;
+      }
+      @media (max-width: 1200px) {
+        .charts-container {
+          grid-template-columns: 1fr;
+        }
+      }
+      @media (max-width: 768px) {
+        .sidebar {
+          width: 200px;
+        }
+        .main {
+          margin-left: 200px;
+          width: calc(100% - 200px);
+        }
+        .metrics-grid {
+          grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+        }
       }
     </style>
   </head>
@@ -111,89 +270,173 @@
       <a href="{{ url_for('user_management') }}">👤 Users</a>
       <a href="{{ url_for('logout') }}" style="color: #ef4444">🚪 Sign Out</a>
     </div>
+    
     <div class="main">
       <div class="header">
-        <h1>Inventory Dashboard</h1>
-        <p style="color: #475569; font-size: 14px; margin: 5px 0 0 0">
-          Today's operational stock metrics
-        </p>
+        <h1>📊 Inventory Dashboard</h1>
+        <p>Real-time inventory metrics and operational insights</p>
       </div>
-      <div class="cards">
-        <div class="card">
-          <h3>Critical Low Stock Alarms</h3>
-          <p style="color: #dc2626">{{ low_stock }}</p>
+
+      <div class="refresh-notice">
+        ℹ️ <strong>Auto-Refresh:</strong> Dashboard data updates automatically after Product Master changes, GRN posting, Item Issues, and Returns.
+      </div>
+
+      <!-- Key Metrics Cards -->
+      <div class="metrics-grid">
+        <div class="metric-card success">
+          <h3>Total Products</h3>
+          <p class="value">{{ total_products }}</p>
+          <p class="subtext">Registered in Product Master</p>
         </div>
-        <div class="card">
-          <h3>Connected Operator Profile</h3>
-          <p style="font-size: 18px">
-            {{ session.get('user', 'Standard User') }}
-          </p>
+
+        <div class="metric-card info">
+          <h3>Total Inventory Items</h3>
+          <p class="value">{{ "%.0f"|format(total_inventory_items) }}</p>
+          <p class="subtext">Sum of all stock quantities</p>
+        </div>
+
+        <div class="metric-card">
+          <h3>Total Stock Value</h3>
+          <p class="value">₹{{ "%.2f"|format(total_stock_value) }}</p>
+          <p class="subtext">Based on average GRN prices</p>
+        </div>
+
+        <div class="metric-card warning">
+          <h3>Low Stock Items</h3>
+          <p class="value">{{ low_stock_count }}</p>
+          <p class="subtext">Below minimum threshold</p>
+        </div>
+
+        <div class="metric-card">
+          <h3>Total Suppliers</h3>
+          <p class="value">{{ total_suppliers }}</p>
+          <p class="subtext">Active supplier network</p>
+        </div>
+
+        <div class="metric-card">
+          <h3>Total Departments</h3>
+          <p class="value">{{ total_departments }}</p>
+          <p class="subtext">Organizational units</p>
+        </div>
+
+        <div class="metric-card success">
+          <h3>Today's GRN Count</h3>
+          <p class="value">{{ today_grn_count }}</p>
+          <p class="subtext">Goods received today</p>
+        </div>
+
+        <div class="metric-card">
+          <h3>Today's Issue Count</h3>
+          <p class="value">{{ today_issue_count }}</p>
+          <p class="subtext">Items issued today</p>
+        </div>
+
+        <div class="metric-card">
+          <h3>Today's Return Count</h3>
+          <p class="value">{{ today_return_count }}</p>
+          <p class="subtext">Items returned today</p>
+        </div>
+
+        <div class="metric-card info">
+          <h3>Current User</h3>
+          <div class="user-info">
+            <div class="user-avatar">{{ current_user[0]|upper }}</div>
+            <div class="user-details">
+              <p class="user-name">{{ current_user }}</p>
+              <p class="user-role">{{ current_role }}</p>
+            </div>
+          </div>
         </div>
       </div>
+
+      <!-- Charts -->
+      <div class="charts-container">
+        <div class="chart-box">
+          <h3>📊 Stock Distribution by Category</h3>
+          <canvas id="categoryChart" height="200"></canvas>
+        </div>
+        
+        <div class="chart-box">
+          <h3>📈 Daily GRN vs Issues (Last 7 Days)</h3>
+          <canvas id="dailyChart" height="200"></canvas>
+        </div>
+      </div>
+
+      <!-- Low Stock Items Table -->
+      {% if low_stock_items %}
       <div class="table-box">
-        <h3 style="margin-top: 0; color: #1e293b">Standard Stock Quantities</h3>
+        <h3>⚠️ Low Stock Alert - Critical Items</h3>
         <table>
           <thead>
             <tr>
               <th>Item Code</th>
               <th>Item Name</th>
               <th>Category</th>
+              <th>Current Stock</th>
+              <th>Min Level</th>
               <th>Unit</th>
-              <th>Storage Location</th>
-              <th>Available Qty</th>
+              <th>Status</th>
             </tr>
           </thead>
           <tbody>
-            {% for item in items %}
+            {% for item in low_stock_items %}
             <tr>
-              <td>{{ item.item_code }}</td>
+              <td><strong>{{ item.item_code }}</strong></td>
               <td>{{ item.item_name }}</td>
-              <td>{{ item.category or 'Unassigned' }}</td>
+              <td>{{ item.category or 'N/A' }}</td>
+              <td class="low">{{ item.current_stock }}</td>
+              <td>{{ item.min_stock_level }}</td>
               <td>{{ item.unit }}</td>
-              <td>{{ item.storage_location or 'N/A' }}</td>
-              <td
-                class="{{ 'low' if item.current_stock <= item.min_stock_level }}"
-              >
-                {{ item.current_stock }}
-              </td>
-            </tr>
-            {% else %}
-            <tr>
-              <td colspan="6" style="text-align: center; color: #94a3b8">
-                No items located within catalog database registry.
+              <td>
+                <span class="badge badge-danger">Low Stock</span>
               </td>
             </tr>
             {% endfor %}
           </tbody>
         </table>
       </div>
+      {% endif %}
+
+      <!-- Recent Activity -->
       <div class="table-box">
-        <h3 style="margin-top: 0; color: #1e293b">Today's Dispatched Stock</h3>
+        <h3>🕒 Recent Stock Movements</h3>
         <table>
           <thead>
             <tr>
-              <th>Date</th>
-              <th>Slip No</th>
+              <th>Timestamp</th>
               <th>Item Code</th>
               <th>Item Name</th>
-              <th>Target Unit</th>
-              <th>Dispatched Qty</th>
+              <th>Movement Type</th>
+              <th>Quantity Change</th>
+              <th>Balance After</th>
             </tr>
           </thead>
           <tbody>
-            {% for issue in issues %}
+            {% for activity in recent_activity %}
             <tr>
-              <td>{{ issue.issue_date }}</td>
-              <td>{{ issue.issue_slip_no }}</td>
-              <td>{{ issue.item_code }}</td>
-              <td>{{ issue.item_name }}</td>
-              <td>{{ issue.issued_to }}</td>
-              <td>{{ issue.quantity }} {{ issue.unit }}</td>
+              <td>{{ activity.moved_at }}</td>
+              <td><strong>{{ activity.item_code }}</strong></td>
+              <td>{{ activity.item_name }}</td>
+              <td>
+                {% if activity.movement_type == 'GRN' %}
+                  <span class="badge badge-success">{{ activity.movement_type }}</span>
+                {% elif activity.movement_type == 'ISSUE' %}
+                  <span class="badge badge-warning">{{ activity.movement_type }}</span>
+                {% elif activity.movement_type == 'RETURN' %}
+                  <span class="badge badge-info">{{ activity.movement_type }}</span>
+                {% else %}
+                  <span class="badge">{{ activity.movement_type }}</span>
+                {% endif %}
+              </td>
+              <td class="{{ 'positive' if activity.quantity_change > 0 else 'negative' }}">
+                {{ '+' if activity.quantity_change > 0 else '' }}{{ activity.quantity_change }}
+              </td>
+              <td><strong>{{ activity.balance_after }} {{ activity.unit }}</strong></td>
             </tr>
             {% else %}
             <tr>
               <td colspan="6" style="text-align: center; color: #94a3b8">
-                No registered stock withdrawals tracked today.
+                No recent stock movements recorded.
               </td>
             </tr>
             {% endfor %}
@@ -201,5 +444,129 @@
         </table>
       </div>
     </div>
+
+    <script>
+      // Stock by Category Chart (Pie)
+      const categoryCtx = document.getElementById('categoryChart').getContext('2d');
+      const categoryData = {
+        labels: [
+          {% for cat in stock_by_category %}
+            '{{ cat.category }}'{% if not loop.last %},{% endif %}
+          {% endfor %}
+        ],
+        datasets: [{
+          data: [
+            {% for cat in stock_by_category %}
+              {{ cat.count }}{% if not loop.last %},{% endif %}
+            {% endfor %}
+          ],
+          backgroundColor: [
+            '#3b82f6', '#ef4444', '#10b981', '#f59e0b', '#8b5cf6',
+            '#ec4899', '#14b8a6', '#f97316', '#6366f1', '#84cc16'
+          ],
+          borderWidth: 2,
+          borderColor: '#ffffff'
+        }]
+      };
+
+      new Chart(categoryCtx, {
+        type: 'doughnut',
+        data: categoryData,
+        options: {
+          responsive: true,
+          maintainAspectRatio: true,
+          plugins: {
+            legend: {
+              position: 'bottom',
+              labels: {
+                padding: 15,
+                font: {
+                  size: 12
+                }
+              }
+            },
+            tooltip: {
+              callbacks: {
+                label: function(context) {
+                  return context.label + ': ' + context.parsed + ' items';
+                }
+              }
+            }
+          }
+        }
+      });
+
+      // Daily GRN vs Issues Chart (Line)
+      const dailyCtx = document.getElementById('dailyChart').getContext('2d');
+      const dailyData = {
+        labels: [
+          {% for stat in daily_stats %}
+            '{{ stat.date }}'{% if not loop.last %},{% endif %}
+          {% endfor %}
+        ],
+        datasets: [
+          {
+            label: 'GRN Count',
+            data: [
+              {% for stat in daily_stats %}
+                {{ stat.grn_count }}{% if not loop.last %},{% endif %}
+              {% endfor %}
+            ],
+            borderColor: '#10b981',
+            backgroundColor: 'rgba(16, 185, 129, 0.1)',
+            tension: 0.4,
+            fill: true,
+            pointRadius: 4,
+            pointHoverRadius: 6
+          },
+          {
+            label: 'Issue Count',
+            data: [
+              {% for stat in daily_stats %}
+                {{ stat.issue_count }}{% if not loop.last %},{% endif %}
+              {% endfor %}
+            ],
+            borderColor: '#ef4444',
+            backgroundColor: 'rgba(239, 68, 68, 0.1)',
+            tension: 0.4,
+            fill: true,
+            pointRadius: 4,
+            pointHoverRadius: 6
+          }
+        ]
+      };
+
+      new Chart(dailyCtx, {
+        type: 'line',
+        data: dailyData,
+        options: {
+          responsive: true,
+          maintainAspectRatio: true,
+          plugins: {
+            legend: {
+              position: 'top',
+              labels: {
+                padding: 15,
+                font: {
+                  size: 12
+                }
+              }
+            },
+            tooltip: {
+              mode: 'index',
+              intersect: false
+            }
+          },
+          scales: {
+            y: {
+              beginAtZero: true,
+              ticks: {
+                stepSize: 1
+              }
+            }
+          }
+        }
+      });
+    </script>
   </body>
 </html>
