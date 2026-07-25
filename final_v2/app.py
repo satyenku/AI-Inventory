@@ -1,4 +1,5 @@
 # app.py
+
 import logging
 import os
 import re
@@ -12,6 +13,7 @@ from email.mime.multipart import MIMEMultipart
 from html import escape
 from io import BytesIO
 from zipfile import ZIP_DEFLATED, ZipFile
+from init_db import init_db
 from flask import Flask, render_template, request, redirect, url_for, flash, session, jsonify, Response, send_file
 from werkzeug.security import generate_password_hash, check_password_hash
 import traceback
@@ -66,6 +68,7 @@ import qrcode
 import gemini_extractor as ai
 
 app = Flask(__name__)
+init_db()
 app.config.from_object(Config)
 Config.validate()
 
