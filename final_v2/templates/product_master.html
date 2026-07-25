@@ -127,6 +127,16 @@
       .btn-delete:hover {
         background: #b91c1c;
       }
+      .btn-edit {
+        background: #3b82f6;
+        padding: 6px 12px;
+        font-size: 12px;
+        border: none;
+        border-radius: 4px;
+        cursor: pointer;
+        color: white;
+      }
+      .btn-edit:hover { background: #2563eb; }
       .modal {
         display: none;
         position: fixed;
@@ -398,12 +408,15 @@
               <td>{{ product.current_stock }}</td>
               <td>
                 <div class="action-buttons">
+                  {% if can_write %}
+                  <button type="button" class="btn-edit" onclick="openEditModal({{ product.id }})">Edit</button>
+                  {% endif %}
                   {% if can_delete %}
                   <form action="{{ url_for('delete_product', product_id=product.id) }}" method="POST" style="display: inline;" onsubmit="return confirm('Are you sure you want to delete this product? This will also delete all inspection properties.');">
                     <button type="submit" class="btn-delete">Delete</button>
                   </form>
                   {% endif %}
-                  {% if not can_delete %}
+                  {% if not can_write and not can_delete %}
                   <span style="font-size:12px;color:#94a3b8;font-style:italic;">View only</span>
                   {% endif %}
                 </div>
@@ -414,6 +427,100 @@
         </table>
       </div>
     </div>
+
+    <!-- Edit Product Modal -->
+    {% if can_write %}
+    <div id="editModal" class="modal">
+      <div class="modal-content">
+        <span class="modal-close" onclick="closeEditModal()">&times;</span>
+        <div class="modal-header">Edit Product</div>
+        <form action="{{ url_for('edit_product') }}" method="POST" id="editProductForm">
+          <input type="hidden" name="product_id" id="editProductId" />
+          <div class="form-grid">
+            <div class="form-group">
+              <label>Item Code (SKU) <span style="color:red;">*</span></label>
+              <input type="text" name="item_code" id="editItemCode" required />
+            </div>
+            <div class="form-group">
+              <label>Item Name <span style="color:red;">*</span></label>
+              <input type="text" name="item_name" id="editItemName" required />
+            </div>
+            <div class="form-group">
+              <label>Item Category <span style="color:red;">*</span></label>
+              <select name="category" id="editCategory" required>
+                <option value="Raw Material">Raw Material</option>
+                <option value="WIP">WIP</option>
+                <option value="Finished Goods">Finished Goods</option>
+                <option value="Spare Parts">Spare Parts</option>
+              </select>
+            </div>
+            <div class="form-group">
+              <label>Subcategory <span style="color:red;">*</span></label>
+              <input type="text" name="subcategory" id="editSubcategory" required />
+            </div>
+            <div class="form-group">
+              <label>Unit of Measure <span style="color:red;">*</span></label>
+              <select name="unit" id="editUnit" required>
+                <option value="Nos">Nos</option>
+                <option value="Kg">Kg</option>
+                <option value="Meters">Meters</option>
+                <option value="Liters">Liters</option>
+              </select>
+            </div>
+            <div class="form-group">
+              <label>Minimum Stock Threshold <span style="color:red;">*</span></label>
+              <input type="number" name="min_stock_level" id="editMinStock" required />
+            </div>
+            <div class="form-group">
+              <label>Maximum Allowed Stock <span style="color:red;">*</span></label>
+              <input type="number" name="max_stock_level" id="editMaxStock" required />
+            </div>
+            <div class="form-group">
+              <label>Reorder Limit Level <span style="color:red;">*</span></label>
+              <input type="number" name="reorder_level" id="editReorderLevel" required />
+            </div>
+            <div class="form-group">
+              <label>HSN / SAC Code <span style="color:red;">*</span></label>
+              <input type="text" name="hsn_sac_code" id="editHsn" required />
+            </div>
+            <div class="form-group">
+              <label>Physical Storage Area <span style="color:red;">*</span></label>
+              <input type="text" name="storage_location" id="editLocation" required />
+            </div>
+            <div class="form-group full-width">
+              <label>Product Specifications/Description <span style="color:red;">*</span></label>
+              <textarea rows="2" name="description" id="editDescription" required></textarea>
+            </div>
+            <div class="form-group full-width">
+              <label>Inspection Properties (optional)</label>
+              <div id="edit-properties-root">
+                <table id="edit-properties-table" style="width: 100%; border-collapse: collapse">
+                  <thead>
+                    <tr>
+                      <th style="text-align: left; padding: 6px">Property</th>
+                      <th style="text-align: left; padding: 6px">Min</th>
+                      <th style="text-align: left; padding: 6px">Max</th>
+                      <th style="text-align: left; padding: 6px">Method</th>
+                      <th style="padding: 6px"></th>
+                    </tr>
+                  </thead>
+                  <tbody id="edit-properties-body">
+                  </tbody>
+                </table>
+                <div style="margin-top: 8px; text-align: right">
+                  <button type="button" onclick="addEditPropertyRow()">+ Add Property</button>
+                </div>
+              </div>
+            </div>
+          </div>
+          <div class="actions">
+            <button type="button" class="btn-reset" onclick="closeEditModal()">Cancel</button>
+            <button type="submit" class="btn-save">Update Product</button>
+          </div>
+        </form>
+      </div>
+    </div>
+    {% endif %}
 
     <script>
       {% if can_write %}
@@ -444,6 +551,76 @@
       function removePropertyRow(btn) {
         const tr = btn.closest("tr");
         if (tr) tr.remove();
+      }
+
+      function addEditPropertyRow() {
+        const tbody = document.getElementById("edit-properties-body");
+        const tr = document.createElement("tr");
+        tr.innerHTML = `
+          <td><input type="text" name="property_name[]" placeholder="e.g. OD"/></td>
+          <td><input type="number" step="any" name="property_min[]"/></td>
+          <td><input type="number" step="any" name="property_max[]"/></td>
+          <td><input type="text" name="property_method[]" placeholder="e.g. Vernier"/></td>
+          <td><button type="button" class="btn-remove" onclick="removeEditPropertyRow(this)">Remove</button></td>
+        `;
+        tbody.appendChild(tr);
+      }
+
+      function removeEditPropertyRow(btn) {
+        const tr = btn.closest("tr");
+        if (tr) tr.remove();
+      }
+
+      async function openEditModal(productId) {
+        try {
+          const response = await fetch(`/api/product/${productId}`);
+          const data = await response.json();
+          if (data.error) {
+            alert('Error loading product: ' + data.error);
+            return;
+          }
+          
+          document.getElementById('editProductId').value = productId;
+          document.getElementById('editItemCode').value = data.item_code || '';
+          document.getElementById('editItemName').value = data.item_name || '';
+          document.getElementById('editCategory').value = data.category || 'Raw Material';
+          document.getElementById('editSubcategory').value = data.subcategory || '';
+          document.getElementById('editUnit').value = data.unit || 'Nos';
+          document.getElementById('editMinStock').value = data.min_stock_level || 0;
+          document.getElementById('editMaxStock').value = data.max_stock_level || 0;
+          document.getElementById('editReorderLevel').value = data.reorder_level || 0;
+          document.getElementById('editHsn').value = data.hsn_sac_code || '';
+          document.getElementById('editLocation').value = data.storage_location || '';
+          document.getElementById('editDescription').value = data.description || '';
+          
+          const tbody = document.getElementById('edit-properties-body');
+          tbody.innerHTML = '';
+          
+          if (data.properties && data.properties.length > 0) {
+            data.properties.forEach(prop => {
+              const tr = document.createElement('tr');
+              tr.innerHTML = `
+                <td><input type="text" name="property_name[]" value="${prop.property_name || ''}" placeholder="e.g. OD"/></td>
+                <td><input type="number" step="any" name="property_min[]" value="${prop.min_value !== null ? prop.min_value : ''}"/></td>
+                <td><input type="number" step="any" name="property_max[]" value="${prop.max_value !== null ? prop.max_value : ''}"/></td>
+                <td><input type="text" name="property_method[]" value="${prop.test_method || ''}" placeholder="e.g. Vernier"/></td>
+                <td><button type="button" class="btn-remove" onclick="removeEditPropertyRow(this)">Remove</button></td>
+              `;
+              tbody.appendChild(tr);
+            });
+          } else {
+            addEditPropertyRow();
+          }
+          
+          document.getElementById('editModal').classList.add('active');
+        } catch (error) {
+          console.error('Error fetching product:', error);
+          alert('Failed to load product details');
+        }
+      }
+
+      function closeEditModal() {
+        document.getElementById('editModal').classList.remove('active');
       }
 
       /* ── Duplicate validation on submit ── */

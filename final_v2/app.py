@@ -352,7 +352,7 @@ def generate_qr(barcode_value):
         
         # Save to BytesIO buffer
         buffer = BytesIO()
-        img.save(buffer, format='PNG')
+        img.save(buffer, 'PNG')
         buffer.seek(0)
         
         return Response(buffer.getvalue(), mimetype='image/png')
@@ -824,11 +824,10 @@ def product_master():
     can_write = is_write_allowed()
     can_delete = is_admin()  # Only admin can delete
     return render_template('product_master.html', products=products_list, can_write=can_write, can_delete=can_delete)
-print("===== EDIT PRODUCT ROUTE CALLED =====")
+
 @app.route('/product/edit', methods=['POST'])
 @login_required
 def edit_product():
-    print("EDIT PRODUCT ROUTE CALLED")
     if not is_write_allowed():
         logger.warning(
             "[RBAC] User '%s' (role=%s) attempted POST on /product/edit.",
