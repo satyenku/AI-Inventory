@@ -1,0 +1,554 @@
+<!doctype html>
+<html lang="en">
+
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Export History / Reports</title>
+  <style>
+    * {
+      box-sizing: border-box;
+    }
+
+    body {
+      margin: 0;
+      font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+      background: #f1f5f9;
+      display: flex;
+    }
+
+    .sidebar {
+      width: 240px;
+      background: #0f172a;
+      color: #fff;
+      min-height: 100vh;
+      padding-top: 20px;
+      position: fixed;
+      left: 0;
+      top: 0;
+      bottom: 0;
+      overflow-y: auto;
+    }
+
+    .sidebar h2 {
+      text-align: center;
+      margin-bottom: 20px;
+      font-size: 20px;
+    }
+
+    .sidebar a {
+      display: block;
+      padding: 12px 20px;
+      color: #cbd5e1;
+      text-decoration: none;
+      font-size: 15px;
+      transition: all 0.2s;
+    }
+
+    .sidebar a:hover {
+      background: #1e293b;
+      color: #fff;
+    }
+
+    .sidebar .active {
+      background: #1e293b;
+      color: #fff;
+      border-left: 4px solid #3b82f6;
+    }
+
+    .main {
+      margin-left: 240px;
+      flex: 1;
+      padding: 25px;
+      width: calc(100% - 240px);
+    }
+
+    .header {
+      background: linear-gradient(135deg, #1e293b 0%, #0f172a 100%);
+      padding: 25px;
+      border-radius: 8px;
+      box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
+      margin-bottom: 25px;
+      color: white;
+    }
+
+    .header h1 {
+      margin: 0;
+      font-size: 32px;
+      font-weight: 600;
+    }
+
+    .header p {
+      font-size: 14px;
+      margin: 8px 0 0 0;
+      opacity: 0.9;
+    }
+
+    .control-box {
+      background: #ffffff;
+      padding: 20px;
+      border-radius: 8px;
+      box-shadow: 0 2px 8px rgba(0, 0, 0, 0.06);
+      margin-bottom: 25px;
+      display: flex;
+      flex-wrap: wrap;
+      gap: 15px;
+      align-items: center;
+      justify-content: space-between;
+    }
+
+    .search-group {
+      display: flex;
+      flex: 1;
+      min-width: 280px;
+      gap: 10px;
+    }
+
+    .search-group input {
+      flex: 1;
+      padding: 10px 14px;
+      border: 1px solid #cbd5e1;
+      border-radius: 6px;
+      font-size: 14px;
+      outline: none;
+      transition: border 0.15s;
+    }
+
+    .search-group input:focus {
+      border-color: #3b82f6;
+      box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.1);
+    }
+
+    .filter-tabs {
+      display: flex;
+      gap: 8px;
+    }
+
+    .filter-btn {
+      background: #f8fafc;
+      border: 1px solid #e2e8f0;
+      color: #475569;
+      padding: 8px 14px;
+      border-radius: 6px;
+      font-size: 13px;
+      font-weight: 600;
+      cursor: pointer;
+      transition: all 0.15s;
+    }
+
+    .filter-btn:hover {
+      background: #f1f5f9;
+      border-color: #cbd5e1;
+    }
+
+    .filter-btn.active {
+      background: #3b82f6;
+      color: #ffffff;
+      border-color: #3b82f6;
+    }
+
+    .date-picker-group {
+      display: none;
+      align-items: center;
+      gap: 8px;
+    }
+
+    .date-picker-group.active {
+      display: flex;
+    }
+
+    .date-picker-group input {
+      padding: 8px 12px;
+      border: 1px solid #cbd5e1;
+      border-radius: 6px;
+      font-size: 13px;
+      color: #334155;
+    }
+
+    .table-box {
+      background: #ffffff;
+      border-radius: 8px;
+      box-shadow: 0 2px 8px rgba(0, 0, 0, 0.06);
+      overflow: hidden;
+    }
+
+    table {
+      width: 100%;
+      border-collapse: collapse;
+    }
+
+    th,
+    td {
+      padding: 14px 20px;
+      text-align: left;
+      font-size: 14px;
+      border-bottom: 1px solid #cbd5e1;
+    }
+
+    th {
+      background: #f8fafc;
+      font-weight: 600;
+      color: #475569;
+      text-transform: uppercase;
+      font-size: 12px;
+      letter-spacing: 0.5px;
+    }
+
+    tr:last-child td {
+      border-bottom: none;
+    }
+
+    .filename-cell {
+      font-weight: 600;
+      color: #0f172a;
+    }
+
+    .size-cell {
+      color: #64748b;
+    }
+
+    .badge-user {
+      background: #f1f5f9;
+      color: #475569;
+      padding: 4px 8px;
+      border-radius: 4px;
+      font-size: 12px;
+      font-weight: 600;
+    }
+
+    .badge-qc {
+      display: inline-block;
+      padding: 4px 10px;
+      border-radius: 4px;
+      font-size: 12px;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: 0.3px;
+    }
+
+    .badge-confirmed {
+      background: #dcfce7;
+      color: #15803d;
+    }
+
+    .badge-rejected {
+      background: #fee2e2;
+      color: #dc2626;
+    }
+
+    .badge-pending {
+      background: #fef9c3;
+      color: #a16207;
+    }
+
+    .btn-download {
+      background: #3b82f6;
+      color: #ffffff;
+      border: none;
+      padding: 6px 14px;
+      border-radius: 4px;
+      font-size: 13px;
+      font-weight: 600;
+      text-decoration: none;
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      cursor: pointer;
+      transition: background 0.15s;
+    }
+
+    .btn-download:hover {
+      background: #2563eb;
+    }
+
+    .download-icon {
+      font-weight: bold;
+    }
+
+    .no-records {
+      padding: 40px;
+      text-align: center;
+      color: #64748b;
+      font-size: 16px;
+    }
+
+    @media (max-width: 992px) {
+      .control-box {
+        flex-direction: column;
+        align-items: stretch;
+      }
+
+      .filter-tabs {
+        justify-content: flex-start;
+        flex-wrap: wrap;
+      }
+    }
+
+    @media (max-width: 768px) {
+      body {
+        flex-direction: column;
+      }
+
+      .sidebar {
+        width: 100%;
+        min-height: auto;
+        position: relative;
+        padding-bottom: 10px;
+      }
+
+      .main {
+        margin-left: 0;
+        width: 100%;
+        padding: 15px;
+      }
+    }
+  </style>
+</head>
+
+<body>
+  <div class="sidebar">
+    <h2>Inventory</h2>
+    <a href="{{ url_for('dashboard') }}">📊 Dashboard</a>
+    <a href="{{ url_for('product_master') }}">📦 Product Master</a>
+    <a href="{{ url_for('item_issue') }}">🧾 Item Issue</a>
+    <a href="{{ url_for('item_entry') }}">🧾 Item Entry</a>
+    <a href="{{ url_for('inventory_status') }}">📈 Inventory Status</a>
+    <a href="{{ url_for('inventory_return') }}">📈 Return Inventory</a>
+    <a href="{{ url_for('supplier_management') }}">👥 Suppliers</a>
+    <a href="{{ url_for('department_management') }}">🏢 Departments</a>
+    <a href="{{ url_for('user_management') }}">👤 Users</a>
+    <a href="{{ url_for('export_history') }}" class="active">📋 Export History</a>
+    <a href="{{ url_for('logout') }}" style="color: #ef4444">🚪 Sign Out</a>
+  </div>
+
+  <div class="main">
+    <div class="header">
+      <h1>📋 Export History & Reports</h1>
+      <p>View, search, filter, and redownload generated Excel QC reports permanently saved on the server.</p>
+    </div>
+
+    <!-- Controls Panel -->
+    <div class="control-box">
+      <!-- Search bar -->
+      <div class="search-group">
+        <input type="text" id="searchInput" placeholder="Search by Item Name, Invoice number, or Export Date..."
+          oninput="applyFilters()" />
+      </div>
+
+      <!-- Period Filters -->
+      <div class="filter-tabs">
+        <button class="filter-btn active" id="btn-all" onclick="setPeriod('all')">All Reports</button>
+        <button class="filter-btn" id="btn-today" onclick="setPeriod('today')">Today</button>
+        <button class="filter-btn" id="btn-week" onclick="setPeriod('week')">This Week</button>
+        <button class="filter-btn" id="btn-month" onclick="setPeriod('month')">This Month</button>
+        <button class="filter-btn" id="btn-custom" onclick="setPeriod('custom')">Custom Range</button>
+      </div>
+
+      <!-- Custom Date range inputs -->
+      <div class="date-picker-group" id="customRangeGroup">
+        <input type="date" id="dateStart" onchange="applyFilters()" />
+        <span style="color: #64748b; font-size: 13px;">to</span>
+        <input type="date" id="dateEnd" onchange="applyFilters()" />
+      </div>
+    </div>
+
+    <!-- Table Section -->
+    <div class="table-box">
+      <table id="exportsTable">
+        <thead>
+          <tr>
+            <th style="width: 80px;">Export ID</th>
+            <th>Item Name</th>
+            <th>QC Status</th>
+            <th>Export Date & Time</th>
+            <th>Inspected Qty</th>
+            <th>Invoice Number</th>
+            <th>Created By</th>
+            <th style="width: 130px; text-align: center;">Action</th>
+          </tr>
+        </thead>
+        <tbody id="tableBody">
+          {% for inv, items in grouped_exports %}
+          <tr class="group-header" data-invoice="{{ inv }}">
+            <td colspan="8"
+              style="font-weight: bold; background: #f8fafc; color: #1e293b; padding: 10px 14px; border-bottom: 2px solid #e2e8f0; font-size: 14px; text-align: left;">
+              📂 Invoice: {{ inv if inv else 'Unspecified / No Invoice' }}
+            </td>
+          </tr>
+          {% for item in items %}
+          <tr class="export-row" data-id="{{ item.id }}" data-filename="{{ item.file_name }}"
+            data-itemname="{{ item.item_name or '' }}" data-qcstatus="{{ item.qc_status or '' }}"
+            data-datetime="{{ item.export_time }}" data-qty="{{ item.total_items }}" data-invoice="{{ inv }}"
+            data-username="{{ item.created_by }}">
+            <td>#{{ item.id }}</td>
+            <td class="filename-cell">{{ item.item_name or item.file_name }}</td>
+            <td>
+              {% if item.qc_status == 'confirmed' %}
+              <span class="badge-qc badge-confirmed">✅ Accepted</span>
+              {% elif item.qc_status == 'rejected' %}
+              <span class="badge-qc badge-rejected">❌ Rejected</span>
+              {% else %}
+              <span class="badge-qc badge-pending">⏳ Pending</span>
+              {% endif %}
+            </td>
+            <td>{{ item.export_time }}</td>
+            <td><strong>{{ item.total_items }}</strong></td>
+            <td style="color: #475569; font-weight: 500;">{{ inv or '-' }}</td>
+            <td><span class="badge-user">{{ item.created_by }}</span></td>
+            <td style="text-align: center;">
+              <a href="{{ url_for('download_export', export_id=item.id) }}" class="btn-download">
+                <span class="download-icon">⬇</span> Download
+              </a>
+            </td>
+          </tr>
+          {% endfor %}
+          {% else %}
+          <!-- This will show only if Jinja reports no list, but we also handle script fallback -->
+          <tr class="no-records-row">
+            <td colspan="8" class="no-records">
+              No exported Excel files available.
+            </td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </div>
+
+  <script>
+    let currentPeriod = 'all';
+
+    // Parse dates from string safely
+    function parseRowDate(dateStr) {
+      // Expected format: YYYY-MM-DD HH:MM:SS
+      const t = dateStr.split(/[- :]/);
+      return new Date(t[0], t[1] - 1, t[2], t[3] || 0, t[4] || 0, t[5] || 0);
+    }
+
+    function setPeriod(period) {
+      currentPeriod = period;
+
+      // Toggle active tabs
+      document.querySelectorAll('.filter-btn').forEach(btn => btn.classList.remove('active'));
+      document.getElementById('btn-' + period).classList.add('active');
+
+      // Toggle custom date range view
+      const rangeGroup = document.getElementById('customRangeGroup');
+      if (period === 'custom') {
+        rangeGroup.classList.add('active');
+      } else {
+        rangeGroup.classList.remove('active');
+        document.getElementById('dateStart').value = '';
+        document.getElementById('dateEnd').value = '';
+      }
+
+      applyFilters();
+    }
+
+    function applyFilters() {
+      const query = document.getElementById('searchInput').value.trim().toLowerCase();
+      const startVal = document.getElementById('dateStart').value;
+      const endVal = document.getElementById('dateEnd').value;
+
+      const rows = document.querySelectorAll('.export-row');
+      const now = new Date();
+
+      let visibleCount = 0;
+
+      rows.forEach(row => {
+        const filename = row.getAttribute('data-filename').toLowerCase();
+        const itemname = (row.getAttribute('data-itemname') || '').toLowerCase();
+        const qcstatus = (row.getAttribute('data-qcstatus') || '').toLowerCase();
+        const invoice = (row.getAttribute('data-invoice') || '').toLowerCase();
+        const datetimeVal = row.getAttribute('data-datetime');
+        const datetimeLower = datetimeVal.toLowerCase();
+        const rowDate = parseRowDate(datetimeVal);
+
+        let matchesSearch = !query || 
+                            filename.includes(query) || 
+                            itemname.includes(query) || 
+                            qcstatus.includes(query) || 
+                            invoice.includes(query) || 
+                            datetimeLower.includes(query);
+                            
+        let matchesPeriod = true;
+
+        // Process Period Filters
+        if (currentPeriod === 'today') {
+          // Compare YYYY-MM-DD
+          matchesPeriod = (rowDate.toDateString() === now.toDateString());
+        } else if (currentPeriod === 'week') {
+          // Within last 7 days
+          const oneWeekAgo = new Date();
+          oneWeekAgo.setDate(now.getDate() - 7);
+          matchesPeriod = (rowDate >= oneWeekAgo && rowDate <= now);
+        } else if (currentPeriod === 'month') {
+          // Within last 30 days
+          const oneMonthAgo = new Date();
+          oneMonthAgo.setDate(now.getDate() - 30);
+          matchesPeriod = (rowDate >= oneMonthAgo && rowDate <= now);
+        } else if (currentPeriod === 'custom') {
+          let start = startVal ? new Date(startVal + 'T00:00:00') : null;
+          let end = endVal ? new Date(endVal + 'T23:59:59') : null;
+
+          if (start && rowDate < start) matchesPeriod = false;
+          if (end && rowDate > end) matchesPeriod = false;
+        }
+
+        if (matchesSearch && matchesPeriod) {
+          row.style.display = '';
+          visibleCount++;
+        } else {
+          row.style.display = 'none';
+        }
+      });
+
+      // Show/hide group headers based on active rows
+      const headers = document.querySelectorAll('.group-header');
+      headers.forEach(header => {
+        const inv = header.getAttribute('data-invoice');
+        const matched = document.querySelectorAll(`.export-row[data-invoice="${inv}"]`);
+        let groupHasVisible = false;
+        matched.forEach(r => {
+          if (r.style.display !== 'none') {
+            groupHasVisible = true;
+          }
+        });
+        if (groupHasVisible) {
+          header.style.display = '';
+        } else {
+          header.style.display = 'none';
+        }
+      });
+
+      // Toggle "No records" row
+      let noRecordsRow = document.querySelector('.no-records-row');
+      if (visibleCount === 0) {
+        if (!noRecordsRow) {
+          const tableBody = document.getElementById('tableBody');
+          noRecordsRow = document.createElement('tr');
+          noRecordsRow.className = 'no-records-row';
+          noRecordsRow.innerHTML = `
+              <td colspan="8" class="no-records">
+                No exported Excel files available.
+              </td>
+            `;
+          tableBody.appendChild(noRecordsRow);
+        } else {
+          noRecordsRow.style.display = '';
+        }
+      } else {
+        if (noRecordsRow) {
+          noRecordsRow.style.display = 'none';
+        }
+      }
+    }
+
+    // Auto-run applyFilters on load to confirm initial state matches controls
+    window.onload = function () {
+      applyFilters();
+    };
+  </script>
+</body>
+
+</html>
