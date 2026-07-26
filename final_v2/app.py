@@ -71,6 +71,7 @@ app = Flask(__name__)
 init_db()
 app.config.from_object(Config)
 Config.validate()
+os.makedirs(os.path.join(app.root_path, 'static', 'exports'), exist_ok=True)
 
 
 
@@ -291,6 +292,16 @@ def ensure_ledger_integrity():
         if 'grn_item_id' not in inspection_cols:
             cur.execute("ALTER TABLE inspection_entries ADD COLUMN grn_item_id INTEGER REFERENCES grn_items(id)")
             logger.info("[Migration] Added grn_item_id column to inspection_entries for GRN traceability")
+
+        # Migration: add item_name, qc_status, invoice_number columns to export_history if missing
+        export_history_cols = [row[1] for row in cur.execute("PRAGMA table_info(export_history)").fetchall()]
+        if 'item_name' not in export_history_cols:
+            cur.execute("ALTER TABLE export_history ADD COLUMN item_name TEXT")
+        if 'qc_status' not in export_history_cols:
+            cur.execute("ALTER TABLE export_history ADD COLUMN qc_status TEXT")
+        if 'invoice_number' not in export_history_cols:
+            cur.execute("ALTER TABLE export_history ADD COLUMN invoice_number TEXT")
+            logger.info("[Migration] Added invoice_number column to export_history")
 
         conn.commit()
     except Exception:
@@ -3509,14 +3520,114 @@ def api_export_qc_excel():
     ws.cell(row=current_row, column=10, value="APPROVED BY :")
     style_range(ws, f"J{current_row}:K{current_row+1}", font=font_normal_bold, alignment=Alignment(horizontal='left', vertical='top'), border=thin_border)
 
-    # Save to BytesIO Stream
-    out = BytesIO()
-    wb.save(out)
-    out.seek(0)
+    # Generate a unique filename
+    import datetime
+    timestamp = datetime.datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
+    clean_item_name = re.sub(r'[^a-zA-Z0-9_\-]', '_', item_name)
+    filename = f"Item_Report_{clean_item_name}_{timestamp}.xlsx"
 
-    filename = f"Inward_Inspection_Report_{item_name.replace(' ', '_')}.xlsx"
-    return send_file(out, mimetype="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", 
+    # Save permanently on the server (do not delete after download)
+    filepath = os.path.join(app.root_path, 'static', 'exports', filename)
+    wb.save(filepath)
+    file_size = os.path.getsize(filepath)
+
+    # Create a record in the database
+    total_items = parse_decimal(qty, fallback=0.0)
+    created_by = session.get('user', 'system')
+    export_time = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+
+    if status != 'rejected':
+        conn = get_db_connection()
+        try:
+            conn.execute("""
+                INSERT INTO export_history (file_name, item_name, qc_status, invoice_number, export_time, total_items, file_size, file_path, created_by)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+            """, (filename, item_name, status, invoice_number, export_time, total_items, file_size, f"static/exports/{filename}", created_by))
+            conn.commit()
+        except Exception as dbe:
+            logger.error(f"[api_export_qc_excel] Failed to log export history: {dbe}")
+        finally:
+            conn.close()
+
+    # Serve the saved file for user's download
+    return send_file(filepath, mimetype="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", 
                      as_attachment=True, download_name=filename)
+
+
+@app.route('/export-history', methods=['GET'])
+@login_required
+def export_history():
+    conn = get_db_connection()
+    try:
+        # Sort by export_time in descending order (latest first)
+        exports = conn.execute("""
+            SELECT id, file_name, item_name, qc_status, invoice_number, export_time, total_items, file_size, file_path, created_by 
+            FROM export_history 
+            ORDER BY export_time DESC
+        """).fetchall()
+        
+        # Group exports by invoice_number
+        grouped = {}
+        invoice_order = []
+        for x in exports:
+            item = dict(x)
+            inv = item.get('invoice_number') or ''
+            if inv not in grouped:
+                grouped[inv] = []
+                invoice_order.append(inv)
+            grouped[inv].append(item)
+            
+        grouped_exports = [(inv, grouped[inv]) for inv in invoice_order]
+    except Exception as e:
+        logger.error(f"[export_history] Failed to fetch export history: {e}")
+        grouped_exports = []
+    finally:
+        conn.close()
+        
+    return render_template(
+        'export_history.html', 
+        grouped_exports=grouped_exports, 
+        current_user=session.get('user', 'Guest'), 
+        current_role=session.get('role', 'viewer')
+    )
+
+
+@app.route('/export-history/download/<int:export_id>', methods=['GET'])
+@login_required
+def download_export(export_id):
+    conn = get_db_connection()
+    export_row = None
+    try:
+        export_row = conn.execute("""
+            SELECT file_name, file_path 
+            FROM export_history 
+            WHERE id = ?
+        """, (export_id,)).fetchone()
+    except Exception as e:
+        logger.error(f"[download_export] DB fetch failed for ID {export_id}: {e}")
+    finally:
+        conn.close()
+
+    if not export_row:
+        return "Export record not found.", 404
+
+    # Resolve safe file path relative to either app.root_path or direct file_path
+    relative_path = export_row['file_path']
+    # If path starts with static/exports, prefix with root_path
+    if relative_path.startswith('static/'):
+        filepath = os.path.join(app.root_path, relative_path)
+    else:
+        filepath = os.path.join(app.root_path, 'static', 'exports', export_row['file_name'])
+
+    if not os.path.exists(filepath):
+        return "Exported spreadsheet file not found on the server filesystem.", 404
+
+    return send_file(
+        filepath, 
+        mimetype="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", 
+        as_attachment=True, 
+        download_name=export_row['file_name']
+    )
 
 
 @app.route('/api/save-qc', methods=['POST'])

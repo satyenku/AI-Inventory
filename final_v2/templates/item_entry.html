@@ -150,6 +150,7 @@
       <a href="{{ url_for('supplier_management') }}">👥 Suppliers</a>
       <a href="{{ url_for('department_management') }}">🏢 Departments</a>
       <a href="{{ url_for('user_management') }}">👤 Users</a>
+      <a href="{{ url_for('export_history') }}">📋 Export History</a>
       <a href="{{ url_for('logout') }}" style="color: #ef4444">🚪 Sign Out</a>
     </div>
     <div class="main">
@@ -358,6 +359,7 @@
         <div style="display:flex;align-items:center;gap:12px;margin-bottom:12px;">
           <input type="hidden" id="qc_current_key" value="" />
           <input type="hidden" id="qc_product_id" value="" />
+          <input type="hidden" id="qc_final_status" value="" />
         </div>
         <div style="display:flex;gap:8px;justify-content:flex-end;margin-top:12px;">
           <button class="btn" onclick="document.getElementById('qcModalOverlay').style.display='none'">Close</button>
@@ -1166,10 +1168,18 @@
         document.getElementById('qc_current_key').value = keyRaw;
         document.getElementById('qc_specs_container').innerHTML = 'Searching product master...';
 
-        // Reset button visibility: hide Export, show Reject & Confirm
-        document.getElementById('qc_export_btn').style.display = 'none';
-        document.getElementById('qc_reject_btn').style.display = 'inline-block';
-        document.getElementById('qc_confirm_btn').style.display = 'inline-block';
+        // Set button visibility based on existing QC status
+        if (qc && (qc.status === 'confirmed' || qc.status === 'rejected')) {
+          document.getElementById('qc_final_status').value = qc.status;
+          document.getElementById('qc_export_btn').style.display = 'inline-block';
+          document.getElementById('qc_reject_btn').style.display = 'none';
+          document.getElementById('qc_confirm_btn').style.display = 'none';
+        } else {
+          document.getElementById('qc_final_status').value = '';
+          document.getElementById('qc_export_btn').style.display = 'none';
+          document.getElementById('qc_reject_btn').style.display = 'inline-block';
+          document.getElementById('qc_confirm_btn').style.display = 'inline-block';
+        }
 
         document.getElementById('qcModalOverlay').style.display = 'flex';
         // attempt to find matching product and display specs
@@ -1314,15 +1324,12 @@
         .then(j => {
           if (j && j.status === 'success') {
             updateBadgeForKey(key);
-            if (status === 'confirmed') {
-              // Show Export to Excel, hide Reject & Confirm
-              document.getElementById('qc_export_btn').style.display = 'inline-block';
-              document.getElementById('qc_reject_btn').style.display = 'none';
-              document.getElementById('qc_confirm_btn').style.display = 'none';
-            } else {
-              // For reject or other statuses, close the modal
-              document.getElementById('qcModalOverlay').style.display = 'none';
-            }
+            // Store the final QC status in a hidden field for the export function
+            document.getElementById('qc_final_status').value = status;
+            // Show Export to Excel, hide Reject & Confirm for both confirmed & rejected
+            document.getElementById('qc_export_btn').style.display = 'inline-block';
+            document.getElementById('qc_reject_btn').style.display = 'none';
+            document.getElementById('qc_confirm_btn').style.display = 'none';
             // refresh badges for all items (best-effort)
             setTimeout(() => {
               const saved = loadSavedPayload();
@@ -1351,8 +1358,8 @@
         const vendorName = document.getElementById('vendor_name').value || '';
 
         const key = document.getElementById('qc_current_key').value;
-        const qcObj = loadQCForKey(key) || {};
-        const status = qcObj.status || 'pending';
+        // Read the confirmed/rejected status from the hidden field set by qcApplyStatus
+        const status = document.getElementById('qc_final_status').value || 'pending';
 
         const details = [];
         const rows = document.querySelectorAll('.qc-spec-row');
@@ -1413,6 +1420,11 @@
           a.click();
           window.URL.revokeObjectURL(url);
           a.remove();
+          if (status === 'rejected') {
+            alert("Excel report exported successfully.");
+          } else {
+            alert("Excel exported successfully and saved to Export History.");
+          }
         })
         .catch(err => {
           console.error('Export failed', err);

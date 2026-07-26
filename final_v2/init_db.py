@@ -261,6 +261,23 @@ CREATE TABLE IF NOT EXISTS inspection_details (
     FOREIGN KEY(product_property_id)
     REFERENCES product_properties(id)
 );
+
+-- ============================================================
+-- EXPORT HISTORY
+-- ============================================================
+CREATE TABLE IF NOT EXISTS export_history (
+    id              INTEGER PRIMARY KEY AUTOINCREMENT,
+    file_name       TEXT NOT NULL,
+    item_name       TEXT,
+    qc_status       TEXT,
+    invoice_number  TEXT,
+    export_time     TEXT NOT NULL,
+    total_items     REAL DEFAULT 0.0,
+    file_size       INTEGER,
+    file_path       TEXT NOT NULL,
+    created_by      TEXT NOT NULL,
+    created_at      TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
 """
 
 def init_db():
