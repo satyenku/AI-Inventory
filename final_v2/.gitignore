@@ -1,5 +1,4 @@
 venv/
-inventory.db
 instance/
 __pycache__/
 *.pyc

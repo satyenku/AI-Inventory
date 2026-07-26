@@ -831,195 +831,365 @@ def product_master():
 @app.route('/product/edit', methods=['POST'])
 @login_required
 def edit_product():
+
     if not is_write_allowed():
         logger.warning(
             "[RBAC] User '%s' (role=%s) attempted POST on /product/edit.",
-            session.get('user'), session.get('role')
+            session.get('user'),
+            session.get('role')
         )
-        return render_template('403.html'), 403
+        return render_template("403.html"), 403
 
     conn = get_db_connection()
     cursor = conn.cursor()
-    
-    product_id = request.form.get('product_id')
-    item_code = request.form.get('item_code', '').strip()
-    item_name = request.form.get('item_name', '').strip()
-    category = request.form.get('category')
-    subcategory = request.form.get('subcategory', '').strip()
-    unit = request.form.get('unit')
-    min_stock = float(request.form.get('min_stock_level') or 0)
-    max_stock = float(request.form.get('max_stock_level') or 0)
-    reorder_level = float(request.form.get('reorder_level') or 0)
-    hsn = request.form.get('hsn_sac_code', '').strip()
-    location = request.form.get('storage_location', '').strip()
-    description = request.form.get('description', '').strip()
-    
+
+    product_id = request.form.get("product_id")
+
+    item_code = request.form.get("item_code", "").strip()
+    item_name = request.form.get("item_name", "").strip()
+
+    category = request.form.get("category")
+    subcategory = request.form.get("subcategory", "").strip()
+
+    unit = request.form.get("unit")
+
+    min_stock = float(request.form.get("min_stock_level") or 0)
+    max_stock = float(request.form.get("max_stock_level") or 0)
+    reorder_level = float(request.form.get("reorder_level") or 0)
+
+    hsn = request.form.get("hsn_sac_code", "").strip()
+    location = request.form.get("storage_location", "").strip()
+    description = request.form.get("description", "").strip()
+
     if not product_id or not item_code or not item_name:
-        flash("Product ID, Item Code, and Item Name are required.", "error")
+        flash("Product ID, Item Code and Item Name are required.", "error")
         conn.close()
-        return redirect(url_for('product_master'))
-    
+        return redirect(url_for("product_master"))
+
     try:
         product_id = int(product_id)
-    except (ValueError, TypeError):
-        flash("Invalid product ID.", "error")
-        conn.close()
-        return redirect(url_for('product_master'))
-    
-    try:
-        # Get current product
-        current_product = cursor.execute(
-            "SELECT id, item_code, barcode FROM products WHERE id = ?", 
-            (product_id,)
-        ).fetchone()
-        
+
+        current_product = cursor.execute("""
+            SELECT id,item_code,barcode
+            FROM products
+            WHERE id=?
+        """, (product_id,)).fetchone()
+
         if not current_product:
             flash("Product not found.", "error")
             conn.close()
-            return redirect(url_for('product_master'))
-        
-        current_item_code = current_product['item_code']
-        
-        # Only check duplicates if item_code is actually changing
+            return redirect(url_for("product_master"))
+
+        current_item_code = current_product["item_code"]
+
         if item_code != current_item_code:
-            duplicate = cursor.execute(
-                "SELECT id FROM products WHERE item_code = ? AND id != ?", 
-                (item_code, product_id)
-            ).fetchone()
-            
+
+            duplicate = cursor.execute("""
+                SELECT id
+                FROM products
+                WHERE item_code=? AND id!=?
+            """, (item_code, product_id)).fetchone()
+
             if duplicate:
-                flash("SKU already exists. Please use a different SKU.", "error")
+                flash("SKU already exists.", "error")
                 conn.close()
-                return redirect(url_for('product_master'))
-            
-            duplicate_barcode = cursor.execute(
-                "SELECT id FROM products WHERE barcode = ? AND id != ?", 
-                (item_code, product_id)
-            ).fetchone()
-            
+                return redirect(url_for("product_master"))
+
+            duplicate_barcode = cursor.execute("""
+                SELECT id
+                FROM products
+                WHERE barcode=? AND id!=?
+            """, (item_code, product_id)).fetchone()
+
             if duplicate_barcode:
-                flash("Barcode already exists. Please use a different barcode.", "error")
+                flash("Barcode already exists.", "error")
                 conn.close()
-                return redirect(url_for('product_master'))
-        
-        # Update product
+                return redirect(url_for("product_master"))
+
         cursor.execute("""
             UPDATE products
-            SET item_code = ?, barcode = ?, item_name = ?, category = ?, 
-                subcategory = ?, unit = ?, min_stock_level = ?, max_stock_level = ?, 
-                reorder_level = ?, hsn_sac_code = ?, storage_location = ?, description = ?
-            WHERE id = ?
-        """, (item_code, item_code, item_name, category, subcategory, unit, 
-              min_stock, max_stock, reorder_level, hsn, location, description, product_id))
-        
-        # Handle inspection properties update
-        # Check if any properties are being used in inspection_details
-        properties_in_use = cursor.execute("""
-            SELECT DISTINCT pp.id 
-            FROM product_properties pp
-            INNER JOIN inspection_details id ON id.product_property_id = pp.id
-            WHERE pp.product_id = ?
+            SET
+                item_code=?,
+                barcode=?,
+                item_name=?,
+                category=?,
+                subcategory=?,
+                unit=?,
+                min_stock_level=?,
+                max_stock_level=?,
+                reorder_level=?,
+                hsn_sac_code=?,
+                storage_location=?,
+                description=?
+            WHERE id=?
+        """, (
+            item_code,
+            item_code,
+            item_name,
+            category,
+            subcategory,
+            unit,
+            min_stock,
+            max_stock,
+            reorder_level,
+            hsn,
+            location,
+            description,
+            product_id
+        ))
+
+        # --------------------------------------------------
+        # Inspection Property Lock
+        # --------------------------------------------------
+
+        qc_exists = cursor.execute("""
+            SELECT 1
+            FROM inspection_details id
+            JOIN product_properties pp
+                ON id.product_property_id = pp.id
+            WHERE pp.product_id=?
+            LIMIT 1
+        """, (product_id,)).fetchone()
+
+        prop_names = request.form.getlist("property_name[]")
+        prop_mins = request.form.getlist("property_min[]")
+        prop_maxs = request.form.getlist("property_max[]")
+        prop_methods = request.form.getlist("property_method[]")
+
+        existing_props = cursor.execute("""
+            SELECT
+                id,
+                property_name,
+                min_value,
+                max_value,
+                method
+            FROM product_properties
+            WHERE product_id=?
+            ORDER BY id
         """, (product_id,)).fetchall()
-        
-        properties_in_use_ids = [row['id'] for row in properties_in_use] if properties_in_use else []
-        
-        # Get new properties from form
-        prop_names = request.form.getlist('property_name[]')
-        prop_mins = request.form.getlist('property_min[]')
-        prop_maxs = request.form.getlist('property_max[]')
-        prop_methods = request.form.getlist('property_method[]')
-        
-        # Get existing properties
-        existing_props = cursor.execute(
-            "SELECT id, property_name, min_value, max_value, method FROM product_properties WHERE product_id = ?",
-            (product_id,)
-        ).fetchall()
-        
-        existing_props_dict = {prop['id']: prop for prop in existing_props}
-        processed_ids = set()
-        
-        # Update or insert properties
-        for idx, name in enumerate(prop_names):
-            name = (name or '').strip()
-            if not name:
-                continue
-            
-            min_val = None
-            max_val = None
-            try:
-                if idx < len(prop_mins) and prop_mins[idx]:
-                    min_val = float(prop_mins[idx])
-            except:
-                pass
-            try:
-                if idx < len(prop_maxs) and prop_maxs[idx]:
-                    max_val = float(prop_maxs[idx])
-            except:
-                pass
-            method = prop_methods[idx] if idx < len(prop_methods) else None
-            
-            # Try to find matching existing property by name
-            matching_prop = None
-            for prop_id, prop in existing_props_dict.items():
-                if prop['property_name'] == name and prop_id not in processed_ids:
-                    matching_prop = prop
-                    break
-            
-            if matching_prop:
-                # Update existing property
-                cursor.execute("""
-                    UPDATE product_properties 
-                    SET min_value = ?, max_value = ?, method = ?
-                    WHERE id = ?
-                """, (min_val, max_val, method, matching_prop['id']))
-                processed_ids.add(matching_prop['id'])
-            else:
-                # Insert new property
-                insert_product_property(cursor, product_id, name, min_val, max_val, method)
-        
-        # Delete properties that are no longer in the form (but only if not in use)
-        for prop_id in existing_props_dict.keys():
-            if prop_id not in processed_ids:
-                if prop_id not in properties_in_use_ids:
-                    cursor.execute("DELETE FROM product_properties WHERE id = ?", (prop_id,))
+
+        if qc_exists:
+
+            old_props = [
+                (
+                    p["property_name"],
+                    str(p["min_value"] or ""),
+                    str(p["max_value"] or ""),
+                    p["method"] or ""
+                )
+                for p in existing_props
+            ]
+
+            new_props = []
+
+            for i, name in enumerate(prop_names):
+
+                name = (name or "").strip()
+
+                if not name:
+                    continue
+
+                new_props.append((
+                    name,
+                    prop_mins[i] if i < len(prop_mins) else "",
+                    prop_maxs[i] if i < len(prop_maxs) else "",
+                    prop_methods[i] if i < len(prop_methods) else ""
+                ))
+
+            if old_props != new_props:
+
+                flash(
+                    "Inspection properties cannot be modified because QC has already been performed. Please create a new product.",
+                    "error"
+                )
+
+                conn.rollback()
+                conn.close()
+
+                return redirect(url_for("product_master"))
+
+        else:
+
+            properties_in_use = cursor.execute("""
+                SELECT DISTINCT pp.id
+                FROM product_properties pp
+                INNER JOIN inspection_details id
+                    ON id.product_property_id = pp.id
+                WHERE pp.product_id=?
+            """, (product_id,)).fetchall()
+
+            properties_in_use_ids = [
+                row["id"] for row in properties_in_use
+            ] if properties_in_use else []
+
+            existing_props_dict = {
+                prop["id"]: prop
+                for prop in existing_props
+            }
+
+            processed_ids = set()
+
+            for idx, name in enumerate(prop_names):
+
+                name = (name or "").strip()
+
+                if not name:
+                    continue
+
+                min_val = None
+                max_val = None
+
+                try:
+                    if idx < len(prop_mins) and prop_mins[idx]:
+                        min_val = float(prop_mins[idx])
+                except:
+                    pass
+
+                try:
+                    if idx < len(prop_maxs) and prop_maxs[idx]:
+                        max_val = float(prop_maxs[idx])
+                except:
+                    pass
+
+                method = (
+                    prop_methods[idx]
+                    if idx < len(prop_methods)
+                    else None
+                )
+
+                matching_prop = None
+
+                for prop_id, prop in existing_props_dict.items():
+
+                    if (
+                        prop["property_name"] == name
+                        and prop_id not in processed_ids
+                    ):
+                        matching_prop = prop
+                        break
+
+                if matching_prop:
+
+                    cursor.execute("""
+                        UPDATE product_properties
+                        SET
+                            min_value=?,
+                            max_value=?,
+                            method=?
+                        WHERE id=?
+                    """, (
+                        min_val,
+                        max_val,
+                        method,
+                        matching_prop["id"]
+                    ))
+
+                    processed_ids.add(matching_prop["id"])
+
                 else:
-                    logger.warning(
-                        "[edit_product] Cannot delete property ID %s - it's referenced in inspection_details", 
-                        prop_id
+
+                    insert_product_property(
+                        cursor,
+                        product_id,
+                        name,
+                        min_val,
+                        max_val,
+                        method
                     )
-        
+
+            for prop_id in existing_props_dict.keys():
+
+                if prop_id not in processed_ids:
+
+                    if prop_id not in properties_in_use_ids:
+
+                        cursor.execute("""
+                            DELETE FROM product_properties
+                            WHERE id=?
+                        """, (prop_id,))
+
+                    else:
+
+                        logger.warning(
+                            "[edit_product] Cannot delete property %s because it has QC history.",
+                            prop_id
+                        )
+
         conn.commit()
+
         ensure_barcode_asset_exists(item_code)
-        flash("Product updated successfully!", "success")
-        logger.info("[edit_product] Product ID %s updated by user '%s'", product_id, session.get('user'))
-        
+
+        flash(
+            "Product updated successfully!",
+            "success"
+        )
+
+        logger.info(
+            "[edit_product] Product ID %s updated by user '%s'",
+            product_id,
+            session.get("user")
+        )
+
     except sqlite3.IntegrityError as e:
-          import traceback
-          traceback.print_exc()
-          print("ACTUAL SQLITE ERROR:", e)
 
-          conn.rollback()
+        import traceback
+        traceback.print_exc()
 
-          error_msg = str(e).lower()
-
-          if "unique" in error_msg or "item_code" in error_msg:
-               flash("SKU already exists. Please use a different SKU.", "error")
-          elif "barcode" in error_msg:
-              flash("Barcode already exists. Please use a different barcode.", "error")
-          elif "foreign key" in error_msg:
-              flash("Cannot update: Related records exist.", "error")
-          else:
-              flash(str(e), "error")
-
-          logger.error("[edit_product] IntegrityError: %s", str(e), exc_info=True)
-    except Exception as e:
         conn.rollback()
-        logger.error("[edit_product] Error: %s", str(e), exc_info=True)
-        flash("An error occurred while updating the product.", "error")
+
+        error_msg = str(e).lower()
+
+        if "unique" in error_msg or "item_code" in error_msg:
+
+            flash(
+                "SKU already exists. Please use a different SKU.",
+                "error"
+            )
+
+        elif "barcode" in error_msg:
+
+            flash(
+                "Barcode already exists. Please use a different barcode.",
+                "error"
+            )
+
+        elif "foreign key" in error_msg:
+
+            flash(
+                "Cannot update because related records exist.",
+                "error"
+            )
+
+        else:
+
+            flash(str(e), "error")
+
+        logger.error(
+            "[edit_product] IntegrityError: %s",
+            str(e),
+            exc_info=True
+        )
+
+    except Exception as e:
+
+        conn.rollback()
+
+        logger.error(
+            "[edit_product] Error: %s",
+            str(e),
+            exc_info=True
+        )
+
+        flash(
+            "An error occurred while updating the product.",
+            "error"
+        )
+
     finally:
+
         conn.close()
-    
-    return redirect(url_for('product_master'))
+
+    return redirect(url_for("product_master"))
 
 @app.route('/product/delete/<int:product_id>', methods=['POST'])
 @login_required
@@ -1052,40 +1222,153 @@ def delete_product(product_id):
 @login_required
 def get_product_details(product_id):
     """API endpoint to fetch product details including inspection properties"""
+
     conn = get_db_connection()
     cursor = conn.cursor()
-    
+
     try:
         # Get product details
         product = cursor.execute("""
-            SELECT * FROM products WHERE id = ?
+            SELECT *
+            FROM products
+            WHERE id = ?
         """, (product_id,)).fetchone()
-        
+
         if not product:
             conn.close()
             return jsonify({"error": "Product not found"}), 404
-        
-        # ✅ Fixed: Column name is 'method' not 'test_method'
+
+        # Get inspection properties
         properties = cursor.execute("""
-            SELECT property_name, min_value, max_value, method
+            SELECT property_name,
+                   min_value,
+                   max_value,
+                   method
             FROM product_properties
             WHERE product_id = ?
             ORDER BY id
         """, (product_id,)).fetchall()
-        
-        conn.close()
-        
-        # Convert to dict
+
+        # Check whether QC has already been performed
+        qc_exists = cursor.execute("""
+            SELECT 1
+            FROM inspection_details id
+            JOIN product_properties pp
+                ON id.product_property_id = pp.id
+            WHERE pp.product_id = ?
+            LIMIT 1
+        """, (product_id,)).fetchone()
+
+        # Convert to dictionary
         product_dict = dict(product)
-        properties_list = [dict(prop) for prop in properties]
-        
-        product_dict['properties'] = properties_list
-        
+        product_dict["properties"] = [dict(prop) for prop in properties]
+        product_dict["inspection_locked"] = bool(qc_exists)
+
+        conn.close()
+
         return jsonify(product_dict)
+
     except Exception as e:
         logger.error("[get_product_details] Error: %s", e, exc_info=True)
         conn.close()
         return jsonify({"error": "Failed to fetch product details"}), 500
+
+@app.route('/api/product', methods=['POST'])
+@login_required
+def api_add_product():
+    """API endpoint to add a new product and return JSON response"""
+    
+    if not is_write_allowed():
+        logger.warning(
+            "[RBAC] User '%s' (role=%s) attempted POST on /api/product.",
+            session.get('user'), session.get('role')
+        )
+        return jsonify({"error": "Permission denied"}), 403
+
+    conn = get_db_connection()
+    cursor = conn.cursor()
+
+    try:
+        item_code = request.form.get('item_code', '').strip()
+        item_name = request.form.get('item_name', '').strip()
+        category = request.form.get('category', '').strip()
+        subcategory = request.form.get('subcategory', '').strip()
+        unit = request.form.get('unit', '').strip()
+        min_stock = float(request.form.get('min_stock_level') or 0)
+        max_stock = float(request.form.get('max_stock_level') or 0)
+        reorder_level = float(request.form.get('reorder_level') or 0)
+        hsn = request.form.get('hsn_sac_code', '').strip()
+        location = request.form.get('storage_location', '').strip()
+        description = request.form.get('description', '').strip()
+
+        # Validate all required fields
+        if not all([item_code, item_name, category, subcategory, unit, hsn, location, description]):
+            conn.close()
+            return jsonify({"error": "All fields are mandatory except Inspection Properties"}), 400
+
+        # Check for duplicate product code or name
+        normalized_name = normalize_item_text(item_name)
+        existing_product = conn.execute(
+            "SELECT id FROM products WHERE LOWER(item_code) = ? OR LOWER(item_name) = ? LIMIT 1",
+            (item_code.strip().lower(), normalized_name)
+        ).fetchone()
+        
+        if existing_product:
+            conn.close()
+            return jsonify({"error": "Product Code or Product Name already exists"}), 400
+
+        # Insert new product
+        cur = conn.execute("""
+            INSERT INTO products 
+            (item_code, barcode, item_name, category, subcategory, unit, min_stock_level, max_stock_level, reorder_level, hsn_sac_code, storage_location, description)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        """, (item_code, item_code, item_name, category, subcategory, unit, min_stock, max_stock, reorder_level, hsn, location, description))
+        
+        product_id = cur.lastrowid
+
+        # Handle inspection properties if provided
+        prop_names = request.form.getlist('property_name[]')
+        prop_mins = request.form.getlist('property_min[]')
+        prop_maxs = request.form.getlist('property_max[]')
+        prop_methods = request.form.getlist('property_method[]')
+
+        for idx, name in enumerate(prop_names):
+            name = (name or '').strip()
+            if not name:
+                continue
+            try:
+                min_val = float(prop_mins[idx]) if idx < len(prop_mins) and prop_mins[idx] not in (None, '') else None
+            except Exception:
+                min_val = None
+            try:
+                max_val = float(prop_maxs[idx]) if idx < len(prop_maxs) and prop_maxs[idx] not in (None, '') else None
+            except Exception:
+                max_val = None
+            method = prop_methods[idx] if idx < len(prop_methods) else None
+            insert_product_property(cursor, product_id, name, min_val, max_val, method)
+
+        conn.commit()
+        
+        # Generate barcode
+        ensure_barcode_asset_exists(item_code)
+        
+        conn.close()
+        
+        return jsonify({
+            "success": True,
+            "message": "Product added successfully",
+            "product_id": product_id,
+            "item_name": item_name
+        }), 201
+
+    except sqlite3.IntegrityError as e:
+        conn.close()
+        logger.error("[api_add_product] IntegrityError: %s", e)
+        return jsonify({"error": "Product Code or Barcode already exists"}), 400
+    except Exception as e:
+        conn.close()
+        logger.error("[api_add_product] Error: %s", e, exc_info=True)
+        return jsonify({"error": "Failed to add product"}), 500
 
 @app.route('/suppliers', methods=['GET', 'POST'])
 @login_required

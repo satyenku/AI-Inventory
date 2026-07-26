@@ -1490,25 +1490,36 @@
           }
           
           if (!found) {
-            // ✅ Show clear warning that item is not in Product Master
+            // ✅ Show "Add Product to Master" option instead of plain warning
             console.log('❌ STRICT MODE: No match found for:', itemName, '- Item NOT in Product Master');
             document.getElementById('qc_specs_container').innerHTML = `
               <div style="padding: 20px; text-align: center; background: #fef3c7; border: 2px solid #f59e0b; border-radius: 8px; color: #92400e;">
                 <div style="font-size: 32px; margin-bottom: 10px;">⚠️</div>
-                <div style="font-size: 16px; font-weight: bold; margin-bottom: 8px;">Item Not Found in Product Master</div>
+                <div style="font-size: 16px; font-weight: bold; margin-bottom: 8px;">Product Not Found in Master</div>
                 <div style="font-size: 14px; margin-bottom: 12px;">
                   <strong>"${escapeHtml(itemName)}"</strong> does not exist in the Product Master database.
                 </div>
-                <div style="font-size: 13px; line-height: 1.6; text-align: left; background: white; padding: 12px; border-radius: 6px; margin-bottom: 12px;">
-                  <strong>To perform QC inspection:</strong><br/>
-                  1. Go to <strong>Product Master</strong> page<br/>
-                  2. Click <strong>"Add Product"</strong><br/>
-                  3. Register this item with SKU, barcode, and inspection properties<br/>
-                  4. Return here and open QC form again
+                <div style="font-size: 13px; line-height: 1.6; text-align: center; margin-bottom: 16px;">
+                  Please add this product to continue with QC inspection.
                 </div>
-                <div style="font-size: 12px; color: #78350f; font-style: italic;">
-                  ❌ QC Confirmation will be blocked until this item is registered in Product Master.
-                </div>
+                <button 
+                  onclick="openAddProductModalFromQC('${escapeHtml(itemName)}')"
+                  style="
+                    background: #2563eb;
+                    color: white;
+                    border: none;
+                    padding: 10px 18px;
+                    border-radius: 6px;
+                    font-size: 14px;
+                    font-weight: bold;
+                    cursor: pointer;
+                    transition: background 0.2s;
+                  "
+                  onmouseover="this.style.background='#1d4ed8'"
+                  onmouseout="this.style.background='#2563eb'"
+                >
+                  ➕ Add Product to Master
+                </button>
               </div>
             `;
             document.getElementById('qc_product_id').value = '';
@@ -1709,20 +1720,19 @@
               }
               
               if (!found) {
-                // ❌ Item NOT in Product Master - Block QC modal
-                console.log('❌ STRICT MODE: No match for:', itemName, '- Blocking QC');
-                alert(
-                  `❌ Item Not Found in Product Master\n\n` +
-                  `Cannot perform QC for "${itemName}" because it does not exist in the Product Master.\n\n` +
-                  `This item was extracted from the invoice but is not registered in your system.\n\n` +
-                  `Please add this item to Product Master first:\n` +
-                  `1. Go to "Product Master" page\n` +
-                  `2. Click "Add Product"\n` +
-                  `3. Register "${itemName}" with SKU, barcode, and inspection properties\n` +
-                  `4. Return here and click QC button again\n\n` +
-                  `All items must be registered before QC inspection.`
-                );
-                return; // ⛔ Block QC modal from opening
+                // ❌ Item NOT in Product Master - Open QC modal and show "Add Product" option
+                console.log('❌ STRICT MODE: No match for:', itemName, '- Opening QC with Add Product option');
+                
+                const itemObj = {
+                  description: itemName,
+                  qty: qcBtn.getAttribute('data-item-qty'),
+                  unit_price: qcBtn.getAttribute('data-item-price'),
+                  amount: qcBtn.getAttribute('data-item-amount')
+                };
+                
+                // Open QC modal - it will show "Add Product to Master" button
+                openQCForm(itemObj);
+                return;
               }
               
               // ✅ Item found - log match and proceed with QC
@@ -1955,42 +1965,29 @@
         }
 
         // ✅ Check if item exists in Product Master before opening QC
-        validateItemInProductMaster(description, descInput, validationMsg, function(isValid, productId) {
-            if (!isValid) {
-                alert(
-                    `❌ Item Not Found in Product Master\n\n` +
-                    `Cannot perform QC for "${description}" because it does not exist in the Product Master.\n\n` +
-                    `Please either:\n` +
-                    `1. Choose an existing item from the Product Master, OR\n` +
-                    `2. Go to "Product Master" page and add "${description}" first\n\n` +
-                    `Manual entry items must be registered in Product Master before QC.`
-                );
-                return;
-            }
+        // Don't block - let QC modal open and show "Add Product" option if needed
+        const item = {
+            description: description,
+            qty: qtyInput.value,
+            unit_price: priceInput.value,
+            amount: amountCell.textContent
+        };
 
-            const item = {
-                description: description,
-                qty: qtyInput.value,
-                unit_price: priceInput.value,
-                amount: amountCell.textContent
-            };
+        openQCForm(item);
 
-            openQCForm(item);
+        // Save badge element for manual row
+        const invoiceNo =
+            document.getElementById("invoice_number").value || "MANUAL";
 
-            // Save badge element for manual row
-            const invoiceNo =
-                document.getElementById("invoice_number").value || "MANUAL";
+        const keyRaw = invoiceNo + "|" + description;
 
-            const keyRaw = invoiceNo + "|" + description;
+        document.getElementById("qc_current_key").value = keyRaw;
 
-            document.getElementById("qc_current_key").value = keyRaw;
+        const badge = row.querySelector(".qc-badge");
 
-            const badge = row.querySelector(".qc-badge");
+        badge.id = "qc-badge-" + sanitizeKey(keyRaw);
 
-            badge.id = "qc-badge-" + sanitizeKey(keyRaw);
-
-            updateBadgeForKey(keyRaw);
-        });
+        updateBadgeForKey(keyRaw);
     };
   }
 
@@ -2600,6 +2597,280 @@
     </div>
   </div>
 
+  <!-- Add Product Modal -->
+  <div id="addProductModal" style="display:none; position:fixed; inset:0; background:rgba(0,0,0,0.6); z-index:99999; align-items:center; justify-content:center;">
+    <div style="background:#fff; border-radius:12px; padding:28px; width:90%; max-width:620px; max-height:90vh; overflow-y:auto; box-shadow:0 8px 32px rgba(0,0,0,0.3);">
+      <div style="display:flex; align-items:center; gap:12px; margin-bottom:18px;">
+        <span style="font-size:32px;">📦</span>
+        <h3 style="margin:0; font-size:20px; color:#1e293b;">Add Product to Master</h3>
+      </div>
+      
+      <form id="addProductForm" onsubmit="submitAddProduct(event)">
+        <div style="display:grid; grid-template-columns:1fr 1fr; gap:14px; margin-bottom:14px;">
+          <div>
+            <label style="display:block; font-size:13px; color:#334155; margin-bottom:4px; font-weight:600;">
+              Item Code (SKU) <span style="color:#dc2626;">*</span>
+            </label>
+            <input 
+              type="text" 
+              id="modal_item_code"
+              name="item_code"
+              required
+              placeholder="e.g. RM-001"
+              style="width:100%; padding:10px; border:1px solid #cbd5e1; border-radius:6px; font-size:14px; box-sizing:border-box;"
+            />
+          </div>
+          
+          <div>
+            <label style="display:block; font-size:13px; color:#334155; margin-bottom:4px; font-weight:600;">
+              Item Name <span style="color:#dc2626;">*</span>
+            </label>
+            <input 
+              type="text" 
+              id="modal_item_name"
+              name="item_name"
+              required
+              placeholder="Product name"
+              style="width:100%; padding:10px; border:1px solid #cbd5e1; border-radius:6px; font-size:14px; box-sizing:border-box;"
+            />
+          </div>
+        </div>
+        
+        <div style="display:grid; grid-template-columns:1fr 1fr; gap:14px; margin-bottom:14px;">
+          <div>
+            <label style="display:block; font-size:13px; color:#334155; margin-bottom:4px; font-weight:600;">
+              Category <span style="color:#dc2626;">*</span>
+            </label>
+            <select 
+              id="modal_category"
+              name="category"
+              required
+              style="width:100%; padding:10px; border:1px solid #cbd5e1; border-radius:6px; font-size:14px; box-sizing:border-box;"
+            >
+              <option value="Raw Material">Raw Material</option>
+              <option value="WIP">WIP</option>
+              <option value="Finished Goods">Finished Goods</option>
+              <option value="Spare Parts">Spare Parts</option>
+            </select>
+          </div>
+          
+          <div>
+            <label style="display:block; font-size:13px; color:#334155; margin-bottom:4px; font-weight:600;">
+              Subcategory <span style="color:#dc2626;">*</span>
+            </label>
+            <input 
+              type="text" 
+              id="modal_subcategory"
+              name="subcategory"
+              required
+              placeholder="e.g. Steel, Aluminum"
+              style="width:100%; padding:10px; border:1px solid #cbd5e1; border-radius:6px; font-size:14px; box-sizing:border-box;"
+            />
+          </div>
+        </div>
+        
+        <div style="display:grid; grid-template-columns:1fr 1fr 1fr; gap:14px; margin-bottom:14px;">
+          <div>
+            <label style="display:block; font-size:13px; color:#334155; margin-bottom:4px; font-weight:600;">
+              Unit <span style="color:#dc2626;">*</span>
+            </label>
+            <select 
+              id="modal_unit"
+              name="unit"
+              required
+              style="width:100%; padding:10px; border:1px solid #cbd5e1; border-radius:6px; font-size:14px; box-sizing:border-box;"
+            >
+              <option value="Nos">Nos</option>
+              <option value="Kg">Kg</option>
+              <option value="Meters">Meters</option>
+              <option value="Liters">Liters</option>
+            </select>
+          </div>
+          
+          <div>
+            <label style="display:block; font-size:13px; color:#334155; margin-bottom:4px; font-weight:600;">
+              Min Stock <span style="color:#dc2626;">*</span>
+            </label>
+            <input 
+              type="number" 
+              id="modal_min_stock"
+              name="min_stock_level"
+              required
+              value="0"
+              min="0"
+              style="width:100%; padding:10px; border:1px solid #cbd5e1; border-radius:6px; font-size:14px; box-sizing:border-box;"
+            />
+          </div>
+          
+          <div>
+            <label style="display:block; font-size:13px; color:#334155; margin-bottom:4px; font-weight:600;">
+              Max Stock <span style="color:#dc2626;">*</span>
+            </label>
+            <input 
+              type="number" 
+              id="modal_max_stock"
+              name="max_stock_level"
+              required
+              value="1000"
+              min="0"
+              style="width:100%; padding:10px; border:1px solid #cbd5e1; border-radius:6px; font-size:14px; box-sizing:border-box;"
+            />
+          </div>
+        </div>
+        
+        <div style="display:grid; grid-template-columns:1fr 1fr; gap:14px; margin-bottom:14px;">
+          <div>
+            <label style="display:block; font-size:13px; color:#334155; margin-bottom:4px; font-weight:600;">
+              Reorder Level <span style="color:#dc2626;">*</span>
+            </label>
+            <input 
+              type="number" 
+              id="modal_reorder_level"
+              name="reorder_level"
+              required
+              value="0"
+              min="0"
+              style="width:100%; padding:10px; border:1px solid #cbd5e1; border-radius:6px; font-size:14px; box-sizing:border-box;"
+            />
+          </div>
+          
+          <div>
+            <label style="display:block; font-size:13px; color:#334155; margin-bottom:4px; font-weight:600;">
+              HSN/SAC Code <span style="color:#dc2626;">*</span>
+            </label>
+            <input 
+              type="text" 
+              id="modal_hsn_code"
+              name="hsn_sac_code"
+              required
+              placeholder="e.g. 30049099"
+              style="width:100%; padding:10px; border:1px solid #cbd5e1; border-radius:6px; font-size:14px; box-sizing:border-box;"
+            />
+          </div>
+        </div>
+        
+        <div style="margin-bottom:14px;">
+          <label style="display:block; font-size:13px; color:#334155; margin-bottom:4px; font-weight:600;">
+            Storage Location <span style="color:#dc2626;">*</span>
+          </label>
+          <input 
+            type="text" 
+            id="modal_storage_location"
+            name="storage_location"
+            required
+            placeholder="e.g. Rack A / Shelf 3"
+            style="width:100%; padding:10px; border:1px solid #cbd5e1; border-radius:6px; font-size:14px; box-sizing:border-box;"
+          />
+        </div>
+        
+        <div style="margin-bottom:20px;">
+          <label style="display:block; font-size:13px; color:#334155; margin-bottom:4px; font-weight:600;">
+            Description <span style="color:#dc2626;">*</span>
+          </label>
+          <textarea 
+            id="modal_description"
+            name="description"
+            rows="2"
+            required
+            placeholder="Product specifications/description"
+            style="width:100%; padding:10px; border:1px solid #cbd5e1; border-radius:6px; font-size:14px; box-sizing:border-box; resize:vertical;"
+          ></textarea>
+        </div>
+        
+        <!-- Inspection Properties Section -->
+        <div style="margin-bottom:20px;">
+          <label style="display:block; font-size:13px; color:#334155; margin-bottom:8px; font-weight:600;">
+            Inspection Properties (optional)
+          </label>
+          <div style="background:#f8f9fa; border:1px solid #cbd5e1; border-radius:6px; padding:12px;">
+            <table id="modal_properties_table" style="width:100%; border-collapse:collapse;">
+              <thead>
+                <tr>
+                  <th style="text-align:left; padding:6px; font-size:12px; color:#64748b;">Property</th>
+                  <th style="text-align:left; padding:6px; font-size:12px; color:#64748b;">Min</th>
+                  <th style="text-align:left; padding:6px; font-size:12px; color:#64748b;">Max</th>
+                  <th style="text-align:left; padding:6px; font-size:12px; color:#64748b;">Method</th>
+                  <th style="padding:6px; width:80px;"></th>
+                </tr>
+              </thead>
+              <tbody id="modal_properties_body">
+                <tr>
+                  <td style="padding:4px;">
+                    <input 
+                      type="text" 
+                      name="property_name[]" 
+                      placeholder="e.g. OD"
+                      style="width:100%; padding:6px; border:1px solid #cbd5e1; border-radius:4px; font-size:13px; box-sizing:border-box;"
+                    />
+                  </td>
+                  <td style="padding:4px;">
+                    <input 
+                      type="number" 
+                      step="any" 
+                      name="property_min[]"
+                      style="width:100%; padding:6px; border:1px solid #cbd5e1; border-radius:4px; font-size:13px; box-sizing:border-box;"
+                    />
+                  </td>
+                  <td style="padding:4px;">
+                    <input 
+                      type="number" 
+                      step="any" 
+                      name="property_max[]"
+                      style="width:100%; padding:6px; border:1px solid #cbd5e1; border-radius:4px; font-size:13px; box-sizing:border-box;"
+                    />
+                  </td>
+                  <td style="padding:4px;">
+                    <input 
+                      type="text" 
+                      name="property_method[]" 
+                      placeholder="e.g. Vernier"
+                      style="width:100%; padding:6px; border:1px solid #cbd5e1; border-radius:4px; font-size:13px; box-sizing:border-box;"
+                    />
+                  </td>
+                  <td style="padding:4px;">
+                    <button 
+                      type="button" 
+                      onclick="removeModalPropertyRow(this)"
+                      style="padding:6px 10px; background:#dc2626; color:white; border:none; border-radius:4px; font-size:12px; cursor:pointer; width:100%;"
+                    >
+                      Remove
+                    </button>
+                  </td>
+                </tr>
+              </tbody>
+            </table>
+            <div style="margin-top:8px; text-align:right;">
+              <button 
+                type="button"
+                onclick="addModalPropertyRow()"
+                style="padding:6px 12px; background:#2563eb; color:white; border:none; border-radius:4px; font-size:12px; font-weight:600; cursor:pointer;"
+              >
+                + Add Property
+              </button>
+            </div>
+          </div>
+        </div>
+        
+        <div style="display:flex; gap:10px; justify-content:flex-end;">
+          <button 
+            type="button"
+            onclick="closeAddProductModal()"
+            style="padding:10px 20px; background:#e5e7eb; color:#334155; border:none; border-radius:6px; font-size:14px; font-weight:600; cursor:pointer;"
+          >
+            Cancel
+          </button>
+          <button 
+            type="submit"
+            id="submitProductBtn"
+            style="padding:10px 20px; background:#16a34a; color:white; border:none; border-radius:6px; font-size:14px; font-weight:600; cursor:pointer;"
+          >
+            ✅ Add Product
+          </button>
+        </div>
+      </form>
+    </div>
+  </div>
+
   <script>
     // Open Add Supplier Modal with pre-filled extracted data
     function openAddSupplierModalFromItemEntry(supplierName, gstNumber) {
@@ -2622,12 +2893,22 @@
       document.getElementById('modal_email').value = '';
       document.getElementById('modal_address').value = '';
       
+      // Reset submit button state
+      const submitBtn = document.getElementById('submitSupplierBtn');
+      submitBtn.disabled = false;
+      submitBtn.textContent = '✅ Add Supplier';
+      
       document.getElementById('addSupplierModal').style.display = 'flex';
     }
 
     // Close Add Supplier Modal
     function closeAddSupplierModal() {
       document.getElementById('addSupplierModal').style.display = 'none';
+      
+      // Reset submit button state when closing
+      const submitBtn = document.getElementById('submitSupplierBtn');
+      submitBtn.disabled = false;
+      submitBtn.textContent = '✅ Add Supplier';
     }
 
     // Submit Add Supplier Form
@@ -2905,6 +3186,271 @@
       } catch (error) {
         console.error('Failed to refresh supplier dropdown:', error);
         alert('✅ Supplier added! Please manually select it from the dropdown.');
+      }
+    }
+
+    // ===== ADD PRODUCT TO MASTER FUNCTIONS =====
+    
+    // Add property row to modal
+    function addModalPropertyRow() {
+      const tbody = document.getElementById('modal_properties_body');
+      const tr = document.createElement('tr');
+      tr.innerHTML = `
+        <td style="padding:4px;">
+          <input 
+            type="text" 
+            name="property_name[]" 
+            placeholder="e.g. OD"
+            style="width:100%; padding:6px; border:1px solid #cbd5e1; border-radius:4px; font-size:13px; box-sizing:border-box;"
+          />
+        </td>
+        <td style="padding:4px;">
+          <input 
+            type="number" 
+            step="any" 
+            name="property_min[]"
+            style="width:100%; padding:6px; border:1px solid #cbd5e1; border-radius:4px; font-size:13px; box-sizing:border-box;"
+          />
+        </td>
+        <td style="padding:4px;">
+          <input 
+            type="number" 
+            step="any" 
+            name="property_max[]"
+            style="width:100%; padding:6px; border:1px solid #cbd5e1; border-radius:4px; font-size:13px; box-sizing:border-box;"
+          />
+        </td>
+        <td style="padding:4px;">
+          <input 
+            type="text" 
+            name="property_method[]" 
+            placeholder="e.g. Vernier"
+            style="width:100%; padding:6px; border:1px solid #cbd5e1; border-radius:4px; font-size:13px; box-sizing:border-box;"
+          />
+        </td>
+        <td style="padding:4px;">
+          <button 
+            type="button" 
+            onclick="removeModalPropertyRow(this)"
+            style="padding:6px 10px; background:#dc2626; color:white; border:none; border-radius:4px; font-size:12px; cursor:pointer; width:100%;"
+          >
+            Remove
+          </button>
+        </td>
+      `;
+      tbody.appendChild(tr);
+    }
+
+    // Remove property row from modal
+    function removeModalPropertyRow(btn) {
+      const tr = btn.closest('tr');
+      if (tr) tr.remove();
+    }
+    
+    // Open Add Product Modal from QC Form
+    function openAddProductModalFromQC(itemName) {
+      // Store QC state to restore later
+      const qcCurrentKey = document.getElementById('qc_current_key').value;
+      sessionStorage.setItem('qc_preserve_state', JSON.stringify({
+        qc_current_key: qcCurrentKey,
+        invoice_number: document.getElementById('invoice_number').value,
+        invoice_date: document.getElementById('invoice_date').value,
+        vendor_name: document.getElementById('vendor_name').value,
+        total_amount: document.getElementById('total_amount').value,
+        supplier_id: document.getElementById('supplier_id').value,
+        line_items_html: document.getElementById('lineItemsBody').innerHTML,
+        extracted_payload: extractedPayload,
+        qc_map: localStorage.getItem('ai_inventory_qc_map')
+      }));
+      
+      // Pre-fill product name from extracted item
+      document.getElementById('modal_item_name').value = itemName || '';
+      document.getElementById('modal_item_code').value = '';
+      document.getElementById('modal_category').value = 'Raw Material';
+      document.getElementById('modal_subcategory').value = '';
+      document.getElementById('modal_unit').value = 'Nos';
+      document.getElementById('modal_min_stock').value = '0';
+      document.getElementById('modal_max_stock').value = '1000';
+      document.getElementById('modal_reorder_level').value = '0';
+      document.getElementById('modal_hsn_code').value = '';
+      document.getElementById('modal_storage_location').value = '';
+      document.getElementById('modal_description').value = '';
+      
+      // Reset properties table to one empty row
+      const propsBody = document.getElementById('modal_properties_body');
+      propsBody.innerHTML = `
+        <tr>
+          <td style="padding:4px;">
+            <input 
+              type="text" 
+              name="property_name[]" 
+              placeholder="e.g. OD"
+              style="width:100%; padding:6px; border:1px solid #cbd5e1; border-radius:4px; font-size:13px; box-sizing:border-box;"
+            />
+          </td>
+          <td style="padding:4px;">
+            <input 
+              type="number" 
+              step="any" 
+              name="property_min[]"
+              style="width:100%; padding:6px; border:1px solid #cbd5e1; border-radius:4px; font-size:13px; box-sizing:border-box;"
+            />
+          </td>
+          <td style="padding:4px;">
+            <input 
+              type="number" 
+              step="any" 
+              name="property_max[]"
+              style="width:100%; padding:6px; border:1px solid #cbd5e1; border-radius:4px; font-size:13px; box-sizing:border-box;"
+            />
+          </td>
+          <td style="padding:4px;">
+            <input 
+              type="text" 
+              name="property_method[]" 
+              placeholder="e.g. Vernier"
+              style="width:100%; padding:6px; border:1px solid #cbd5e1; border-radius:4px; font-size:13px; box-sizing:border-box;"
+            />
+          </td>
+          <td style="padding:4px;">
+            <button 
+              type="button" 
+              onclick="removeModalPropertyRow(this)"
+              style="padding:6px 10px; background:#dc2626; color:white; border:none; border-radius:4px; font-size:12px; cursor:pointer; width:100%;"
+            >
+              Remove
+            </button>
+          </td>
+        </tr>
+      `;
+      
+      // Reset submit button state
+      const submitBtn = document.getElementById('submitProductBtn');
+      submitBtn.disabled = false;
+      submitBtn.textContent = '✅ Add Product';
+      
+      document.getElementById('addProductModal').style.display = 'flex';
+    }
+
+    // Close Add Product Modal
+    function closeAddProductModal() {
+      document.getElementById('addProductModal').style.display = 'none';
+      
+      // Reset submit button state when closing
+      const submitBtn = document.getElementById('submitProductBtn');
+      submitBtn.disabled = false;
+      submitBtn.textContent = '✅ Add Product';
+    }
+
+    // Submit Add Product Form
+    function submitAddProduct(event) {
+      event.preventDefault();
+      
+      const submitBtn = document.getElementById('submitProductBtn');
+      const originalText = submitBtn.textContent;
+      submitBtn.disabled = true;
+      submitBtn.textContent = '⏳ Adding...';
+      
+      // Get form element and create FormData from it (includes all inputs including property arrays)
+      const form = document.getElementById('addProductForm');
+      const formData = new FormData(form);
+      
+      const itemName = document.getElementById('modal_item_name').value.trim();
+      
+      fetch('/api/product', {
+        method: 'POST',
+        body: formData
+      })
+      .then(response => response.json())
+      .then(data => {
+        if (data.success) {
+          // Success - product added, now restore QC state and retry matching
+          return restoreQCStateAndRetryMatch(itemName);
+        } else {
+          throw new Error(data.error || 'Failed to add product');
+        }
+      })
+      .then(() => {
+        closeAddProductModal();
+        // Don't show alert - QC modal will open automatically with the new product
+      })
+      .catch(error => {
+        alert('❌ Failed to add product: ' + error.message + '\n\nPlease check for duplicate SKU/item code or fill all required fields.');
+        submitBtn.disabled = false;
+        submitBtn.textContent = originalText;
+      });
+    }
+
+    // Restore QC state and retry product matching
+    async function restoreQCStateAndRetryMatch(itemName) {
+      try {
+        // Get preserved state
+        const preservedState = JSON.parse(sessionStorage.getItem('qc_preserve_state') || '{}');
+        
+        // Restore all form fields
+        if (preservedState.invoice_number) {
+          document.getElementById('invoice_number').value = preservedState.invoice_number;
+        }
+        if (preservedState.invoice_date) {
+          document.getElementById('invoice_date').value = preservedState.invoice_date;
+        }
+        if (preservedState.vendor_name) {
+          document.getElementById('vendor_name').value = preservedState.vendor_name;
+        }
+        if (preservedState.total_amount) {
+          document.getElementById('total_amount').value = preservedState.total_amount;
+        }
+        if (preservedState.supplier_id) {
+          document.getElementById('supplier_id').value = preservedState.supplier_id;
+        }
+        
+        // Restore extracted payload
+        if (preservedState.extracted_payload) {
+          extractedPayload = preservedState.extracted_payload;
+        }
+        
+        // Restore QC map
+        if (preservedState.qc_map) {
+          localStorage.setItem('ai_inventory_qc_map', preservedState.qc_map);
+        }
+        
+        // Restore line items
+        if (extractedPayload && extractedPayload.line_items) {
+          renderLineItems(extractedPayload.line_items);
+        } else if (preservedState.line_items_html) {
+          document.getElementById('lineItemsBody').innerHTML = preservedState.line_items_html;
+          reattachQCEventListeners();
+        }
+        
+        // Recalculate total
+        setTimeout(() => {
+          recalcTotal();
+          updateQCWarning();
+        }, 100);
+        
+        // Ensure QC modal is visible
+        document.getElementById('qcModalOverlay').style.display = 'flex';
+        
+        // Set the item name and key in QC modal
+        document.getElementById('qc_item_name').textContent = itemName;
+        document.getElementById('qc_current_key').value = preservedState.qc_current_key;
+        
+        // Show loading message
+        document.getElementById('qc_specs_container').innerHTML = 'Loading product properties...';
+        
+        // Wait a bit for database to commit, then retry fetching product specs
+        setTimeout(async () => {
+          const qc = loadQCForKey(preservedState.qc_current_key) || {};
+          await fetchMatchedProductSpecs(itemName, qc);
+        }, 300);
+        
+        // Clear session storage
+        sessionStorage.removeItem('qc_preserve_state');
+        
+        console.log('✅ QC state restored and product matched after addition');
+        
+      } catch (error) {
+        console.error('Failed to restore QC state:', error);
       }
     }
   </script>
