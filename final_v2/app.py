@@ -1,11 +1,12 @@
 # app.py
 
+import base64
 import logging
 import os
 import re
 import sqlite3
 import time
-from datetime import date
+from datetime import date, datetime
 import secrets
 import smtplib
 from email.mime.text import MIMEText
@@ -347,6 +348,339 @@ def ensure_barcode_asset_exists(barcode_value):
         except Exception:
             return None
     return png_path
+
+
+def ensure_qr_reports_storage():
+    folder = os.path.join(app.root_path, 'static', 'qr_reports')
+    os.makedirs(folder, exist_ok=True)
+    return folder
+
+
+def resolve_qr_report_path(row):
+    if not row:
+        return None
+    filepath = (row.get('report_filepath') or '').strip()
+    if not filepath:
+        return None
+    if os.path.isabs(filepath):
+        return filepath
+    if filepath.startswith('static/'):
+        return os.path.join(app.root_path, filepath)
+    return os.path.join(app.root_path, 'static', 'qr_reports', row.get('report_filename') or '')
+
+
+def create_qr_report_archive(payload):
+    data = payload or {}
+    grn_number = (data.get('grn_number') or '').strip() or 'GRN-UNASSIGNED'
+    item_name = (data.get('item_name') or '').strip() or 'Unnamed Item'
+    item_code = (data.get('item_code') or '').strip() or 'N/A'
+    supplier_name = (data.get('supplier_name') or '').strip() or 'N/A'
+    quantity = data.get('quantity') or 0
+    generated_at = (data.get('generated_at') or datetime.utcnow().strftime('%Y-%m-%d %H:%M:%S')).strip()
+    downloaded_at = (data.get('downloaded_at') or generated_at).strip()
+    downloaded_by = (data.get('downloaded_by') or session.get('user') or 'system').strip()
+    report_id = int(data.get('report_id') or (time.time() * 1000))
+
+    folder = ensure_qr_reports_storage()
+    safe_name = re.sub(r'[^A-Za-z0-9._-]+', '_', f"{grn_number}_{item_code}_{report_id}")
+    filename = f"{safe_name}.html"
+    filepath = os.path.join(folder, filename)
+
+    qr_value = f"{grn_number}|{item_code}|{item_name}"
+    qr = qrcode.QRCode(version=1, error_correction=qrcode.constants.ERROR_CORRECT_M, box_size=8, border=2)
+    qr.add_data(qr_value)
+    qr.make(fit=True)
+    img = qr.make_image(fill_color='black', back_color='white')
+    buffer = BytesIO()
+    img.save(buffer, format='PNG')
+    encoded_image = base64.b64encode(buffer.getvalue()).decode('ascii')
+
+    html_content = f"""<!doctype html>
+<html lang=\"en\">
+  <head>
+    <meta charset=\"utf-8\" />
+    <title>GRN QR Report - {grn_number}</title>
+    <style>
+      body {{ font-family: Arial, sans-serif; padding: 24px; color: #0f172a; }}
+      .card {{ border: 1px solid #cbd5e1; border-radius: 12px; padding: 24px; max-width: 700px; margin: 0 auto; }}
+      .title {{ font-size: 24px; font-weight: 700; margin-bottom: 12px; }}
+      .meta {{ color: #475569; margin-bottom: 10px; }}
+      img {{ display: block; margin: 20px 0; }}
+    </style>
+  </head>
+  <body>
+    <div class=\"card\">
+      <div class=\"title\">Confirmed GRN QR Report</div>
+      <div class=\"meta\"><strong>GRN Number:</strong> {grn_number}</div>
+      <div class=\"meta\"><strong>Item Name:</strong> {item_name}</div>
+      <div class=\"meta\"><strong>Item Code:</strong> {item_code}</div>
+      <div class=\"meta\"><strong>Supplier:</strong> {supplier_name}</div>
+      <div class=\"meta\"><strong>Quantity:</strong> {quantity}</div>
+      <img src=\"data:image/png;base64,{encoded_image}\" alt=\"QR Report\" />
+      <div class=\"meta\"><strong>Generated At:</strong> {generated_at}</div>
+    </div>
+  </body>
+</html>
+"""
+
+    with open(filepath, 'w', encoding='utf-8') as handle:
+        handle.write(html_content)
+
+    relative_path = os.path.relpath(filepath, app.root_path).replace('\\', '/')
+    conn = get_db_connection()
+    try:
+        cursor = conn.cursor()
+        cursor.execute(
+            """
+            INSERT INTO qr_reports (
+                grn_number, item_name, item_code, supplier_name, quantity,
+                report_filename, report_filepath, generated_at, downloaded_at, downloaded_by, status
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            """,
+            (
+                grn_number,
+                item_name,
+                item_code,
+                supplier_name,
+                quantity,
+                filename,
+                relative_path,
+                generated_at,
+                downloaded_at,
+                downloaded_by,
+                'Available',
+            ),
+        )
+        conn.commit()
+        report_row_id = cursor.lastrowid
+    finally:
+        conn.close()
+
+    return {
+        'id': report_row_id,
+        'grn_number': grn_number,
+        'item_name': item_name,
+        'item_code': item_code,
+        'supplier_name': supplier_name,
+        'quantity': quantity,
+        'report_filename': filename,
+        'report_filepath': relative_path,
+        'generated_at': generated_at,
+        'downloaded_at': downloaded_at,
+        'downloaded_by': downloaded_by,
+        'status': 'Available',
+    }
+
+
+@app.route('/api/qr-report/download-history', methods=['GET', 'POST'])
+@login_required
+def api_qr_report_download_history():
+    if request.method == 'POST':
+        data = request.get_json(silent=True) or request.form or {}
+        try:
+            record = create_qr_report_archive(data)
+            return jsonify({'success': True, 'record': record})
+        except Exception as exc:
+            logger.error('[qr_report_history] Failed to store archive entry: %s', exc, exc_info=True)
+            return jsonify({'success': False, 'message': 'Unable to save QR report archive entry.'}), 500
+
+    conn = get_db_connection()
+    try:
+        rows = conn.execute(
+            """
+            SELECT id, grn_number, item_name, item_code, supplier_name, quantity,
+                   report_filename, report_filepath, generated_at, downloaded_at, downloaded_by, status
+            FROM qr_reports
+            ORDER BY COALESCE(downloaded_at, generated_at, created_at) DESC, id DESC
+            """
+        ).fetchall()
+        records = []
+        for row in rows:
+            record = dict(row)
+            resolved_path = resolve_qr_report_path(record)
+            record['status'] = 'Available' if resolved_path and os.path.exists(resolved_path) else 'Missing'
+            records.append(record)
+    finally:
+        conn.close()
+
+    return jsonify({'success': True, 'records': records, 'total': len(records)})
+
+
+@app.route('/qr-reports', methods=['GET', 'POST'])
+@login_required
+def qr_reports():
+    if request.method == 'POST':
+        data = request.form or {}
+        if not (data.get('grn_number') or data.get('item_name')):
+            flash('Please provide a GRN number or item name to archive a QR report.', 'error')
+            return redirect(url_for('qr_reports'))
+        try:
+            create_qr_report_archive(data)
+            flash('QR report archived successfully.', 'success')
+        except Exception as exc:
+            logger.error('[qr_reports] Failed to archive QR report: %s', exc, exc_info=True)
+            flash('Unable to archive the QR report right now.', 'error')
+        return redirect(url_for('qr_reports'))
+
+    conn = get_db_connection()
+    try:
+        query = """
+            SELECT id, grn_number, item_name, item_code, supplier_name, quantity,
+                   report_filename, report_filepath, generated_at, downloaded_at, downloaded_by, status
+            FROM qr_reports
+            WHERE 1=1
+        """
+        params = []
+        search = (request.args.get('q') or '').strip()
+        if search:
+            pattern = f'%{search.lower()}%'
+            query += " AND (LOWER(grn_number) LIKE ? OR LOWER(item_name) LIKE ? OR LOWER(item_code) LIKE ? OR LOWER(supplier_name) LIKE ?)"
+            params.extend([pattern, pattern, pattern, pattern])
+
+        from_date = (request.args.get('from_date') or '').strip()
+        if from_date:
+            query += " AND COALESCE(downloaded_at, generated_at, created_at) >= ?"
+            params.append(from_date)
+
+        to_date = (request.args.get('to_date') or '').strip()
+        if to_date:
+            query += " AND COALESCE(downloaded_at, generated_at, created_at) <= ?"
+            params.append(to_date)
+
+        downloaded_by = (request.args.get('downloaded_by') or '').strip()
+        if downloaded_by:
+            query += " AND LOWER(downloaded_by) = ?"
+            params.append(downloaded_by.lower())
+
+        status_filter = (request.args.get('status') or '').strip().lower()
+        if status_filter in ('available', 'missing'):
+            query += " AND LOWER(status) = ?"
+            params.append(status_filter)
+
+        sort = (request.args.get('sort') or 'latest').strip().lower()
+        if sort == 'oldest':
+            query += " ORDER BY COALESCE(downloaded_at, generated_at, created_at) ASC, id ASC"
+        elif sort == 'grn':
+            query += " ORDER BY grn_number ASC, id ASC"
+        else:
+            query += " ORDER BY COALESCE(downloaded_at, generated_at, created_at) DESC, id DESC"
+
+        page = max(int(request.args.get('page') or 1), 1)
+        per_page = int(request.args.get('per_page') or 25)
+        if per_page not in (10, 25, 50, 100):
+            per_page = 25
+        offset = (page - 1) * per_page
+        count_row = conn.execute(f"SELECT COUNT(*) AS total FROM ({query})", params).fetchone()
+        total_rows = int(count_row['total']) if count_row else 0
+        query += " LIMIT ? OFFSET ?"
+        params.extend([per_page, offset])
+        rows = conn.execute(query, params).fetchall()
+    finally:
+        conn.close()
+
+    records = []
+    for row in rows:
+        record = dict(row)
+        resolved_path = resolve_qr_report_path(record)
+        record['status'] = 'Available' if resolved_path and os.path.exists(resolved_path) else 'Missing'
+        records.append(record)
+
+    total_pages = max((total_rows + per_page - 1) // per_page, 1) if total_rows else 1
+    return render_template(
+        'qr_reports.html',
+        records=records,
+        total_records=total_rows,
+        page=page,
+        per_page=per_page,
+        total_pages=total_pages,
+        search=search,
+        from_date=from_date,
+        to_date=to_date,
+        downloaded_by=downloaded_by,
+        status_filter=status_filter,
+        sort=sort,
+        current_user=session.get('user', 'Guest'),
+        current_role=session.get('role', 'viewer'),
+    )
+
+
+@app.route('/qr-reports/download/<int:report_id>')
+@login_required
+def download_qr_report(report_id):
+    conn = get_db_connection()
+    try:
+        row = conn.execute("""
+            SELECT id, grn_number, item_name, item_code, supplier_name, quantity,
+                   report_filename, report_filepath, generated_at, downloaded_at, downloaded_by, status
+            FROM qr_reports WHERE id = ?
+        """, (report_id,)).fetchone()
+        if not row:
+            flash('QR report record not found.', 'error')
+            return redirect(url_for('qr_reports'))
+
+        record = dict(row)
+        resolved_path = resolve_qr_report_path(record)
+        if not resolved_path or not os.path.exists(resolved_path):
+            flash('Stored QR report file is missing. Please contact an administrator.', 'error')
+            return redirect(url_for('qr_reports'))
+
+        conn.execute(
+            "UPDATE qr_reports SET downloaded_at = ?, downloaded_by = ?, status = 'Available' WHERE id = ?",
+            (datetime.utcnow().strftime('%Y-%m-%d %H:%M:%S'), session.get('user') or 'system', report_id),
+        )
+        conn.commit()
+    finally:
+        conn.close()
+
+    return send_file(resolved_path, as_attachment=True, download_name=record.get('report_filename') or f'qr_report_{report_id}.html')
+
+
+@app.route('/qr-reports/view/<int:report_id>')
+@login_required
+def view_qr_report(report_id):
+    conn = get_db_connection()
+    try:
+        row = conn.execute("""
+            SELECT id, report_filename, report_filepath
+            FROM qr_reports WHERE id = ?
+        """, (report_id,)).fetchone()
+        if not row:
+            flash('QR report record not found.', 'error')
+            return redirect(url_for('qr_reports'))
+
+        record = dict(row)
+        resolved_path = resolve_qr_report_path(record)
+        if not resolved_path or not os.path.exists(resolved_path):
+            flash('Stored QR report file is missing. Please contact an administrator.', 'error')
+            return redirect(url_for('qr_reports'))
+    finally:
+        conn.close()
+
+    return send_file(resolved_path, mimetype='text/html', download_name=record.get('report_filename') or f'qr_report_{report_id}.html')
+
+
+@app.route('/qr-reports/delete/<int:report_id>', methods=['POST'])
+@login_required
+def delete_qr_report(report_id):
+    if not is_write_allowed():
+        return render_template('403.html'), 403
+
+    conn = get_db_connection()
+    try:
+        row = conn.execute("SELECT report_filename, report_filepath FROM qr_reports WHERE id = ?", (report_id,)).fetchone()
+        if row:
+            resolved_path = resolve_qr_report_path(dict(row))
+            if resolved_path and os.path.exists(resolved_path):
+                os.remove(resolved_path)
+            conn.execute("DELETE FROM qr_reports WHERE id = ?", (report_id,))
+            conn.commit()
+            flash('QR report entry deleted successfully.', 'success')
+        else:
+            flash('QR report entry not found.', 'error')
+    finally:
+        conn.close()
+
+    return redirect(url_for('qr_reports'))
 
 
 @app.route('/generate_qr/<barcode_value>')
@@ -4257,6 +4591,30 @@ def confirm_grn(grn_id):
             result_extra = {"grn_no": None, "invoice_number": None, "supplier_name": None}
 
         conn.commit()
+
+        try:
+            archived_items = cursor.execute("""
+                SELECT gi.quantity, p.item_name, p.item_code, s.supplier_name
+                FROM grn_items gi
+                JOIN products p ON gi.product_id = p.id
+                LEFT JOIN grn g ON gi.grn_id = g.id
+                LEFT JOIN suppliers s ON g.supplier_id = s.id
+                WHERE gi.grn_id = ? AND LOWER(COALESCE(gi.qc_status, '')) = 'confirmed'
+            """, (grn_id,)).fetchall()
+            for item in archived_items:
+                create_qr_report_archive({
+                    'grn_number': result_extra.get('grn_no') or grn_row['grn_no'],
+                    'item_name': item['item_name'],
+                    'item_code': item['item_code'],
+                    'supplier_name': item['supplier_name'] or 'N/A',
+                    'quantity': item['quantity'] or 0,
+                    'generated_at': datetime.utcnow().strftime('%Y-%m-%d %H:%M:%S'),
+                    'downloaded_at': datetime.utcnow().strftime('%Y-%m-%d %H:%M:%S'),
+                    'downloaded_by': session.get('user') or 'system',
+                })
+        except Exception as archive_exc:
+            logger.warning('[confirm_grn] Unable to archive QR report history for GRN %s: %s', grn_id, archive_exc)
+
         resp = {"status": "success", "message": "GRN posted successfully."}
         resp.update(result_extra)
         return jsonify(resp)

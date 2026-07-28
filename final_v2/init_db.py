@@ -265,6 +265,22 @@ CREATE TABLE IF NOT EXISTS inspection_details (
 -- ============================================================
 -- EXPORT HISTORY
 -- ============================================================
+CREATE TABLE IF NOT EXISTS qr_reports (
+    id              INTEGER PRIMARY KEY AUTOINCREMENT,
+    grn_number      TEXT,
+    item_name       TEXT,
+    item_code       TEXT,
+    supplier_name   TEXT,
+    quantity        REAL DEFAULT 0,
+    report_filename TEXT,
+    report_filepath TEXT,
+    generated_at    TEXT,
+    downloaded_at   TEXT,
+    downloaded_by   TEXT,
+    status          TEXT DEFAULT 'Available',
+    created_at      TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+
 CREATE TABLE IF NOT EXISTS export_history (
     id              INTEGER PRIMARY KEY AUTOINCREMENT,
     file_name       TEXT NOT NULL,
