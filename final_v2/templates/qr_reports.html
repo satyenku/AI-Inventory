@@ -105,7 +105,6 @@
               <th>Item Code</th>
               <th>Supplier</th>
               <th>Quantity</th>
-              <th>Generated</th>
               <th>Downloaded</th>
               <th>Downloaded By</th>
               <th>Status</th>
@@ -121,7 +120,6 @@
               <td>{{ record.item_code or '-' }}</td>
               <td>{{ record.supplier_name or '-' }}</td>
               <td>{{ record.quantity or '0' }}</td>
-              <td>{{ record.generated_at or '-' }}</td>
               <td>{{ record.downloaded_at or '-' }}</td>
               <td>{{ record.downloaded_by or '-' }}</td>
               <td><span class="status-badge {% if record.status == 'Available' %}available{% else %}missing{% endif %}">{{ record.status }}</span></td>
@@ -130,12 +128,6 @@
                 <a class="btn btn-download" href="{{ url_for('download_qr_report', report_id=record.id) }}">⬇ Download</a>
                 {% else %}
                 <span class="btn btn-download" style="opacity:0.6; cursor:not-allowed;">⬇ Download</span>
-                {% endif %}
-                <a class="btn btn-view" href="{{ url_for('view_qr_report', report_id=record.id) }}" target="_blank">View</a>
-                {% if current_role == 'admin' or current_role == 'staff' %}
-                <form method="post" action="{{ url_for('delete_qr_report', report_id=record.id) }}" style="display:inline;" onsubmit="return confirm('Delete this QR report record and stored file?');">
-                  <button class="btn btn-delete" type="submit">Delete</button>
-                </form>
                 {% endif %}
               </td>
             </tr>
