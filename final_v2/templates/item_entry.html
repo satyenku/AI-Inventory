@@ -1247,23 +1247,21 @@
       function qcApplyStatus(status) {
         console.log("qcApplyStatus called:", status);
         
-        // ✅ VALIDATION: Check if item exists in Product Master before confirming
-        if (status === 'confirmed') {
-          const productId = document.getElementById('qc_product_id').value;
-          const itemName = document.getElementById('qc_item_name').textContent || '';
-          
-          if (!productId) {
-            alert(
-              `❌ Item Not Found in Product Master\n\n` +
-              `Cannot confirm QC for "${itemName}" because it does not exist in the Product Master.\n\n` +
-              `Please add this item to Product Master first:\n` +
-              `1. Go to "Product Master" page\n` +
-              `2. Click "Add Product"\n` +
-              `3. Register "${itemName}" with required details\n` +
-              `4. Return here and retry QC confirmation`
-            );
-            return; // ✅ Block QC confirmation
-          }
+        // ✅ VALIDATION: Check if item exists in Product Master before confirming OR rejecting
+        const productId = document.getElementById('qc_product_id').value;
+        const itemName = document.getElementById('qc_item_name').textContent || '';
+        
+        if (!productId) {
+          alert(
+            `❌ Item Not Found in Product Master\n\n` +
+            `Cannot perform QC for "${itemName}" because it does not exist in the Product Master.\n\n` +
+            `Please add this item to Product Master first:\n` +
+            `1. Click "Add Product to Master" button below\n` +
+            `2. Fill in all required product details\n` +
+            `3. Save the product\n` +
+            `4. Return here and perform QC (Confirm or Reject)`
+          );
+          return; // ✅ Block both QC confirmation AND rejection
         }
         
         const key = document.getElementById('qc_current_key').value;

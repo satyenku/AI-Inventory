@@ -1748,17 +1748,116 @@ def delete_product(product_id):
     conn = get_db_connection()
     cursor = conn.cursor()
     try:
-        # Delete inspection properties first
+        # ✅ Check if product exists
+        product = cursor.execute("SELECT item_name, item_code FROM products WHERE id = ?", (product_id,)).fetchone()
+        if not product:
+            flash("Product not found.", "error")
+            conn.close()
+            return redirect(url_for('product_master'))
+        
+        product_name = product['item_name']
+        product_code = product['item_code']
+        
+        # ✅ Check if product has any stock movements in ledger
+        ledger_count = cursor.execute(
+            "SELECT COUNT(*) as count FROM stock_ledger WHERE product_id = ?", 
+            (product_id,)
+        ).fetchone()['count']
+        
+        if ledger_count > 0:
+            flash(
+                f"❌ Cannot delete product '{product_name}' ({product_code}). "
+                f"This product has {ledger_count} stock movement(s) recorded in the ledger. "
+                f"Products with transaction history cannot be deleted for audit compliance.",
+                "error"
+            )
+            conn.close()
+            return redirect(url_for('product_master'))
+        
+        # ✅ Check if product is referenced in any GRN items
+        grn_count = cursor.execute(
+            "SELECT COUNT(*) as count FROM grn_items WHERE product_id = ?", 
+            (product_id,)
+        ).fetchone()['count']
+        
+        if grn_count > 0:
+            flash(
+                f"❌ Cannot delete product '{product_name}' ({product_code}). "
+                f"This product is referenced in {grn_count} GRN item(s). "
+                f"Products with GRN history cannot be deleted.",
+                "error"
+            )
+            conn.close()
+            return redirect(url_for('product_master'))
+        
+        # ✅ Check if product is referenced in any issue items
+        issue_count = cursor.execute(
+            "SELECT COUNT(*) as count FROM item_issue_items WHERE product_id = ?", 
+            (product_id,)
+        ).fetchone()['count']
+        
+        if issue_count > 0:
+            flash(
+                f"❌ Cannot delete product '{product_name}' ({product_code}). "
+                f"This product is referenced in {issue_count} item issue(s). "
+                f"Products with issue history cannot be deleted.",
+                "error"
+            )
+            conn.close()
+            return redirect(url_for('product_master'))
+        
+        # ✅ Check if product is referenced in any return items
+        return_count = cursor.execute(
+            "SELECT COUNT(*) as count FROM inventory_return_items WHERE product_id = ?", 
+            (product_id,)
+        ).fetchone()['count']
+        
+        if return_count > 0:
+            flash(
+                f"❌ Cannot delete product '{product_name}' ({product_code}). "
+                f"This product is referenced in {return_count} inventory return(s). "
+                f"Products with return history cannot be deleted.",
+                "error"
+            )
+            conn.close()
+            return redirect(url_for('product_master'))
+        
+        # ✅ Check if product has any current stock
+        current_stock = cursor.execute(
+            "SELECT current_stock FROM products WHERE id = ?", 
+            (product_id,)
+        ).fetchone()['current_stock']
+        
+        if current_stock != 0:
+            flash(
+                f"❌ Cannot delete product '{product_name}' ({product_code}). "
+                f"This product has current stock balance of {current_stock}. "
+                f"Only products with zero stock can be deleted.",
+                "error"
+            )
+            conn.close()
+            return redirect(url_for('product_master'))
+        
+        # ✅ All validations passed - safe to delete
+        # Delete inspection properties first (CASCADE would handle this, but explicit is better)
         cursor.execute("DELETE FROM product_properties WHERE product_id = ?", (product_id,))
+        
+        # Delete inspection entries if any
+        cursor.execute("DELETE FROM inspection_entries WHERE product_id = ?", (product_id,))
+        
         # Delete product
         cursor.execute("DELETE FROM products WHERE id = ?", (product_id,))
+        
         conn.commit()
-        flash("Product deleted successfully.", "success")
+        flash(f"✅ Product '{product_name}' ({product_code}) deleted successfully.", "success")
+        
     except Exception as e:
+        conn.rollback()
         logger.error("[delete_product] %s", e, exc_info=True)
         flash("An error occurred while deleting the product. Please try again.", "error")
+    finally:
+        conn.close()
     
-    conn.close()
     return redirect(url_for('product_master'))
 
 @app.route('/api/product/<int:product_id>', methods=['GET'])

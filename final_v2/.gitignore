@@ -4,7 +4,6 @@ __pycache__/
 *.pyc
 uploads/
 .env
-inventory.db
 static/barcodes/*.png
 !static/barcodes/.gitkeep
 static/qr_reports/*.html
