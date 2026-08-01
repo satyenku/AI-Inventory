@@ -502,11 +502,10 @@
                 </table>
                 <div style="margin-top: 8px; text-align: right">
                   <button
-    id="addEditPropertyBtn"
-    type="button"
-    onclick="addEditPropertyRow()">
-    + Add Property
-</button>
+                    type="button"
+                    onclick="addPropertyRow()">
+                    + Add Property
+                  </button>
                 </div>
               </div>
             </div>
@@ -558,12 +557,9 @@
                   <button type="button" class="btn-edit" onclick="openEditModal({{ product.id }})">Edit</button>
                   {% endif %}
                   {% if can_delete %}
-                  <!-- Delete button temporarily hidden for demo -->
-                  <!--
                   <form action="{{ url_for('delete_product', product_id=product.id) }}" method="POST" style="display: inline;" onsubmit="return confirm('Are you sure you want to delete this product? This will also delete all inspection properties.');">
                     <button type="submit" class="btn-delete">Delete</button>
                   </form>
-                  -->
                   {% endif %}
                   {% if not can_write and not can_delete %}
                   <span style="font-size:12px;color:#94a3b8;font-style:italic;">View only</span>

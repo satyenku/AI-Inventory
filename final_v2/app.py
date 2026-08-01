@@ -3313,7 +3313,10 @@ def inventory_return():
                     """, (ret_id, pid, q, unit, cond, iii_id))
                     ret_item_id = cursor.lastrowid
 
-                    log_stock_movement(cursor, pid, "RETURN", "inventory_return_items", ret_item_id, q)
+                    # Only add to stock if condition is NOT damaged
+                    if cond.lower() != 'damaged':
+                        log_stock_movement(cursor, pid, "RETURN", "inventory_return_items", ret_item_id, q)
+                    
                     total_items += 1
 
                 conn.commit()
