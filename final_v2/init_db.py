@@ -294,6 +294,31 @@ CREATE TABLE IF NOT EXISTS export_history (
     created_by      TEXT NOT NULL,
     created_at      TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
+
+-- ============================================================
+-- PRODUCT RECIPE / BILL OF MATERIALS (BOM)
+-- ============================================================
+CREATE TABLE IF NOT EXISTS bom_recipes (
+    id              INTEGER PRIMARY KEY AUTOINCREMENT,
+    finished_product_id INTEGER NOT NULL REFERENCES products(id) ON DELETE CASCADE,
+    recipe_name     TEXT,
+    description     TEXT,
+    created_by      INTEGER REFERENCES users(id),
+    created_at      TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    updated_at      TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE TABLE IF NOT EXISTS bom_recipe_items (
+    id              INTEGER PRIMARY KEY AUTOINCREMENT,
+    recipe_id       INTEGER NOT NULL REFERENCES bom_recipes(id) ON DELETE CASCADE,
+    raw_material_id INTEGER NOT NULL REFERENCES products(id),
+    quantity_required REAL NOT NULL DEFAULT 0,
+    unit            TEXT NOT NULL,
+    notes           TEXT
+);
+
+CREATE INDEX IF NOT EXISTS idx_bom_recipes_product ON bom_recipes(finished_product_id);
+CREATE INDEX IF NOT EXISTS idx_bom_items_recipe ON bom_recipe_items(recipe_id);
 """
 
 def init_db():

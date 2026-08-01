@@ -3043,6 +3043,280 @@ def api_save_invoice():
             "error": "An internal error occurred while saving the GRN. Please try again."
 
         }, 500
+
+# ============================================================
+# PRODUCT RECIPE / BOM ROUTES
+# ============================================================
+
+@app.route('/product-recipe', methods=['GET', 'POST'])
+@login_required
+def product_recipe():
+    """Product Recipe / Bill of Materials (BOM) page"""
+    if not is_write_allowed():
+        logger.warning(
+            "[RBAC] User '%s' (role=%s) attempted access to /product-recipe.",
+            session.get('user'), session.get('role')
+        )
+        return render_template('403.html'), 403
+    
+    conn = get_db_connection()
+    
+    if request.method == 'POST':
+        recipe_id = request.form.get('recipe_id', '').strip()
+        finished_product_id = request.form.get('finished_product_id')
+        recipe_name = request.form.get('recipe_name', '').strip()
+        description = request.form.get('description', '').strip()
+        
+        raw_material_ids = request.form.getlist('raw_material_id[]')
+        quantity_requireds = request.form.getlist('quantity_required[]')
+        units = request.form.getlist('unit[]')
+        
+        if not finished_product_id:
+            flash("Please select a finished product.", "error")
+            conn.close()
+            return redirect(url_for('product_recipe'))
+        
+        if not raw_material_ids or len(raw_material_ids) == 0:
+            flash("Please add at least one raw material.", "error")
+            conn.close()
+            return redirect(url_for('product_recipe'))
+        
+        try:
+            cursor = conn.cursor()
+            
+            if recipe_id:
+                # Update existing recipe
+                cursor.execute("""
+                    UPDATE bom_recipes 
+                    SET finished_product_id=?, recipe_name=?, description=?, updated_at=CURRENT_TIMESTAMP
+                    WHERE id=?
+                """, (finished_product_id, recipe_name, description, recipe_id))
+                
+                # Delete old materials
+                cursor.execute("DELETE FROM bom_recipe_items WHERE recipe_id=?", (recipe_id,))
+                r_id = int(recipe_id)
+                flash("Recipe updated successfully!", "success")
+            else:
+                # Check if recipe already exists for this product
+                existing = cursor.execute(
+                    "SELECT id FROM bom_recipes WHERE finished_product_id=?",
+                    (finished_product_id,)
+                ).fetchone()
+                
+                if existing:
+                    flash("A recipe already exists for this finished product. Please edit the existing recipe.", "error")
+                    conn.close()
+                    return redirect(url_for('product_recipe'))
+                
+                # Create new recipe
+                cursor.execute("""
+                    INSERT INTO bom_recipes (finished_product_id, recipe_name, description, created_by)
+                    VALUES (?, ?, ?, ?)
+                """, (finished_product_id, recipe_name, description, session.get('user_id')))
+                r_id = cursor.lastrowid
+                flash("Recipe created successfully!", "success")
+            
+            # Insert materials
+            for i, raw_mat_id in enumerate(raw_material_ids):
+                if not raw_mat_id or i >= len(quantity_requireds) or i >= len(units):
+                    continue
+                
+                qty = float(quantity_requireds[i])
+                unit = units[i]
+                
+                if qty <= 0:
+                    continue
+                
+                cursor.execute("""
+                    INSERT INTO bom_recipe_items (recipe_id, raw_material_id, quantity_required, unit)
+                    VALUES (?, ?, ?, ?)
+                """, (r_id, raw_mat_id, qty, unit))
+            
+            conn.commit()
+            
+        except Exception as e:
+            logger.error("[product_recipe] Error: %s", e, exc_info=True)
+            flash(f"An error occurred: {str(e)}", "error")
+        
+        conn.close()
+        return redirect(url_for('product_recipe'))
+    
+    # GET request - display page
+    cursor = conn.cursor()
+    
+    # Get all products for dropdown
+    products = cursor.execute("SELECT * FROM products ORDER BY item_code ASC").fetchall()
+    
+    # Get all recipes with materials
+    recipes_raw = cursor.execute("""
+        SELECT 
+            br.id,
+            br.finished_product_id,
+            br.recipe_name,
+            br.description,
+            p.item_code as finished_product_code,
+            p.item_name as finished_product_name
+        FROM bom_recipes br
+        JOIN products p ON br.finished_product_id = p.id
+        ORDER BY p.item_code ASC
+    """).fetchall()
+    
+    recipes = []
+    for recipe in recipes_raw:
+        materials = cursor.execute("""
+            SELECT 
+                bri.raw_material_id,
+                bri.quantity_required,
+                bri.unit,
+                p.item_code,
+                p.item_name
+            FROM bom_recipe_items bri
+            JOIN products p ON bri.raw_material_id = p.id
+            WHERE bri.recipe_id = ?
+            ORDER BY p.item_code ASC
+        """, (recipe['id'],)).fetchall()
+        
+        recipes.append({
+            'id': recipe['id'],
+            'finished_product_id': recipe['finished_product_id'],
+            'finished_product_code': recipe['finished_product_code'],
+            'finished_product_name': recipe['finished_product_name'],
+            'recipe_name': recipe['recipe_name'],
+            'description': recipe['description'],
+            'materials': materials
+        })
+    
+    conn.close()
+    
+    return render_template('product_recipe.html', products=products, recipes=recipes)
+
+
+@app.route('/product-recipe/get/<int:recipe_id>', methods=['GET'])
+@login_required
+def get_recipe(recipe_id):
+    """Get recipe details as JSON for editing"""
+    conn = get_db_connection()
+    cursor = conn.cursor()
+    
+    recipe = cursor.execute("""
+        SELECT id, finished_product_id, recipe_name, description
+        FROM bom_recipes
+        WHERE id = ?
+    """, (recipe_id,)).fetchone()
+    
+    if not recipe:
+        conn.close()
+        return jsonify({'error': 'Recipe not found'}), 404
+    
+    materials = cursor.execute("""
+        SELECT raw_material_id, quantity_required, unit
+        FROM bom_recipe_items
+        WHERE recipe_id = ?
+    """, (recipe_id,)).fetchall()
+    
+    conn.close()
+    
+    return jsonify({
+        'id': recipe['id'],
+        'finished_product_id': recipe['finished_product_id'],
+        'recipe_name': recipe['recipe_name'],
+        'description': recipe['description'],
+        'materials': [dict(m) for m in materials]
+    })
+
+
+@app.route('/product-recipe/delete/<int:recipe_id>', methods=['POST'])
+@login_required
+def delete_recipe(recipe_id):
+    """Delete a recipe"""
+    if not is_write_allowed():
+        return jsonify({'error': 'Permission denied'}), 403
+    
+    try:
+        conn = get_db_connection()
+        cursor = conn.cursor()
+        
+        # Check if recipe exists
+        recipe = cursor.execute("SELECT id FROM bom_recipes WHERE id=?", (recipe_id,)).fetchone()
+        if not recipe:
+            conn.close()
+            return jsonify({'error': 'Recipe not found'}), 404
+        
+        # Delete recipe (cascade will delete items)
+        cursor.execute("DELETE FROM bom_recipes WHERE id=?", (recipe_id,))
+        conn.commit()
+        conn.close()
+        
+        return jsonify({'success': True})
+    except Exception as e:
+        logger.error("[delete_recipe] Error: %s", e, exc_info=True)
+        return jsonify({'error': str(e)}), 500
+
+
+@app.route('/api/recipe/calculate', methods=['POST'])
+@login_required
+def calculate_recipe_materials():
+    """Calculate required materials based on recipe and quantity"""
+    data = request.json
+    finished_product_id = data.get('finished_product_id')
+    quantity = data.get('quantity', 1)
+    
+    if not finished_product_id:
+        return jsonify({'error': 'Product ID required'}), 400
+    
+    try:
+        quantity = float(quantity)
+        if quantity <= 0:
+            return jsonify({'error': 'Quantity must be positive'}), 400
+    except:
+        return jsonify({'error': 'Invalid quantity'}), 400
+    
+    conn = get_db_connection()
+    cursor = conn.cursor()
+    
+    # Find recipe
+    recipe = cursor.execute("""
+        SELECT id FROM bom_recipes WHERE finished_product_id=?
+    """, (finished_product_id,)).fetchone()
+    
+    if not recipe:
+        conn.close()
+        return jsonify({'error': 'No recipe found for this product'}), 404
+    
+    # Get materials
+    materials = cursor.execute("""
+        SELECT 
+            bri.raw_material_id,
+            bri.quantity_required,
+            bri.unit,
+            p.item_code,
+            p.item_name,
+            p.current_stock
+        FROM bom_recipe_items bri
+        JOIN products p ON bri.raw_material_id = p.id
+        WHERE bri.recipe_id = ?
+    """, (recipe['id'],)).fetchall()
+    
+    conn.close()
+    
+    calculated_materials = []
+    for material in materials:
+        calculated_qty = material['quantity_required'] * quantity
+        calculated_materials.append({
+            'product_id': material['raw_material_id'],
+            'item_code': material['item_code'],
+            'item_name': material['item_name'],
+            'quantity': calculated_qty,
+            'unit': material['unit'],
+            'current_stock': material['current_stock']
+        })
+    
+    return jsonify({
+        'success': True,
+        'materials': calculated_materials
+    })
+
+
 @app.route('/item-issue', methods=['GET', 'POST'])
 @login_required
 def item_issue():
@@ -3106,9 +3380,15 @@ def item_issue():
         return redirect(url_for('item_issue'))
         
     with get_db_connection() as conn:
-        products = conn.execute(
-            "SELECT id, item_code, item_name, barcode, current_stock FROM products WHERE status = 'Active' AND COALESCE(current_stock, 0) > 0 ORDER BY item_code ASC"
-        ).fetchall()
+        # Get only FINISHED products that have recipes defined
+        finished_products = conn.execute("""
+            SELECT DISTINCT p.id, p.item_code, p.item_name, p.barcode, p.current_stock 
+            FROM products p
+            INNER JOIN bom_recipes br ON p.id = br.finished_product_id
+            WHERE p.status = 'Active'
+            ORDER BY p.item_code ASC
+        """).fetchall()
+        
         departments = conn.execute("SELECT dept_id, dept_name FROM departments ORDER BY dept_name ASC").fetchall()
         
         # Determine the next issue slip number
@@ -3130,7 +3410,7 @@ def item_issue():
                 
     return render_template(
         'item_issue.html', 
-        products=products, 
+        products=finished_products, 
         departments=departments,
         next_slip_no=next_slip_no,
         today_date=date.today().strftime('%Y-%m-%d')

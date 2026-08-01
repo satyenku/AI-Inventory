@@ -230,6 +230,7 @@
       <h2>Inventory</h2>
       <a href="{{ url_for('dashboard') }}">📊 Dashboard</a>
       <a href="{{ url_for('product_master') }}">📦 Product Master</a>
+      <a href="{{ url_for('product_recipe') }}">📋 Product Recipe / BOM</a>
       <a href="{{ url_for('item_issue') }}">🧾 Item Issue</a>
       <a href="{{ url_for('item_entry') }}">🧾 Item Entry</a>
       <a href="{{ url_for('inventory_status') }}">📈 Inventory Status</a>
@@ -300,8 +301,54 @@
             style="border: 0; border-top: 1px solid #cbd5e1; margin: 20px 0"
           />
           
-          <h3 style="margin-top: 0; color: #1e293b; font-size: 16px;">Dispatched Items</h3>
-          <div id="itemsContainer">
+          <!-- Issue by Recipe Section -->
+          <div style="background: #eff6ff; border: 2px solid #2563eb; border-radius: 8px; padding: 18px; margin-bottom: 20px;">
+            <h3 style="margin: 0 0 12px; color: #1e293b; font-size: 16px; display: flex; align-items: center; gap: 8px;">
+              <span>📋</span>
+              <span>Issue by Recipe (Auto-calculate materials)</span>
+            </h3>
+            <div class="form-row" style="grid-template-columns: 2fr 1fr;">
+              <div>
+                <label>Select Finished Product with Recipe</label>
+                <select id="recipe_finished_product" style="border-color: #2563eb;">
+                  <option value="">Select Finished Product...</option>
+                  {% for p in products %}
+                  <option value="{{ p.id }}">{{ p.item_code }} - {{ p.item_name }}</option>
+                  {% endfor %}
+                </select>
+              </div>
+              <div>
+                <label>Quantity to Manufacture</label>
+                <input type="number" id="recipe_quantity" placeholder="e.g. 10" min="1" step="any" style="border-color: #2563eb;">
+              </div>
+            </div>
+            
+            <!-- Recipe Materials Display (Auto-populated, Read-only) -->
+            <div id="recipeMaterialsDisplay" style="display: none; margin-top: 20px; background: white; border-radius: 6px; padding: 16px; border: 1px solid #cbd5e1;">
+              <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px;">
+                <strong style="color: #1e293b; font-size: 15px;">📦 Required Materials:</strong>
+                <button type="button" id="clearRecipeBtn" style="background: #64748b; padding: 6px 12px; font-size: 12px;">Clear & Start Over</button>
+              </div>
+              <table style="width: 100%; border-collapse: collapse;">
+                <thead>
+                  <tr style="background: #f8fafc; border-bottom: 2px solid #e2e8f0;">
+                    <th style="padding: 10px; text-align: left; font-size: 12px; color: #64748b; text-transform: uppercase;">Item Code</th>
+                    <th style="padding: 10px; text-align: left; font-size: 12px; color: #64748b; text-transform: uppercase;">Item Name</th>
+                    <th style="padding: 10px; text-align: center; font-size: 12px; color: #64748b; text-transform: uppercase;">Required Qty</th>
+                    <th style="padding: 10px; text-align: center; font-size: 12px; color: #64748b; text-transform: uppercase;">Unit</th>
+                    <th style="padding: 10px; text-align: center; font-size: 12px; color: #64748b; text-transform: uppercase;">Available Stock</th>
+                  </tr>
+                </thead>
+                <tbody id="recipeMaterialsTableBody">
+                  <!-- Materials will be inserted here -->
+                </tbody>
+              </table>
+            </div>
+            
+            <div id="recipeStatus" style="margin-top: 10px; font-size: 13px; color: #64748b;"></div>
+          </div>
+          
+          <div id="itemsContainer" style="display: none;">
             <div class="item-row" style="margin-bottom: 20px; border-bottom: 1px dashed #cbd5e1; padding-bottom: 20px;">
               <div class="form-row">
                 <div style="grid-column: span 2">
@@ -779,7 +826,124 @@
       // Show "Add Department" option on page load
       document.addEventListener('DOMContentLoaded', function() {
         showAddDepartmentOption();
+        
+        // Auto-trigger recipe calculation when quantity changes
+        document.getElementById('recipe_quantity').addEventListener('input', autoLoadRecipe);
+        document.getElementById('recipe_finished_product').addEventListener('change', autoLoadRecipe);
+        
+        // Clear recipe button
+        document.getElementById('clearRecipeBtn').addEventListener('click', clearRecipe);
       });
+      
+      // Auto-load recipe when both product and quantity are selected
+      async function autoLoadRecipe() {
+        const finishedProductId = document.getElementById('recipe_finished_product').value;
+        const quantity = document.getElementById('recipe_quantity').value;
+        const statusDiv = document.getElementById('recipeStatus');
+        const displayDiv = document.getElementById('recipeMaterialsDisplay');
+        
+        if (!finishedProductId || !quantity || parseFloat(quantity) <= 0) {
+          displayDiv.style.display = 'none';
+          statusDiv.innerHTML = '';
+          return;
+        }
+        
+        statusDiv.innerHTML = '<span style="color: #2563eb;">⏳ Loading required materials from database...</span>';
+        
+        try {
+          // Fetch recipe data from database
+          const response = await fetch('/api/recipe/calculate', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              finished_product_id: finishedProductId,
+              quantity: parseFloat(quantity)
+            })
+          });
+          
+          const data = await response.json();
+          
+          if (!response.ok || data.error) {
+            statusDiv.innerHTML = '<span style="color: #dc2626; font-weight: bold;">❌ ' + (data.error || 'No recipe found for this product') + '</span>';
+            displayDiv.style.display = 'none';
+            return;
+          }
+          
+          if (!data.materials || data.materials.length === 0) {
+            statusDiv.innerHTML = '<span style="color: #dc2626; font-weight: bold;">❌ No materials found in recipe</span>';
+            displayDiv.style.display = 'none';
+            return;
+          }
+          
+          // Display materials in read-only table (fetched from database)
+          displayRecipeMaterials(data.materials);
+          
+          // Prepare hidden form data for submission
+          prepareHiddenFormData(data.materials);
+          
+          statusDiv.innerHTML = '<span style="color: #16a34a; font-weight: bold;">✅ ' + data.materials.length + ' materials loaded from recipe database!</span>';
+          
+        } catch (error) {
+          statusDiv.innerHTML = '<span style="color: #dc2626; font-weight: bold;">❌ Error: ' + error.message + '</span>';
+          displayDiv.style.display = 'none';
+        }
+      }
+      
+      // Display materials in read-only table
+      function displayRecipeMaterials(materials) {
+        const tbody = document.getElementById('recipeMaterialsTableBody');
+        tbody.innerHTML = '';
+        
+        materials.forEach(material => {
+          const stockStatus = material.current_stock >= material.quantity ? 
+            `<span style="color: #16a34a; font-weight: bold;">${material.current_stock}</span>` :
+            `<span style="color: #dc2626; font-weight: bold;">${material.current_stock} ⚠️</span>`;
+          
+          const row = document.createElement('tr');
+          row.style.borderBottom = '1px solid #f1f5f9';
+          row.innerHTML = `
+            <td style="padding: 12px; font-weight: 600; color: #334155;">${material.item_code}</td>
+            <td style="padding: 12px; color: #334155;">${material.item_name}</td>
+            <td style="padding: 12px; text-align: center; font-weight: bold; color: #2563eb;">${material.quantity}</td>
+            <td style="padding: 12px; text-align: center; color: #64748b;">${material.unit}</td>
+            <td style="padding: 12px; text-align: center;">${stockStatus}</td>
+          `;
+          tbody.appendChild(row);
+        });
+        
+        document.getElementById('recipeMaterialsDisplay').style.display = 'block';
+      }
+      
+      // Prepare hidden form data for submission (read-only, no manual editing)
+      function prepareHiddenFormData(materials) {
+        // Clear manual items container
+        const container = document.getElementById('itemsContainer');
+        container.innerHTML = '';
+        
+        // Add hidden inputs for each material (for form submission)
+        materials.forEach(material => {
+          const hiddenRow = document.createElement('div');
+          hiddenRow.style.display = 'none';
+          hiddenRow.innerHTML = `
+            <input type="hidden" name="product_id[]" value="${material.product_id}">
+            <input type="hidden" name="qty[]" value="${material.quantity}">
+          `;
+          container.appendChild(hiddenRow);
+        });
+      }
+      
+      // Clear recipe selection
+      function clearRecipe() {
+        document.getElementById('recipe_finished_product').value = '';
+        document.getElementById('recipe_quantity').value = '';
+        document.getElementById('recipeMaterialsDisplay').style.display = 'none';
+        document.getElementById('recipeStatus').innerHTML = '';
+        
+        // Restore manual item selection
+        const container = document.getElementById('itemsContainer');
+        container.innerHTML = '';
+        addNewRow(); // Add one empty manual row
+      }
     </script>
 
     <!-- Stock shortage modal -->
