@@ -2,11 +2,13 @@
 <html lang="en">
   <head>
     <meta charset="UTF-8" />
-    <title>Product Master Entry</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Product Master</title>
     <style>
+      * { box-sizing: border-box; }
       body {
         margin: 0;
-        font-family: Arial, sans-serif;
+        font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
         background: #f1f5f9;
         display: flex;
       }
@@ -16,6 +18,11 @@
         color: #fff;
         min-height: 100vh;
         padding-top: 20px;
+        position: fixed;
+        left: 0;
+        top: 0;
+        bottom: 0;
+        overflow-y: auto;
       }
       .sidebar h2 {
         text-align: center;
@@ -28,47 +35,121 @@
         color: #cbd5e1;
         text-decoration: none;
         font-size: 15px;
+        transition: all 0.2s;
       }
       .sidebar a:hover {
         background: #1e293b;
         color: #fff;
       }
+      .sidebar .active {
+        background: #1e293b;
+        color: #fff;
+        border-left: 4px solid #3b82f6;
+      }
       .main {
+        margin-left: 240px;
         flex: 1;
         padding: 25px;
+        width: calc(100% - 240px);
+      }
+      .header {
+        background: linear-gradient(135deg, #0f172a 0%, #1e3a8a 100%);
+        padding: 25px;
+        border-radius: 8px;
+        box-shadow: 0 4px 12px rgba(0,0,0,0.1);
+        margin-bottom: 25px;
+        color: white;
+      }
+      .header h1 {
+        margin: 0;
+        font-size: 30px;
+        font-weight: 600;
+      }
+      .header p {
+        font-size: 14px;
+        margin: 8px 0 0;
+        opacity: 0.9;
+      }
+      .stats-bar {
+        display: grid;
+        grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+        gap: 15px;
+        margin-bottom: 25px;
+      }
+      .stat-card-small {
+        background: white;
+        border-radius: 8px;
+        padding: 16px 20px;
+        box-shadow: 0 2px 8px rgba(0,0,0,0.06);
+        display: flex;
+        align-items: center;
+        gap: 12px;
+        border-left: 4px solid #3b82f6;
+      }
+      .stat-card-small.success { border-left-color: #16a34a; }
+      .stat-card-small.info { border-left-color: #0ea5e9; }
+      .stat-icon-small { font-size: 28px; }
+      .stat-content-small { flex: 1; }
+      .stat-label-small {
+        font-size: 12px;
+        color: #64748b;
+        font-weight: 600;
+        text-transform: uppercase;
+        letter-spacing: 0.5px;
+      }
+      .stat-value-small {
+        font-size: 24px;
+        font-weight: 700;
+        color: #0f172a;
+        line-height: 1;
       }
       .container {
         background: white;
         padding: 25px;
-        border-radius: 6px;
-        box-shadow: 0 2px 6px rgba(0, 0, 0, 0.08);
+        border-radius: 10px;
+        box-shadow: 0 2px 8px rgba(0, 0, 0, 0.06);
         margin-bottom: 25px;
       }
       h2 {
         margin-top: 0;
-        color: #1e293b;
+        color: #0f172a;
+        font-size: 20px;
+        font-weight: 700;
+        display: flex;
+        align-items: center;
+        gap: 10px;
       }
       .form-grid {
         display: grid;
         grid-template-columns: repeat(3, 1fr);
-        gap: 20px;
+        gap: 18px;
       }
       .form-group {
         display: flex;
         flex-direction: column;
+        gap: 6px;
       }
       label {
-        font-size: 14px;
-        margin-bottom: 5px;
-        color: #334155;
+        font-size: 13px;
+        margin-bottom: 4px;
+        color: #475569;
+        font-weight: 600;
       }
       input,
       select,
       textarea {
-        padding: 8px 10px;
+        padding: 10px 12px;
         font-size: 14px;
-        border: 1px solid #cbd5e1;
-        border-radius: 4px;
+        border: 2px solid #cbd5e1;
+        border-radius: 6px;
+        transition: all 0.2s;
+      }
+      input:focus,
+      select:focus,
+      textarea:focus {
+        outline: none;
+        border-color: #2563eb;
+        box-shadow: 0 0 0 3px rgba(37,99,235,0.1);
       }
       .full-width {
         grid-column: span 3;
@@ -76,21 +157,34 @@
       .actions {
         margin-top: 25px;
         text-align: right;
+        display: flex;
+        gap: 10px;
+        justify-content: flex-end;
       }
       button {
-        padding: 10px 16px;
+        padding: 11px 20px;
         border: none;
-        border-radius: 4px;
+        border-radius: 6px;
         font-size: 14px;
+        font-weight: 600;
         cursor: pointer;
+        transition: all 0.2s;
       }
       .btn-save {
         background: #16a34a;
         color: white;
       }
+      .btn-save:hover {
+        background: #15803d;
+        transform: translateY(-1px);
+        box-shadow: 0 4px 12px rgba(22,163,74,0.3);
+      }
       .btn-reset {
         background: #e5e7eb;
-        margin-right: 10px;
+        color: #475569;
+      }
+      .btn-reset:hover {
+        background: #d1d5db;
       }
       table {
         width: 100%;
@@ -99,17 +193,26 @@
       }
       th,
       td {
-        padding: 12px;
-        border-bottom: 1px solid #e5e7eb;
+        padding: 14px 16px;
+        border-bottom: 1px solid #f1f5f9;
         text-align: left;
-        font-size: 13px;
+        font-size: 14px;
+        vertical-align: middle;
       }
       th {
         background: #f8fafc;
-        font-weight: bold;
+        font-weight: 700;
+        font-size: 12px;
+        color: #64748b;
+        text-transform: uppercase;
+        letter-spacing: 0.5px;
+        border-bottom: 2px solid #e2e8f0;
       }
       tr:hover {
         background: #f8fafc;
+      }
+      tr:last-child td {
+        border-bottom: none;
       }
       .action-buttons {
         display: flex;
@@ -117,10 +220,10 @@
       }
       .btn-delete {
         background: #dc2626;
-        padding: 6px 12px;
-        font-size: 12px;
+        padding: 7px 14px;
+        font-size: 13px;
         border: none;
-        border-radius: 4px;
+        border-radius: 5px;
         cursor: pointer;
         color: white;
       }
@@ -129,10 +232,10 @@
       }
       .btn-edit {
         background: #3b82f6;
-        padding: 6px 12px;
-        font-size: 12px;
+        padding: 7px 14px;
+        font-size: 13px;
         border: none;
-        border-radius: 4px;
+        border-radius: 5px;
         cursor: pointer;
         color: white;
       }
@@ -181,15 +284,28 @@
         color: #475569;
       }
       .search-box {
-        margin-bottom: 15px;
+        margin-bottom: 20px;
       }
       .search-box input {
         width: 100%;
         max-width: 500px;
-        padding: 10px;
+        padding: 12px 16px;
         font-size: 14px;
-        border: 1px solid #cbd5e1;
-        border-radius: 4px;
+        border: 2px solid #cbd5e1;
+        border-radius: 8px;
+        transition: all 0.2s;
+      }
+      .search-box input:focus {
+        outline: none;
+        border-color: #2563eb;
+        box-shadow: 0 0 0 3px rgba(37,99,235,0.1);
+      }
+      @media (max-width: 900px) {
+        body { flex-direction: column; }
+        .sidebar { width: 100%; min-height: auto; position: relative; }
+        .main { margin-left: 0; width: 100%; padding: 15px; }
+        .form-grid { grid-template-columns: 1fr; }
+        .stats-bar { grid-template-columns: 1fr; }
       }
     </style>
   </head>
@@ -197,7 +313,7 @@
     <div class="sidebar">
       <h2>Inventory</h2>
       <a href="{{ url_for('dashboard') }}">📊 Dashboard</a>
-      <a href="{{ url_for('product_master') }}">📦 Product Master</a>
+      <a href="{{ url_for('product_master') }}" class="active">📦 Product Master</a>
       <a href="{{ url_for('item_issue') }}">🧾 Item Issue</a>
       <a href="{{ url_for('item_entry') }}">🧾 Item Entry</a>
       <a href="{{ url_for('inventory_status') }}">📈 Inventory Status</a>
@@ -210,14 +326,46 @@
       <a href="{{ url_for('logout') }}" style="color: #ef4444">🚪 Sign Out</a>
     </div>
     <div class="main">
+      <div class="header">
+        <h1>📦 Product Master</h1>
+        <p>Comprehensive product catalog with specifications, stock thresholds, and inspection properties</p>
+      </div>
+      
+      <div class="stats-bar">
+        <div class="stat-card-small success">
+          <div class="stat-icon-small">📦</div>
+          <div class="stat-content-small">
+            <div class="stat-label-small">Total Products</div>
+            <div class="stat-value-small">{{ products|length }}</div>
+          </div>
+        </div>
+        <div class="stat-card-small info">
+          <div class="stat-icon-small">📊</div>
+          <div class="stat-content-small">
+            <div class="stat-label-small">Categories</div>
+            <div class="stat-value-small">{{ products|map(attribute='category')|unique|list|length }}</div>
+          </div>
+        </div>
+        <div class="stat-card-small">
+          <div class="stat-icon-small">📈</div>
+          <div class="stat-content-small">
+            <div class="stat-label-small">Active Items</div>
+            <div class="stat-value-small">{{ products|selectattr('status', 'equalto', 'Active')|list|length }}</div>
+          </div>
+        </div>
+      </div>
+      
       {% if not can_write %}
-      <div style="background: #fef3c7; border: 1px solid #f59e0b; color: #92400e; padding: 12px 20px; border-radius: 6px; margin-bottom: 20px; font-size: 14px;">
-        <strong>⚠️ Read-Only Access:</strong> You do not have permission to add or delete products.
+      <div style="background: #fef3c7; border: 2px solid #f59e0b; color: #92400e; padding: 16px 20px; border-radius: 8px; margin-bottom: 20px; font-size: 14px; display: flex; align-items: center; gap: 10px;">
+        <span style="font-size: 24px;">⚠️</span>
+        <div>
+          <strong>Read-Only Access:</strong> You do not have permission to add or delete products.
+        </div>
       </div>
       {% endif %}
       {% if can_write %}
       <div class="container">
-        <h2>Add New Catalog Product</h2>
+        <h2><span>➕</span><span>Add New Product</span></h2>
         {% with messages = get_flashed_messages(with_categories=true) %} {% if
         messages %} {% for category, message in messages %}
         <p
@@ -371,11 +519,11 @@
       </div>
       {% endif %}
       <div class="container">
-        <h2>Registered Product Index</h2>
+        <h2><span>📋</span><span>Product Catalog</span></h2>
         <div class="search-box">
-          <input type="text" id="searchInput" placeholder="🔍 Search by Item Code, Item Name, Category, or Storage Location..." onkeyup="filterTable()" />
+          <input type="text" id="searchInput" placeholder="🔍 Search by Item Code, Name, Category, or Storage Location..." onkeyup="filterTable()" />
         </div>
-        <table id="productTable">
+        <table id="productTable" class="product-table">
           <thead>
             <tr>
               <th>Item Code</th>
@@ -391,26 +539,19 @@
           <tbody>
             {% for product in products %}
             <tr>
-              <td><strong>{{ product.item_code }}</strong></td>
-              <td>{{ product.item_name }}</td>
-              <td>{{ product.category }}</td>
-              <td>{{ product.unit }}</td>
-              <td>
+              <td class="code">{{ product.item_code }}</td>
+              <td><strong>{{ product.item_name }}</strong></td>
+              <td><span style="background: #dbeafe; color: #1e40af; padding: 4px 10px; border-radius: 4px; font-size: 12px; font-weight: 600;">{{ product.category }}</span></td>
+              <td style="text-align: center; font-weight: 600;">{{ product.unit }}</td>
+              <td class="barcode">
                 {% if product.barcode %}
-                <span
-                  style="
-                    font-size: 12px;
-                    font-family: monospace;
-                    color: #334155;
-                  "
-                  >{{ product.barcode }}</span
-                >
+                {{ product.barcode }}
                 {% else %}
-                <span style="color: #94a3b8">No QR code</span>
+                <span style="color: #94a3b8;">—</span>
                 {% endif %}
               </td>
               <td>{{ product.storage_location or 'Unassigned' }}</td>
-              <td>{{ product.current_stock }}</td>
+              <td style="text-align: right; font-weight: 700; color: #0f766e;">{{ product.current_stock }}</td>
               <td>
                 <div class="action-buttons">
                   {% if can_write %}

@@ -552,11 +552,6 @@ def qr_reports():
             query += " AND LOWER(downloaded_by) = ?"
             params.append(downloaded_by.lower())
 
-        status_filter = (request.args.get('status') or '').strip().lower()
-        if status_filter in ('available', 'missing'):
-            query += " AND LOWER(status) = ?"
-            params.append(status_filter)
-
         sort = (request.args.get('sort') or 'latest').strip().lower()
         if sort == 'oldest':
             query += " ORDER BY COALESCE(downloaded_at, generated_at, created_at) ASC, id ASC"
@@ -585,10 +580,18 @@ def qr_reports():
         record['status'] = 'Available' if resolved_path and os.path.exists(resolved_path) else 'Missing'
         records.append(record)
 
+    # Group records by GRN number
+    grouped_records = {}
+    for record in records:
+        grn = record['grn_number'] or 'N/A'
+        if grn not in grouped_records:
+            grouped_records[grn] = []
+        grouped_records[grn].append(record)
+
     total_pages = max((total_rows + per_page - 1) // per_page, 1) if total_rows else 1
     return render_template(
         'qr_reports.html',
-        records=records,
+        grouped_records=grouped_records,
         total_records=total_rows,
         page=page,
         per_page=per_page,
@@ -597,7 +600,6 @@ def qr_reports():
         from_date=from_date,
         to_date=to_date,
         downloaded_by=downloaded_by,
-        status_filter=status_filter,
         sort=sort,
         current_user=session.get('user', 'Guest'),
         current_role=session.get('role', 'viewer'),
@@ -633,6 +635,202 @@ def download_qr_report(report_id):
         conn.close()
 
     return send_file(resolved_path, as_attachment=True, download_name=record.get('report_filename') or f'qr_report_{report_id}.html')
+
+
+@app.route('/qr-reports/download-grn/<grn_number>')
+@login_required
+def download_qr_report_by_grn(grn_number):
+    conn = get_db_connection()
+    try:
+        # Fetch all items for this GRN with additional details
+        rows = conn.execute("""
+            SELECT qr.id, qr.grn_number, qr.item_name, qr.item_code, qr.supplier_name, qr.quantity,
+                   qr.report_filename, qr.report_filepath, qr.generated_at, qr.downloaded_at, qr.downloaded_by, qr.status
+            FROM qr_reports qr
+            WHERE qr.grn_number = ?
+        """, (grn_number,)).fetchall()
+        
+        if not rows:
+            flash('No QR reports found for this GRN.', 'error')
+            return redirect(url_for('qr_reports'))
+
+        items = []
+        supplier_name = ''
+        for row in rows:
+            record = dict(row)
+            items.append(record)
+            if not supplier_name and record.get('supplier_name'):
+                supplier_name = record['supplier_name']
+
+        # Fetch GRN and Invoice details for this GRN
+        grn_info = conn.execute("""
+            SELECT g.grn_no, g.received_date, 
+                   i.invoice_number, i.invoice_date, i.vendor_name, i.total_amount,
+                   s.supplier_name, s.gst_number, s.phone, s.address
+            FROM grn g
+            LEFT JOIN invoices i ON g.invoice_id = i.id
+            LEFT JOIN suppliers s ON g.supplier_id = s.id
+            WHERE g.grn_no = ?
+        """, (grn_number,)).fetchone()
+        
+        # Use fetched info or fall back to qr_reports data
+        if grn_info:
+            grn_dict = dict(grn_info)
+            invoice_number = grn_dict.get('invoice_number') or 'N/A'
+            invoice_date = grn_dict.get('invoice_date') or 'N/A'
+            vendor_name = grn_dict.get('vendor_name') or 'N/A'
+            total_amount = grn_dict.get('total_amount') or 0
+            supplier_name = grn_dict.get('supplier_name') or supplier_name
+            supplier_gst = grn_dict.get('gst_number') or 'N/A'
+            supplier_phone = grn_dict.get('phone') or 'N/A'
+            supplier_address = grn_dict.get('address') or 'N/A'
+            received_date = grn_dict.get('received_date') or 'N/A'
+        else:
+            invoice_number = 'N/A'
+            invoice_date = 'N/A'
+            vendor_name = 'N/A'
+            total_amount = 0
+            supplier_gst = 'N/A'
+            supplier_phone = 'N/A'
+            supplier_address = 'N/A'
+            received_date = 'N/A'
+
+        # Generate QR codes for all items
+        qr_images = []
+        for item in items:
+            qr_value = f"{item['grn_number']}|{item['item_code']}|{item['item_name']}"
+            qr = qrcode.QRCode(version=1, error_correction=qrcode.constants.ERROR_CORRECT_M, box_size=8, border=2)
+            qr.add_data(qr_value)
+            qr.make(fit=True)
+            img = qr.make_image(fill_color='black', back_color='white')
+            buffer = BytesIO()
+            img.save(buffer, format='PNG')
+            encoded_image = base64.b64encode(buffer.getvalue()).decode('ascii')
+            qr_images.append({
+                'item_name': item['item_name'],
+                'item_code': item['item_code'],
+                'quantity': item['quantity'],
+                'image': encoded_image
+            })
+
+        # Generate HTML content with GRN details
+        items_html = ''
+        for idx, qr_data in enumerate(qr_images, 1):
+            items_html += f"""
+            <div class="item-section">
+                <div class="item-title">Item {idx}</div>
+                <div class="meta"><strong>Item Name:</strong> {qr_data['item_name']}</div>
+                <div class="meta"><strong>Item Code:</strong> {qr_data['item_code']}</div>
+                <div class="meta"><strong>Quantity:</strong> {qr_data['quantity']}</div>
+                <img src="data:image/png;base64,{qr_data['image']}" alt="QR Code" />
+            </div>
+            """
+
+        html_content = f"""<!doctype html>
+<html lang=\"en\">
+  <head>
+    <meta charset=\"utf-8\" />
+    <title>Goods Receipt Note - {grn_number}</title>
+    <style>
+      body {{ font-family: Arial, sans-serif; padding: 25px; color: #222; margin: 0; }}
+      h1 {{ text-align: center; margin-bottom: 5px; font-size: 26px; }}
+      h3 {{ text-align: center; margin-top: 0; color: #555; font-weight: normal; }}
+      .info-table {{ width: 100%; border-collapse: collapse; margin-top: 20px; margin-bottom: 20px; }}
+      .info-table td {{ border: 1px solid #ddd; padding: 10px; font-size: 14px; }}
+      .label {{ font-weight: bold; background: #f4f4f4; width: 220px; }}
+      hr {{ margin: 25px 0; }}
+      h2 {{ text-align: center; margin-bottom: 15px; }}
+      .item-section {{ margin-top: 30px; padding: 20px; border: 1px solid #aaa; border-radius: 8px; page-break-inside: avoid; text-align: center; }}
+      .item-title {{ font-size: 18px; font-weight: 600; margin-bottom: 10px; color: #1e293b; }}
+      .meta {{ color: #475569; margin-bottom: 10px; }}
+      img {{ display: block; margin: 20px auto; width: 180px; height: 180px; }}
+      @page {{ margin: 12mm; }}
+    </style>
+  </head>
+  <body>
+    <h1>Goods Receipt Note (GRN)</h1>
+    <h3>Inventory Management System</h3>
+    
+    <table class=\"info-table\">
+      <tr>
+        <td class=\"label\">Supplier</td>
+        <td>{supplier_name}</td>
+      </tr>
+      <tr>
+        <td class=\"label\">Supplier GST Number</td>
+        <td>{supplier_gst}</td>
+      </tr>
+      <tr>
+        <td class=\"label\">Supplier Phone</td>
+        <td>{supplier_phone}</td>
+      </tr>
+      <tr>
+        <td class=\"label\">Supplier Address</td>
+        <td>{supplier_address}</td>
+      </tr>
+      <tr>
+        <td class=\"label\">Invoice Number</td>
+        <td>{invoice_number}</td>
+      </tr>
+      <tr>
+        <td class=\"label\">Invoice Date</td>
+        <td>{invoice_date}</td>
+      </tr>
+      <tr>
+        <td class=\"label\">Detected Vendor</td>
+        <td>{vendor_name}</td>
+      </tr>
+      <tr>
+        <td class=\"label\">Total Invoice Value</td>
+        <td>₹ {total_amount}</td>
+      </tr>
+      <tr>
+        <td class=\"label\">GRN Number</td>
+        <td><strong>{grn_number}</strong></td>
+      </tr>
+      <tr>
+        <td class=\"label\">Received Date</td>
+        <td>{received_date}</td>
+      </tr>
+      <tr>
+        <td class=\"label\">Total Items</td>
+        <td>{len(items)}</td>
+      </tr>
+    </table>
+    
+    <hr>
+    
+    <h2>GRN QR Labels</h2>
+    
+    {items_html}
+    
+    <div style="margin-top: 30px; text-align: center; color: #64748b; font-size: 12px;">
+      Generated At: {datetime.utcnow().strftime('%Y-%m-%d %H:%M:%S')}
+    </div>
+  </body>
+</html>
+"""
+
+        # Update downloaded_at for all items in this GRN
+        current_time = datetime.utcnow().strftime('%Y-%m-%d %H:%M:%S')
+        current_user = session.get('user') or 'system'
+        conn.execute(
+            "UPDATE qr_reports SET downloaded_at = ?, downloaded_by = ? WHERE grn_number = ?",
+            (current_time, current_user, grn_number),
+        )
+        conn.commit()
+    finally:
+        conn.close()
+
+    # Create temporary file
+    temp_file = BytesIO()
+    temp_file.write(html_content.encode('utf-8'))
+    temp_file.seek(0)
+    
+    safe_grn = re.sub(r'[^A-Za-z0-9._-]+', '_', grn_number)
+    filename = f"GRN_Report_{safe_grn}.html"
+    
+    return send_file(temp_file, as_attachment=True, download_name=filename, mimetype='text/html')
 
 
 @app.route('/qr-reports/view/<int:report_id>')

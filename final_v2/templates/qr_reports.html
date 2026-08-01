@@ -38,6 +38,25 @@
       .controls button { background: #2563eb; color: #fff; border: none; cursor: pointer; }
       .controls .group { display: flex; flex-direction: column; gap: 6px; min-width: 160px; }
       .stats { display: flex; gap: 10px; flex-wrap: wrap; color: #475569; font-size: 13px; }
+      .grn-group { background: #ffffff; border: 2px solid #e2e8f0; border-radius: 10px; margin-bottom: 20px; overflow: hidden; transition: all 0.2s; box-shadow: 0 1px 3px rgba(0,0,0,0.05); }
+      .grn-group:hover { border-color: #cbd5e1; box-shadow: 0 4px 12px rgba(0,0,0,0.08); }
+      .grn-header { background: linear-gradient(135deg, #f8fafc 0%, #f1f5f9 100%); padding: 18px 22px; display: flex; justify-content: space-between; align-items: center; border-bottom: 2px solid #e2e8f0; flex-wrap: wrap; gap: 15px; }
+      .grn-header-left { display: flex; align-items: center; gap: 12px; flex: 1; min-width: 250px; }
+      .grn-badge { background: #0f172a; color: white; padding: 6px 12px; border-radius: 6px; font-size: 12px; font-weight: 700; letter-spacing: 0.5px; }
+      .grn-number { font-size: 20px; font-weight: 700; color: #0f172a; letter-spacing: -0.5px; }
+      .grn-header-right { display: flex; align-items: center; gap: 15px; flex-wrap: wrap; }
+      .grn-meta { display: flex; flex-direction: column; gap: 4px; }
+      .grn-meta-item { font-size: 13px; color: #475569; }
+      .grn-meta-item strong { color: #1e293b; margin-right: 4px; }
+      .grn-items { padding: 0; }
+      .items-table { width: 100%; border-collapse: collapse; }
+      .items-table thead { background: #f8fafc; }
+      .items-table th { padding: 12px 16px; text-align: left; font-size: 12px; font-weight: 700; color: #64748b; text-transform: uppercase; letter-spacing: 0.5px; border-bottom: 2px solid #e2e8f0; }
+      .items-table tbody tr { border-bottom: 1px solid #f1f5f9; transition: background 0.15s; }
+      .items-table tbody tr:hover { background: #f8fafc; }
+      .items-table tbody tr:last-child { border-bottom: none; }
+      .items-table td { padding: 14px 16px; font-size: 14px; color: #334155; vertical-align: middle; }
+      code { font-family: 'Courier New', monospace; }
       table { width: 100%; border-collapse: collapse; }
       th, td { padding: 12px 10px; text-align: left; border-bottom: 1px solid #e5e7eb; font-size: 14px; }
       th { background: #f8fafc; color: #475569; text-transform: uppercase; letter-spacing: 0.3px; font-size: 12px; }
@@ -46,12 +65,13 @@
       .missing { background: #fee2e2; color: #991b1b; }
       .actions a, .actions form { display: inline-block; margin-right: 6px; }
       .btn { padding: 7px 10px; border: none; border-radius: 4px; font-size: 13px; font-weight: 600; text-decoration: none; cursor: pointer; }
-      .btn-download { background: #2563eb; color: #fff; }
+      .btn-download { background: #2563eb; color: #fff; padding: 10px 18px; border-radius: 8px; font-size: 14px; transition: all 0.2s; display: inline-flex; align-items: center; gap: 6px; }
+      .btn-download:hover { background: #1d4ed8; transform: translateY(-1px); box-shadow: 0 4px 12px rgba(37,99,235,0.3); }
       .btn-view { background: #0f766e; color: #fff; }
       .btn-delete { background: #dc2626; color: #fff; }
       .pagination { display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 10px; }
-      .empty { padding: 30px; text-align: center; color: #64748b; }
-      @media (max-width: 900px) { body { flex-direction: column; } .sidebar { width: 100%; min-height:auto; position: relative; } .main { margin-left: 0; width: 100%; padding: 15px; } }
+      .empty { padding: 60px 30px; text-align: center; color: #64748b; }
+      @media (max-width: 900px) { body { flex-direction: column; } .sidebar { width: 100%; min-height:auto; position: relative; } .main { margin-left: 0; width: 100%; padding: 15px; } .grn-header { flex-direction: column; align-items: flex-start; } .grn-header-right { width: 100%; justify-content: space-between; } }
     </style>
   </head>
   <body>
@@ -83,7 +103,6 @@
           <div class="group"><label>From</label><input type="date" name="from_date" value="{{ from_date }}" /></div>
           <div class="group"><label>To</label><input type="date" name="to_date" value="{{ to_date }}" /></div>
           <div class="group"><label>Downloaded By</label><input type="text" name="downloaded_by" value="{{ downloaded_by }}" /></div>
-          <div class="group"><label>Status</label><select name="status"><option value="">All</option><option value="available" {% if status_filter=='available' %}selected{% endif %}>Available</option><option value="missing" {% if status_filter=='missing' %}selected{% endif %}>Missing</option></select></div>
           <div class="group"><label>Sort</label><select name="sort"><option value="latest" {% if sort=='latest' %}selected{% endif %}>Latest Download</option><option value="oldest" {% if sort=='oldest' %}selected{% endif %}>Oldest Download</option><option value="grn" {% if sort=='grn' %}selected{% endif %}>GRN Number</option></select></div>
           <div class="group"><label>Per Page</label><select name="per_page"><option value="10" {% if per_page==10 %}selected{% endif %}>10</option><option value="25" {% if per_page==25 %}selected{% endif %}>25</option><option value="50" {% if per_page==50 %}selected{% endif %}>50</option><option value="100" {% if per_page==100 %}selected{% endif %}>100</option></select></div>
           <div class="group"><label>&nbsp;</label><button type="submit">Apply Filters</button></div>
@@ -92,61 +111,76 @@
 
       <div class="card">
         <div class="stats">
-          <span><strong>Total:</strong> {{ total_records }}</span>
+          <span><strong>Total GRN Groups:</strong> {{ grouped_records|length }}</span>
+          <span><strong>Total Items:</strong> {{ total_records }}</span>
           <span><strong>Page:</strong> {{ page }} / {{ total_pages }}</span>
         </div>
-        {% if records %}
-        <table>
-          <thead>
-            <tr>
-              <th>Report ID</th>
-              <th>GRN Number</th>
-              <th>Item Name</th>
-              <th>Item Code</th>
-              <th>Supplier</th>
-              <th>Quantity</th>
-              <th>Downloaded</th>
-              <th>Downloaded By</th>
-              <th>Status</th>
-              <th>Actions</th>
-            </tr>
-          </thead>
-          <tbody>
-            {% for record in records %}
-            <tr>
-              <td>#{{ record.id }}</td>
-              <td>{{ record.grn_number or '-' }}</td>
-              <td>{{ record.item_name or '-' }}</td>
-              <td>{{ record.item_code or '-' }}</td>
-              <td>{{ record.supplier_name or '-' }}</td>
-              <td>{{ record.quantity or '0' }}</td>
-              <td>{{ record.downloaded_at or '-' }}</td>
-              <td>{{ record.downloaded_by or '-' }}</td>
-              <td><span class="status-badge {% if record.status == 'Available' %}available{% else %}missing{% endif %}">{{ record.status }}</span></td>
-              <td class="actions">
-                {% if record.status == 'Available' %}
-                <a class="btn btn-download" href="{{ url_for('download_qr_report', report_id=record.id) }}">⬇ Download</a>
-                {% else %}
-                <span class="btn btn-download" style="opacity:0.6; cursor:not-allowed;">⬇ Download</span>
-                {% endif %}
-              </td>
-            </tr>
-            {% endfor %}
-          </tbody>
-        </table>
+        {% if grouped_records %}
+        {% for grn_number, items in grouped_records.items() %}
+        <div class="grn-group">
+          <div class="grn-header">
+            <div class="grn-header-left">
+              <div class="grn-badge">📦 GRN</div>
+              <div class="grn-number">{{ grn_number }}</div>
+            </div>
+            <div class="grn-header-right">
+              <div class="grn-meta">
+                <span class="grn-meta-item"><strong>Supplier:</strong> {{ items[0].supplier_name or 'N/A' }}</span>
+                <span class="grn-meta-item"><strong>Total Qty:</strong> {{ items | sum(attribute='quantity') }}</span>
+                <span class="grn-meta-item"><strong>Items:</strong> {{ items|length }}</span>
+              </div>
+              <a class="btn btn-download" href="{{ url_for('download_qr_report_by_grn', grn_number=grn_number) }}">
+                ⬇ Download PDF
+              </a>
+            </div>
+          </div>
+          
+          <div class="grn-items">
+            <table class="items-table">
+              <thead>
+                <tr>
+                  <th style="width: 60px;">#</th>
+                  <th>Item Name</th>
+                  <th style="width: 140px;">Item Code</th>
+                  <th style="width: 100px; text-align: center;">Quantity</th>
+                  <th style="width: 160px;">Last Downloaded</th>
+                </tr>
+              </thead>
+              <tbody>
+                {% for item in items %}
+                <tr>
+                  <td style="text-align: center; color: #64748b; font-weight: 600;">{{ loop.index }}</td>
+                  <td><strong>{{ item.item_name }}</strong></td>
+                  <td><code style="background: #f1f5f9; padding: 4px 8px; border-radius: 4px; font-size: 12px;">{{ item.item_code }}</code></td>
+                  <td style="text-align: center; font-weight: 600; color: #0f766e;">{{ item.quantity }}</td>
+                  <td style="font-size: 13px; color: #64748b;">
+                    {{ item.downloaded_at or 'Not downloaded' }}<br>
+                    <small style="color: #94a3b8;">by {{ item.downloaded_by or '-' }}</small>
+                  </td>
+                </tr>
+                {% endfor %}
+              </tbody>
+            </table>
+          </div>
+        </div>
+        {% endfor %}
         {% else %}
-        <div class="empty">No Confirmed GRN QR Reports have been downloaded yet.</div>
+        <div class="empty">
+          <div style="font-size: 48px; margin-bottom: 12px; opacity: 0.3;">📦</div>
+          <div style="font-size: 16px; font-weight: 600; margin-bottom: 6px;">No QR Reports Yet</div>
+          <div style="font-size: 14px;">QR reports will appear here after you click "Print QR Codes" in Item Entry page.</div>
+        </div>
         {% endif %}
       </div>
 
       <div class="pagination">
-        <div>Showing {{ records|length }} of {{ total_records }} records</div>
+        <div>Showing {{ grouped_records|length }} GRN groups ({{ total_records }} total items)</div>
         <div>
           {% if page > 1 %}
-          <a class="btn btn-view" href="{{ url_for('qr_reports', q=search, from_date=from_date, to_date=to_date, downloaded_by=downloaded_by, status=status_filter, sort=sort, per_page=per_page, page=page-1) }}">Previous</a>
+          <a class="btn btn-view" href="{{ url_for('qr_reports', q=search, from_date=from_date, to_date=to_date, downloaded_by=downloaded_by, sort=sort, per_page=per_page, page=page-1) }}">Previous</a>
           {% endif %}
           {% if page < total_pages %}
-          <a class="btn btn-view" href="{{ url_for('qr_reports', q=search, from_date=from_date, to_date=to_date, downloaded_by=downloaded_by, status=status_filter, sort=sort, per_page=per_page, page=page+1) }}">Next</a>
+          <a class="btn btn-view" href="{{ url_for('qr_reports', q=search, from_date=from_date, to_date=to_date, downloaded_by=downloaded_by, sort=sort, per_page=per_page, page=page+1) }}">Next</a>
           {% endif %}
         </div>
       </div>
