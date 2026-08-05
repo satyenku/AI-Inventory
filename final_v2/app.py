@@ -1249,6 +1249,21 @@ def dashboard():
         LIMIT 10
     """).fetchall()
     
+    # 13a. High Stock Items Details (for table)
+    high_stock_items = conn.execute("""
+        SELECT item_code, item_name, category, current_stock, max_stock_level, unit
+        FROM products
+        WHERE current_stock >= max_stock_level AND max_stock_level > 0
+        ORDER BY (current_stock / NULLIF(max_stock_level, 0)) DESC
+        LIMIT 10
+    """).fetchall()
+    
+    # 13b. High Stock Count
+    high_stock_count = conn.execute("""
+        SELECT COUNT(*) FROM products 
+        WHERE current_stock >= max_stock_level AND max_stock_level > 0
+    """).fetchone()[0]
+    
     # 14. Recent Activity (last 10 stock movements)
     recent_activity = conn.execute("""
         SELECT 
@@ -1277,12 +1292,14 @@ def dashboard():
         today_issue_count=today_issue_count,
         today_return_count=today_return_count,
         low_stock_count=low_stock_count,
+        high_stock_count=high_stock_count,
         total_stock_value=total_stock_value,
         current_user=current_user,
         current_role=current_role,
         stock_by_category=stock_by_category,
         daily_stats=daily_stats,
         low_stock_items=low_stock_items,
+        high_stock_items=high_stock_items,
         recent_activity=recent_activity
     )
 
@@ -1822,6 +1839,38 @@ def delete_product(product_id):
             conn.close()
             return redirect(url_for('product_master'))
         
+        # ✅ Check if product is used in any BOM recipes as raw material
+        bom_count = cursor.execute(
+            "SELECT COUNT(*) as count FROM bom_recipe_items WHERE raw_material_id = ?", 
+            (product_id,)
+        ).fetchone()['count']
+        
+        if bom_count > 0:
+            flash(
+                f"❌ Cannot delete product '{product_name}' ({product_code}). "
+                f"This product is used as raw material in {bom_count} BOM recipe(s). "
+                f"Products used in recipes cannot be deleted.",
+                "error"
+            )
+            conn.close()
+            return redirect(url_for('product_master'))
+        
+        # ✅ Check if product has any BOM recipes (finished product)
+        recipe_count = cursor.execute(
+            "SELECT COUNT(*) as count FROM bom_recipes WHERE finished_product_id = ?", 
+            (product_id,)
+        ).fetchone()['count']
+        
+        if recipe_count > 0:
+            flash(
+                f"❌ Cannot delete product '{product_name}' ({product_code}). "
+                f"This product has {recipe_count} BOM recipe(s) defined. "
+                f"Delete the recipes first before deleting the product.",
+                "error"
+            )
+            conn.close()
+            return redirect(url_for('product_master'))
+        
         # ✅ Check if product has any current stock
         current_stock = cursor.execute(
             "SELECT current_stock FROM products WHERE id = ?", 
@@ -1838,12 +1887,27 @@ def delete_product(product_id):
             conn.close()
             return redirect(url_for('product_master'))
         
+        # ✅ Check if product has any QC/inspection entries (even if GRN not posted)
+        inspection_count = cursor.execute(
+            "SELECT COUNT(*) as count FROM inspection_entries WHERE product_id = ?", 
+            (product_id,)
+        ).fetchone()['count']
+        
+        if inspection_count > 0:
+            flash(
+                f"❌ Cannot delete product '{product_name}' ({product_code}). "
+                f"This product has {inspection_count} QC/inspection record(s). "
+                f"Products with inspection history cannot be deleted for audit compliance.",
+                "error"
+            )
+            conn.close()
+            return redirect(url_for('product_master'))
+        
         # ✅ All validations passed - safe to delete
-        # Delete inspection properties first (CASCADE would handle this, but explicit is better)
+        # Delete product properties first (CASCADE would handle this, but explicit is better)
         cursor.execute("DELETE FROM product_properties WHERE product_id = ?", (product_id,))
         
-        # Delete inspection entries if any
-        cursor.execute("DELETE FROM inspection_entries WHERE product_id = ?", (product_id,))
+        # Note: We already checked that there are no inspection entries, so no need to delete them
         
         # Delete product
         cursor.execute("DELETE FROM products WHERE id = ?", (product_id,))
@@ -3448,7 +3512,7 @@ def api_issue_items(issue_id):
             returned  = float(row['already_returned'] or 0)
             remaining = round(issued - returned, 6)
 
-            # Fetch supplier info via the most recent GRN that received this product
+            # Fetch supplier info and GRN details via the most recent GRN that received this product
             sup = conn.execute("""
                 SELECT
                     s.supplier_name,
@@ -3456,11 +3520,11 @@ def api_issue_items(issue_id):
                     s.phone,
                     s.email,
                     s.address,
-                    inv.invoice_number,
-                    inv.invoice_date
+                    g.grn_no,
+                    g.received_date
                 FROM grn_items gi
                 JOIN grn        g   ON gi.grn_id     = g.id
-                JOIN invoices   inv ON g.invoice_id  = inv.id
+                LEFT JOIN invoices   inv ON g.invoice_id  = inv.id
                 LEFT JOIN suppliers s ON inv.supplier_id = s.id
                 WHERE gi.product_id = ?
                 ORDER BY g.id DESC
@@ -3482,8 +3546,8 @@ def api_issue_items(issue_id):
                 'phone':            sup['phone']          if sup else '',
                 'email':            sup['email']          if sup else '',
                 'address':          sup['address']        if sup else '',
-                'invoice_number':   sup['invoice_number'] if sup else '',
-                'invoice_date':     sup['invoice_date']   if sup else '',
+                'grn_number':       sup['grn_no']         if sup else '',
+                'grn_date':         sup['received_date']  if sup else '',
             })
     finally:
         conn.close()
@@ -3786,7 +3850,7 @@ def user_management():
 def barcode_lookup():
     """
     Trace a GRN barcode back to its supplier through the chain:
-    barcode_registry -> invoice_items -> invoices -> suppliers
+    barcode_registry -> invoice_items -> invoices -> suppliers -> grn
     Used by inventory_return page to auto-fill supplier details.
     """
     barcode_no = request.args.get('barcode', '').strip()
@@ -3813,10 +3877,13 @@ def barcode_lookup():
             s.contact_person,
             s.phone,
             s.email,
-            s.address
+            s.address,
+            g.grn_no        AS grn_number,
+            g.received_date AS grn_date
         FROM barcode_registry br
         JOIN invoice_items ii  ON br.invoice_item_id = ii.id
         JOIN invoices inv      ON br.invoice_id      = inv.id
+        LEFT JOIN grn g        ON inv.id             = g.invoice_id
         LEFT JOIN products p   ON ii.product_id      = p.id
         LEFT JOIN suppliers s  ON inv.supplier_id    = s.id
         WHERE br.barcode_no = ?
@@ -4199,6 +4266,7 @@ def api_export_qc_excel():
     fill_logo = PatternFill(start_color='B91C1C', end_color='B91C1C', fill_type='solid') # Red / Dark styling
     fill_header = PatternFill(start_color='F1F5F9', end_color='F1F5F9', fill_type='solid') # light grey
     fill_metadata = PatternFill(start_color='F8FAFC', end_color='F8FAFC', fill_type='solid')
+    fill_red = PatternFill(start_color='FF0000', end_color='FF0000', fill_type='solid') # Red for out-of-range values
 
     def style_range(ws, cell_range, font=None, fill=None, alignment=None, border=None):
         for row in ws[cell_range]:
@@ -4335,6 +4403,19 @@ def api_export_qc_excel():
         ws[f"D{current_row}"] = prop.get('max_value', '')
         ws[f"E{current_row}"] = prop.get('method', '')
         
+        # Get min/max values for validation
+        min_val = prop.get('min_value', '')
+        max_val = prop.get('max_value', '')
+        min_num = None
+        max_num = None
+        try:
+            if min_val and str(min_val).strip():
+                min_num = float(str(min_val).strip())
+            if max_val and str(max_val).strip():
+                max_num = float(str(max_val).strip())
+        except:
+            pass
+        
         # Match observations in details_map
         prop_id_str = str(prop.get('id') or '')
         prop_name_str = (prop.get('property_name') or '').strip().lower()
@@ -4371,12 +4452,28 @@ def api_export_qc_excel():
         ws[f"D{current_row}"].alignment = Alignment(horizontal='center', vertical='center')
         ws[f"E{current_row}"].alignment = Alignment(horizontal='left', vertical='center')
         
+        # Apply observation cell formatting and validate against min/max
         for o_col in ("F", "G", "H", "I", "J"):
-            ws[f"{o_col}{current_row}"].alignment = Alignment(horizontal='center', vertical='center')
+            cell = ws[f"{o_col}{current_row}"]
+            cell.alignment = Alignment(horizontal='center', vertical='center')
+            cell.font = font_normal
+            cell.border = thin_border
+            
+            # Validate observation value against min/max
+            if min_num is not None and max_num is not None:
+                cell_val = cell.value
+                if cell_val:
+                    try:
+                        obs_num = float(str(cell_val).strip())
+                        if obs_num < min_num or obs_num > max_num:
+                            cell.fill = fill_red
+                            cell.font = Font(name='Arial', size=9, bold=True, color='FFFFFF')
+                    except:
+                        pass
         
         ws[f"K{current_row}"].alignment = Alignment(horizontal='left', vertical='center')
 
-        for col_let in ("A", "B", "C", "D", "E", "F", "G", "H", "I", "J", "K"):
+        for col_let in ("A", "B", "C", "D", "E", "K"):
             cell = ws[f"{col_let}{current_row}"]
             cell.font = font_normal
             cell.border = thin_border

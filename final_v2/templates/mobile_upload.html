@@ -1,5 +1,6 @@
 <!DOCTYPE html>
 <html lang="en">
+
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
@@ -208,7 +209,9 @@
         }
 
         @keyframes spin {
-            to { transform: rotate(360deg); }
+            to {
+                transform: rotate(360deg);
+            }
         }
 
         /* Success tick */
@@ -262,26 +265,33 @@
             font-weight: 600;
             font-size: 14px;
         }
-        
+
         .retry-link:hover {
             text-decoration: underline;
         }
     </style>
 </head>
+
 <body>
 
     <div class="container" id="uploadStatePanel">
         <h1>Scan Document</h1>
-        <p class="subtitle">Capture your invoice or receipt using your mobile camera for automated desktop data extraction.</p>
+        <p class="subtitle">Capture your invoice or receipt using your mobile camera for automated desktop data
+            extraction.</p>
 
         <form id="mobileUploadForm">
             <!-- Input hook triggers direct camera capture -->
-            <input type="file" id="mobileFileInput" accept="image/*,application/pdf" capture="environment" style="display: none;" onchange="handleFileChange(this)">
-            
+            <input type="file" id="mobileFileInput" accept="image/*,application/pdf" capture="environment"
+                style="display: none;" onchange="handleFileChange(this)">
+
             <div class="capture-area" onclick="document.getElementById('mobileFileInput').click()">
-                <svg class="capture-icon" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
-                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M3 9a2 2 0 012-2h.93a2 2 0 001.664-.89l.812-1.22A2 2 0 0110.07 4h3.86a2 2 0 011.664.89l.812 1.22A2 2 0 0018.07 7H19a2 2 0 012 2v9a2 2 0 01-2 2H5a2 2 0 01-2-2V9z"></path>
-                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M15 13a3 3 0 11-6 0 3 3 0 016 0z"></path>
+                <svg class="capture-icon" fill="none" stroke="currentColor" viewBox="0 0 24 24"
+                    xmlns="http://www.w3.org/2000/svg">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5"
+                        d="M3 9a2 2 0 012-2h.93a2 2 0 001.664-.89l.812-1.22A2 2 0 0110.07 4h3.86a2 2 0 011.664.89l.812 1.22A2 2 0 0018.07 7H19a2 2 0 012 2v9a2 2 0 01-2 2H5a2 2 0 01-2-2V9z">
+                    </path>
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5"
+                        d="M15 13a3 3 0 11-6 0 3 3 0 016 0z"></path>
                 </svg>
                 <div class="capture-text">Take Photo / Capture Invoice</div>
                 <div class="capture-hint">Supports Camera Snapshots or Image Files</div>
@@ -320,25 +330,31 @@
             </svg>
         </div>
         <h1>Scan Verified!</h1>
-        <p class="status-msg">Your transaction invoice has been successfully processed by Gemini AI. Extracting metrics are currently filling in on your desktop screen.</p>
-        <p class="status-msg" style="font-size: 13px; margin-top: 25px; border-top: 1px solid rgba(255,255,255,0.05); padding-top: 15px;">You can now safely close this web browser tab.</p>
+        <p class="status-msg">Your transaction invoice has been successfully processed by Gemini AI. Extracting metrics
+            are currently filling in on your desktop screen.</p>
+        <p class="status-msg"
+            style="font-size: 13px; margin-top: 25px; border-top: 1px solid rgba(255,255,255,0.05); padding-top: 15px;">
+            You can now safely close this web browser tab.</p>
     </div>
 
     <!-- Error Output View -->
     <div class="container state-panel" id="errorStatePanel">
         <div class="error-graphic">
             <svg fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
-                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z"></path>
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                    d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z">
+                </path>
             </svg>
         </div>
         <h1>Upload Failed</h1>
-        <p class="status-msg" id="errorMsgText">An unknown network configuration anomaly occurred during file transfer.</p>
+        <p class="status-msg" id="errorMsgText">An unknown network configuration anomaly occurred during file transfer.
+        </p>
         <a href="" class="retry-link" onclick="location.reload(); return false;">Try Scanning Again</a>
     </div>
 
     <script>
         const sessionId = "{{ session_id }}";
-        
+
         function handleFileChange(input) {
             const previewContainer = document.getElementById('previewContainer');
             const previewImage = document.getElementById('previewImage');
@@ -348,11 +364,11 @@
 
             if (input.files && input.files[0]) {
                 const file = input.files[0];
-                
+
                 // Set metadata
                 fileNameText.textContent = file.name;
                 fileSizeText.textContent = (file.size / (1024 * 1024)).toFixed(2) + ' MB';
-                
+
                 // Show thumbnail if it's an image
                 if (file.type.startsWith('image/')) {
                     previewImage.src = URL.createObjectURL(file);
@@ -361,7 +377,7 @@
                     // PDF or other
                     previewImage.style.display = 'none';
                 }
-                
+
                 previewContainer.style.display = 'block';
                 submitBtn.disabled = false;
             } else {
@@ -370,7 +386,7 @@
             }
         }
 
-        document.getElementById('mobileUploadForm').addEventListener('submit', function(e) {
+        document.getElementById('mobileUploadForm').addEventListener('submit', function (e) {
             e.preventDefault();
             const fileInput = document.getElementById('mobileFileInput');
             if (fileInput.files.length === 0) return;
@@ -383,49 +399,49 @@
             document.getElementById('uploadStatePanel').style.display = 'none';
             document.getElementById('loadingStatePanel').style.display = 'block';
             const loadText = document.getElementById('loadingMsgText');
-            
+
             loadText.textContent = "Uploading document files for processing...";
 
             fetch('/api/mobile-upload-submit', {
                 method: 'POST',
                 body: formData
             })
-            .then(res => {
-                if (!res.ok) throw new Error("HTTP connection failed status " + res.status);
-                return res.json();
-            })
-            .then(data => {
-                if (data.error) {
-                    showError(data.error);
-                } else {
-                    // Start polling session state locally to confirm to user when processing ends successfully!
-                    loadText.textContent = "Processing and extracting invoice details using Gemini AI...";
-                    pollStatus();
-                }
-            })
-            .catch(err => {
-                showError("Form submission failure: " + err.message);
-            });
+                .then(res => {
+                    if (!res.ok) throw new Error("HTTP connection failed status " + res.status);
+                    return res.json();
+                })
+                .then(data => {
+                    if (data.error) {
+                        showError(data.error);
+                    } else {
+                        // Start polling session state locally to confirm to user when processing ends successfully!
+                        loadText.textContent = "Processing and extracting invoice details using Gemini AI...";
+                        pollStatus();
+                    }
+                })
+                .catch(err => {
+                    showError("Form submission failure: " + err.message);
+                });
         });
 
         function pollStatus() {
             const interval = setInterval(() => {
                 fetch('/api/mobile-status/' + sessionId)
-                .then(res => res.json())
-                .then(data => {
-                    if (data.status === 'success') {
-                        clearInterval(interval);
-                        document.getElementById('loadingStatePanel').style.display = 'none';
-                        document.getElementById('successStatePanel').style.display = 'block';
-                    } else if (data.status === 'error') {
-                        clearInterval(interval);
-                        showError("Gemini Ingestion Failed: " + data.error);
-                    }
-                })
-                .catch(err => {
-                    // Don't stop on transient network failure during polling
-                    console.error("Status polling failure: ", err);
-                });
+                    .then(res => res.json())
+                    .then(data => {
+                        if (data.status === 'success') {
+                            clearInterval(interval);
+                            document.getElementById('loadingStatePanel').style.display = 'none';
+                            document.getElementById('successStatePanel').style.display = 'block';
+                        } else if (data.status === 'error') {
+                            clearInterval(interval);
+                            showError("Gemini Ingestion Failed: " + data.error);
+                        }
+                    })
+                    .catch(err => {
+                        // Don't stop on transient network failure during polling
+                        console.error("Status polling failure: ", err);
+                    });
             }, 2000);
         }
 
@@ -437,4 +453,5 @@
         }
     </script>
 </body>
+
 </html>

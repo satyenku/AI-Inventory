@@ -175,6 +175,10 @@
         color: #dc2626;
         font-weight: bold;
       }
+      .high {
+        color: #f97316;
+        font-weight: bold;
+      }
       .positive {
         color: #16a34a;
         font-weight: bold;
@@ -309,6 +313,12 @@
           <p class="value">{{ low_stock_count }}</p>
           <p class="subtext">Below minimum threshold</p>
         </div>
+        
+        <div class="metric-card" style="border-left-color: #f97316;">
+          <h3>High Stock Items</h3>
+          <p class="value">{{ high_stock_count }}</p>
+          <p class="subtext">Above maximum threshold</p>
+        </div>
 
         <div class="metric-card">
           <h3>Total Suppliers</h3>
@@ -392,6 +402,41 @@
               <td>{{ item.unit }}</td>
               <td>
                 <span class="badge badge-danger">Low Stock</span>
+              </td>
+            </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+      {% endif %}
+      
+      <!-- High Stock Items Table -->
+      {% if high_stock_items %}
+      <div class="table-box">
+        <h3>📦 High Stock Alert - Overstocked Items</h3>
+        <table>
+          <thead>
+            <tr>
+              <th>Item Code</th>
+              <th>Item Name</th>
+              <th>Category</th>
+              <th>Current Stock</th>
+              <th>Max Level</th>
+              <th>Unit</th>
+              <th>Status</th>
+            </tr>
+          </thead>
+          <tbody>
+            {% for item in high_stock_items %}
+            <tr>
+              <td><strong>{{ item.item_code }}</strong></td>
+              <td>{{ item.item_name }}</td>
+              <td>{{ item.category or 'N/A' }}</td>
+              <td style="color: #f97316; font-weight: bold;">{{ item.current_stock }}</td>
+              <td>{{ item.max_stock_level }}</td>
+              <td>{{ item.unit }}</td>
+              <td>
+                <span class="badge" style="background: #fed7aa; color: #9a3412;">High Stock</span>
               </td>
             </tr>
             {% endfor %}

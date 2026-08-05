@@ -1602,92 +1602,26 @@
               remarks = previousQC.remarks || '';
             }
           }
-          
-          if (!obs1 && !obs2 && !obs3 && !obs4 && !obs5 && p.min_value !== null && p.min_value !== '' && p.max_value !== null && p.max_value !== '') {
-            const minVal = parseFloat(p.min_value);
-            const maxVal = parseFloat(p.max_value);
-            if (!isNaN(minVal) && !isNaN(maxVal) && minVal < maxVal) {
-              obs1 = generateQCValue(minVal, maxVal);
-              obs2 = generateQCValue(minVal, maxVal);
-              obs3 = generateQCValue(minVal, maxVal);
-              obs4 = generateQCValue(minVal, maxVal);
-              obs5 = generateQCValue(minVal, maxVal);
-            }
-          }
 
           const propIdVal = p.id ? p.id : '';
           
           html += `
-          <tr class="qc-spec-row" data-prop-id="${propIdVal}" data-prop-name="${escapeHtml(p.property_name)}" data-min="${p.min_value ?? ''}" data-max="${p.max_value ?? ''}" style="border-bottom:1px solid #cbd5e1;">
+          <tr class="qc-spec-row" data-prop-id="${propIdVal}" data-prop-name="${escapeHtml(p.property_name)}" style="border-bottom:1px solid #cbd5e1;">
             <td style="padding:6px;text-align:left;color:#0f172a;"><strong>${escapeHtml(p.property_name)}</strong></td>
             <td style="padding:6px;color:#475569;text-align:center;">${p.min_value ?? ''}</td>
             <td style="padding:6px;color:#475569;text-align:center;">${p.max_value ?? ''}</td>
             <td style="padding:6px;color:#475569;text-align:left;font-size:11px;">${escapeHtml(p.method ?? '')}</td>
-            <td style="padding:6px;text-align:center;"><input type="text" class="qc-obs-1 qc-obs-input" value="${escapeHtml(obs1)}" style="width:38px;padding:4px;font-size:12px;text-align:center;border:1px solid #cbd5e1;border-radius:4px;" /></td>
-            <td style="padding:6px;text-align:center;"><input type="text" class="qc-obs-2 qc-obs-input" value="${escapeHtml(obs2)}" style="width:38px;padding:4px;font-size:12px;text-align:center;border:1px solid #cbd5e1;border-radius:4px;" /></td>
-            <td style="padding:6px;text-align:center;"><input type="text" class="qc-obs-3 qc-obs-input" value="${escapeHtml(obs3)}" style="width:38px;padding:4px;font-size:12px;text-align:center;border:1px solid #cbd5e1;border-radius:4px;" /></td>
-            <td style="padding:6px;text-align:center;"><input type="text" class="qc-obs-4 qc-obs-input" value="${escapeHtml(obs4)}" style="width:38px;padding:4px;font-size:12px;text-align:center;border:1px solid #cbd5e1;border-radius:4px;" /></td>
-            <td style="padding:6px;text-align:center;"><input type="text" class="qc-obs-5 qc-obs-input" value="${escapeHtml(obs5)}" style="width:38px;padding:4px;font-size:12px;text-align:center;border:1px solid #cbd5e1;border-radius:4px;" /></td>
+            <td style="padding:6px;text-align:center;"><input type="text" class="qc-obs-1" value="${escapeHtml(obs1)}" style="width:38px;padding:4px;font-size:12px;text-align:center;border:1px solid #cbd5e1;border-radius:4px;" /></td>
+            <td style="padding:6px;text-align:center;"><input type="text" class="qc-obs-2" value="${escapeHtml(obs2)}" style="width:38px;padding:4px;font-size:12px;text-align:center;border:1px solid #cbd5e1;border-radius:4px;" /></td>
+            <td style="padding:6px;text-align:center;"><input type="text" class="qc-obs-3" value="${escapeHtml(obs3)}" style="width:38px;padding:4px;font-size:12px;text-align:center;border:1px solid #cbd5e1;border-radius:4px;" /></td>
+            <td style="padding:6px;text-align:center;"><input type="text" class="qc-obs-4" value="${escapeHtml(obs4)}" style="width:38px;padding:4px;font-size:12px;text-align:center;border:1px solid #cbd5e1;border-radius:4px;" /></td>
+            <td style="padding:6px;text-align:center;"><input type="text" class="qc-obs-5" value="${escapeHtml(obs5)}" style="width:38px;padding:4px;font-size:12px;text-align:center;border:1px solid #cbd5e1;border-radius:4px;" /></td>
             <td style="padding:6px;text-align:left;"><input type="text" class="qc-remarks-input" value="${escapeHtml(remarks)}" style="width:90%;padding:4px;font-size:12px;border:1px solid #cbd5e1;border-radius:4px;" /></td>
           </tr>`;
         });
 
         html += '</tbody></table>';
         document.getElementById('qc_specs_container').innerHTML = html;
-        
-        // Add validation listeners to all observation inputs
-        setTimeout(() => {
-          document.querySelectorAll('.qc-obs-input').forEach(input => {
-            validateObsInput(input);
-            input.addEventListener('input', function() {
-              validateObsInput(this);
-            });
-            input.addEventListener('blur', function() {
-              validateObsInput(this);
-            });
-          });
-        }, 0);
-      }
-      
-      function validateObsInput(input) {
-        const row = input.closest('.qc-spec-row');
-        if (!row) return;
-        
-        const minVal = row.getAttribute('data-min');
-        const maxVal = row.getAttribute('data-max');
-        
-        if (!minVal || !maxVal || minVal === '' || maxVal === '') return;
-        
-        const val = input.value.trim();
-        if (!val) {
-          input.style.backgroundColor = '';
-          input.style.color = '';
-          input.style.fontWeight = '';
-          return;
-        }
-        
-        try {
-          const numVal = parseFloat(val);
-          const numMin = parseFloat(minVal);
-          const numMax = parseFloat(maxVal);
-          
-          if (!isNaN(numVal) && !isNaN(numMin) && !isNaN(numMax)) {
-            if (numVal < numMin || numVal > numMax) {
-              input.style.backgroundColor = '#FF0000';
-              input.style.color = '#FFFFFF';
-              input.style.fontWeight = 'bold';
-            } else {
-              input.style.backgroundColor = '';
-              input.style.color = '';
-              input.style.fontWeight = '';
-            }
-          }
-        } catch (e) {
-          // Invalid number, reset styling
-          input.style.backgroundColor = '';
-          input.style.color = '';
-          input.style.fontWeight = '';
-        }
       }
 
       function loadSavedPayload() {
@@ -2253,16 +2187,7 @@
         return div.innerHTML;
       }
 
-      
-        function generateQCValue(min, max) {
-          const avg = (min + max) / 2;
-          const range = max - min;
-          const variation = (Math.random() - 0.5) * range * 0.5;
-          let value = avg + variation;
-          value = Math.max(min, Math.min(max, value));
-          return value.toFixed(2);
-        }
-        let phonePollInterval = null;
+      let phonePollInterval = null;
       let qrCodeInstance = null;
 
       function startPhoneUpload() {

@@ -386,7 +386,7 @@
     // ── Build supplier HTML from a data object ────────────────────────
     function buildSupHtml(d) {
       var h = '<div class="sup-name">' + esc(d.supplier_name) + '</div>';
-      if (d.invoice_number) h += '<div class="sup-row">Invoice: <span>' + esc(d.invoice_number) + (d.invoice_date ? ' / ' + esc(d.invoice_date) : '') + '</span></div>';
+      if (d.grn_number) h += '<div class="sup-row">GRN No: <span>' + esc(d.grn_number) + (d.grn_date ? ' / ' + esc(d.grn_date) : '') + '</span></div>';
       if (d.contact_person) h += '<div class="sup-row">Contact: <span>' + esc(d.contact_person) + '</span></div>';
       if (d.phone)          h += '<div class="sup-row">Phone: <span>'   + esc(d.phone)          + '</span></div>';
       if (d.email)          h += '<div class="sup-row">Email: <span>'   + esc(d.email)          + '</span></div>';
