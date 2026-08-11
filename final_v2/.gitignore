@@ -2,6 +2,8 @@ venv/
 instance/
 __pycache__/
 *.pyc
+inventory.db
+*.db
 uploads/
 .env
 static/barcodes/*.png

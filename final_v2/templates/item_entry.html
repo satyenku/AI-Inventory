@@ -358,6 +358,21 @@
           <h4 style="margin:6px 0 12px 0;">Matched Product Specs &amp; Observations</h4>
           <div id="qc_specs_container" style="max-height:360px; overflow:auto; border:1px solid #e2e8f0; padding:8px; border-radius:6px; background:#fbfdff;">No matched product found.</div>
         </div>
+        
+        <!-- Visual Defect Field -->
+        <div style="margin-top:16px; padding:12px; background:#f8fafc; border:1px solid #cbd5e1; border-radius:6px;">
+          <label style="display:block; font-weight:600; color:#1e293b; margin-bottom:8px; font-size:14px;">
+            Visual Defect Inspection:
+          </label>
+          <select id="qc_visual_defect" style="width:200px; padding:8px 12px; border:2px solid #cbd5e1; border-radius:6px; font-size:14px; background:white;">
+            <option value="No">No - Accepted</option>
+            <option value="Yes">Yes - Defect Found</option>
+          </select>
+          <span style="display:inline-block; margin-left:12px; color:#64748b; font-size:13px;">
+            Select "Yes" if visual defects are found
+          </span>
+        </div>
+        
         <div style="display:flex;align-items:center;gap:12px;margin-bottom:12px;">
           <input type="hidden" id="qc_current_key" value="" />
           <input type="hidden" id="qc_product_id" value="" />
@@ -1168,6 +1183,7 @@
         document.getElementById('qc_item_name').textContent = item.description;
         document.getElementById('qc_item_qty').textContent = item.qty || '';
         document.getElementById('qc_current_key').value = keyRaw;
+        document.getElementById('qc_visual_defect').value = qc.visual_defect || 'No';
         document.getElementById('qc_specs_container').innerHTML = 'Searching product master...';
 
         // Set button visibility based on existing QC status
@@ -1286,6 +1302,7 @@
         });
 
         const first = details[0] || {};
+        const visualDefect = document.getElementById('qc_visual_defect').value || 'No';
         const now = new Date().toISOString();
         const obj = { 
           status, 
@@ -1295,6 +1312,7 @@
           obs4: first.obs4 || '', 
           obs5: first.obs5 || '', 
           remarks: first.remarks || '', 
+          visual_defect: visualDefect,
           details: details,
           updated_at: now 
         };
@@ -1309,6 +1327,7 @@
           qty: document.getElementById('qc_item_qty').textContent || '',
           product_id: (document.getElementById('qc_product_id').value || '') || null,
           inspection_date: new Date().toISOString(),
+          visual_defect: visualDefect,
           details: details,
           qc_status: status
         };
@@ -1352,6 +1371,7 @@
         const item = document.getElementById('qc_item_name').textContent || '';
         const qty = document.getElementById('qc_item_qty').textContent || '';
         const productId = document.getElementById('qc_product_id').value || null;
+        const visualDefect = document.getElementById('qc_visual_defect').value || 'No';
         
         const invoiceNumber = document.getElementById('invoice_number').value || '';
         const invoiceDate = document.getElementById('invoice_date').value || '';
@@ -1391,6 +1411,7 @@
           obs4: first.obs4 || '',
           obs5: first.obs5 || '',
           remarks: first.remarks || '',
+          visual_defect: visualDefect,
           details: details,
           product_id: productId,
           invoice_number: invoiceNumber,

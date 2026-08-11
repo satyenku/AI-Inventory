@@ -227,6 +227,8 @@ CREATE TABLE IF NOT EXISTS inspection_entries (
     grn_item_id INTEGER,
 
     inspection_date TEXT,
+    
+    visual_defect TEXT DEFAULT 'No',
 
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
 

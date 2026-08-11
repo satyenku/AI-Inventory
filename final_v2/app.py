@@ -4515,21 +4515,28 @@ def api_export_qc_excel():
     style_range(ws, f"A{current_row}:G{current_row}", font=font_normal_bold, alignment=Alignment(horizontal='left', vertical='center'), border=thin_border)
     ws.row_dimensions[current_row].height = 22
 
-    # Row current_row + 1
+    # Row current_row + 1 - Remark
     ws.merge_cells(start_row=current_row+1, start_column=1, end_row=current_row+1, end_column=7)
     ws.cell(row=current_row+1, column=1, value=f"Remark :  {remarks}")
     style_range(ws, f"A{current_row+1}:G{current_row+1}", font=font_normal, alignment=Alignment(horizontal='left', vertical='center'), border=thin_border)
     ws.row_dimensions[current_row+1].height = 22
+    
+    # Row current_row + 2 - Visual Defect
+    visual_defect = (data.get('visual_defect') or 'No').strip()
+    ws.merge_cells(start_row=current_row+2, start_column=1, end_row=current_row+2, end_column=7)
+    ws.cell(row=current_row+2, column=1, value=f"Visual Defect :  {visual_defect}")
+    style_range(ws, f"A{current_row+2}:G{current_row+2}", font=font_normal_bold, alignment=Alignment(horizontal='left', vertical='center'), border=thin_border)
+    ws.row_dimensions[current_row+2].height = 22
 
-    # INSPECTED BY (H(current_row):I(current_row+1) merged)
-    ws.merge_cells(start_row=current_row, start_column=8, end_row=current_row+1, end_column=9)
+    # INSPECTED BY (H(current_row):I(current_row+2) merged - extended to cover visual defect row)
+    ws.merge_cells(start_row=current_row, start_column=8, end_row=current_row+2, end_column=9)
     ws.cell(row=current_row, column=8, value="INSPECTED BY :")
-    style_range(ws, f"H{current_row}:I{current_row+1}", font=font_normal_bold, alignment=Alignment(horizontal='left', vertical='top'), border=thin_border)
+    style_range(ws, f"H{current_row}:I{current_row+2}", font=font_normal_bold, alignment=Alignment(horizontal='left', vertical='top'), border=thin_border)
 
-    # APPROVED BY (J(current_row):K(current_row+1) merged)
-    ws.merge_cells(start_row=current_row, start_column=10, end_row=current_row+1, end_column=11)
+    # APPROVED BY (J(current_row):K(current_row+2) merged - extended to cover visual defect row)
+    ws.merge_cells(start_row=current_row, start_column=10, end_row=current_row+2, end_column=11)
     ws.cell(row=current_row, column=10, value="APPROVED BY :")
-    style_range(ws, f"J{current_row}:K{current_row+1}", font=font_normal_bold, alignment=Alignment(horizontal='left', vertical='top'), border=thin_border)
+    style_range(ws, f"J{current_row}:K{current_row+2}", font=font_normal_bold, alignment=Alignment(horizontal='left', vertical='top'), border=thin_border)
 
     # Generate a unique filename
     import datetime
@@ -4700,10 +4707,11 @@ def api_save_qc():
                     logger.warning("[api_save_qc] Could not auto-resolve grn_item_id: %s", e)
 
             # NEW: Insert inspection with grn_item_id for full traceability
+            visual_defect = (data.get('visual_defect') or 'No').strip()
             cursor.execute("""
-                INSERT INTO inspection_entries (product_id, grn_item_id, inspection_date)
-                VALUES (?, ?, ?)
-            """, (product_id, grn_item_id, inspection_date))
+                INSERT INTO inspection_entries (product_id, grn_item_id, inspection_date, visual_defect)
+                VALUES (?, ?, ?, ?)
+            """, (product_id, grn_item_id, inspection_date, visual_defect))
             inspection_id = cursor.lastrowid
 
             for detail in details:
